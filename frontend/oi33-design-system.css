@@ -341,6 +341,13 @@ table {
   transform: translateY(-50%);
 }
 
+/* The product header already provides global problem search. Hide ui-default's
+   redundant bottom-right omnisearch trigger and its overlay. */
+.omnibar,
+.omnibar-toggle {
+  display: none !important;
+}
+
 .oi33-nav__avatar {
   width: 30px;
   height: 30px;
