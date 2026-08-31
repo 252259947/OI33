@@ -1,15 +1,16 @@
 {
   "name": "oi33",
   "version": "1.0.0",
-  "description": "Unified plugin for 33OJ: coins, birthday, badge, realname, checkin, countdown, pastebin, frontend",
+  "description": "Unified plugin for huaji OJ: coins, birthday, badge, realname, checkin, countdown, pastebin, frontend",
   "main": "index.ts",
   "author": "33DAI",
   "license": "AGPL-3.0",
   "dependencies": {
-    "schemastery": "^3.0.0"
+    "nunjucks": "3.2.4",
+    "schemastery": "3.18.0"
   },
   "devDependencies": {
-    "@hydrooj/ui-default": "^4.58.1",
-    "hydrooj": "^5.0.1"
+    "@hydrooj/ui-default": "4.58.4",
+    "hydrooj": "5.0.4"
   }
 }

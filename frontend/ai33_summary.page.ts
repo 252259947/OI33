@@ -106,7 +106,6 @@ addPage(new NamedPage(['oi33_ai_summary'], () => {
         // otherwise the plain form POST still works.
         ev.preventDefault();
         const action = (document.getElementById('ai-summary-action') as HTMLInputElement)?.value;
-        const domainId = (form.querySelector('input[name="domainId"]') as HTMLInputElement)?.value || 'system';
         const pid = (form.querySelector('input[name="pid"]') as HTMLInputElement)?.value;
         if (!action || !pid) return;
 
@@ -118,7 +117,7 @@ addPage(new NamedPage(['oi33_ai_summary'], () => {
 
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(
-            `${protocol}//${location.host}/oi33/ai/summary-stream?domainId=${encodeURIComponent(domainId)}&pid=${encodeURIComponent(pid)}&action=${encodeURIComponent(action)}`,
+            `${protocol}//${location.host}/oi33/ai/summary-stream?pid=${encodeURIComponent(pid)}&action=${encodeURIComponent(action)}`,
         );
 
         let fullText = '';

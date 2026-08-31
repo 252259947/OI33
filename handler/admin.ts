@@ -13,9 +13,13 @@ class Oi33AdminHandler extends Handler {
     @query('page', Types.PositiveInt, true)
     @query('type', Types.String, true)
     async get(domainId: string, page = 1, type = '') {
-        const adminFlag = await checkOi33Admin(this.user._id);
+        await checkOi33Admin(this.user._id);
+        const hiddenActivityTypes = ['cat_account', 'cat_map', 'school_cat'];
+        const visibleType = hiddenActivityTypes.includes(type) ? '' : type;
         await oi33Model.compactRequestLogs();
-        const { activities, tpcount } = await oi33Model.getRecentActivitiesPaginated(page, 30, type);
+        const { activities, tpcount } = await oi33Model.getRecentActivitiesPaginated(
+            page, 30, visibleType, hiddenActivityTypes,
+        );
         const pendingCount = await oi33Model.getPendingRequestCount();
         const uidSet = new Set<number>();
         const reqIdSet = new Set<string>();
@@ -35,10 +39,9 @@ class Oi33AdminHandler extends Handler {
         ]);
         this.response.template = 'oi33_admin.html';
         this.response.body = {
-            activities, pendingCount, page, tpcount, udict, reqDict, logType: type,
+            activities, pendingCount, page, tpcount, udict, reqDict, logType: visibleType,
             meowPendingCount: await oi33Model.meowListPending().then((l) => l.length),
             modPendingCount: await oi33Model.modListPending().then((l) => l.length),
-            adminFlag,
             canPrivAll: this.user.hasPriv(PRIV.PRIV_ALL),
         };
     }

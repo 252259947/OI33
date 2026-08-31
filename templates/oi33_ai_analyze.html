@@ -80,7 +80,7 @@
             <button id="ai33-analyze-btn" class="rounded primary button"{% if not directAnalysisEnabled %} disabled{% endif %}>开始分析</button>
             <a class="rounded button" href="https://chat.deepseek.com/" target="_blank" rel="noopener noreferrer">打开 deepseek</a>
             {% if isTeacher %}
-            <a class="rounded button" href="/oi33/ai/summary?domainId={{ domainId }}&pid={{ pid }}">{{ _('AI Problem Summary') }}</a>
+            <a class="rounded button" href="/oi33/ai/summary?pid={{ pid }}">{{ _('AI Problem Summary') }}</a>
             {% endif %}
           </div>
           <p class="ai33-balance-line">{{ _('Balance') }}:

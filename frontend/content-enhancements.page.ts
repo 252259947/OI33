@@ -77,7 +77,6 @@ function mountContentToc() {
 function mountAiSummaryTag() {
     const parseGlobal = (v: any) => (typeof v === 'string' ? JSON.parse(v) : v) || {};
     const user = parseGlobal((window as any).UserContext);
-    const ui = parseGlobal((window as any).UiContext);
     if ((Number(user.realname_flag) || 0) < 2) return;
     const m = /\/p\/([\w-]+)(?:[/?#]|$)/.exec(window.location.pathname);
     if (!m) return;
@@ -89,7 +88,7 @@ function mountAiSummaryTag() {
     li.className = 'menu__item oi33-ai-summary-item';
     const a = document.createElement('a');
     a.className = 'menu__link';
-    a.href = `/oi33/ai/summary?domainId=${encodeURIComponent(ui.domainId || 'system')}&pid=${m[1]}`;
+    a.href = `/oi33/ai/summary?pid=${m[1]}`;
     const icon = document.createElement('span');
     icon.className = 'icon icon-book';
     a.append(icon, ' AI 精简题意');

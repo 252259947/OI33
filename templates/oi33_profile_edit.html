@@ -14,7 +14,7 @@
 {% endmacro %}
 {% macro locked_notice() %}
   <blockquote class="note typo">
-    <p>该信息已设置，不可自行更改；如需修改请发邮件至 <a href="mailto:{{ lockEmail }}">{{ lockEmail }}</a> 说明情况。</p>
+    <p>该信息已设置，不可自行更改；如需修改请联系管理员说明情况。</p>
   </blockquote>
 {% endmacro %}
 {% macro unverified_notice() %}
@@ -29,7 +29,7 @@
     <div class="section">
       <div class="section__header">
         <h1 class="section__title" data-heading>
-          {{ _('OI33 Profile Settings') }} —
+          {{ _('huaji OJ Profile Settings') }} —
           {% if udoc.oi33_profile_hidden %}UID {{ udoc._id }}{% else %}{% if (handler.user.realname_flag or 0) >= 2 and udoc.realname_name %}[{{ udoc.realname_name }}]{% endif %}{{ udoc.uname }}{% endif %}
         </h1>
         <div class="section__tools">

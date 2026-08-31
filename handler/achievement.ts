@@ -70,7 +70,6 @@ class AchievementManageHandler extends Handler {
             oi33Model.achievementList(),
             oi33Model.achievementListRecentAwards(),
         ]);
-        const acceptedDomains = oi33Model.achievementGetAcceptedDomains();
         const editing = edit ? await oi33Model.achievementGet(edit) : null;
         if (edit && !editing) throw new NotFoundError(edit);
         const uids = [...new Set([
@@ -85,7 +84,6 @@ class AchievementManageHandler extends Handler {
         this.response.body = {
             achievements, achievementDict, recentAwards, udict, editing,
             targetUid: targetUid || '', ruleOptions: RULE_OPTIONS,
-            acceptedDomainsText: acceptedDomains.join('\n'),
         };
     }
 }
@@ -93,13 +91,7 @@ class AchievementManageHandler extends Handler {
 class AchievementConfigHandler extends Handler {
     async post() {
         await checkOi33Admin(this.user._id);
-        const raw = field(this.request.body as any, 'acceptedDomains');
-        const domains = [...new Set(raw.split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean))];
-        if (domains.length > 100) throw new ValidationError('参与统计的域不能超过 100 个。');
-        if (domains.some((domain) => domain.length > 64)) {
-            throw new ValidationError('domainId 长度不能超过 64 个字符。');
-        }
-        await oi33Model.achievementSetAcceptedDomains(domains, this.user._id);
+        await oi33Model.achievementSetAcceptedDomains(['system'], this.user._id);
         this.response.redirect = this.url('oi33_achievement_manage', {
             query: { notification: '成就全局配置已保存' },
         });

@@ -45,7 +45,6 @@
           <div id="ai33-error" class="ai33-text-error" style="display:none;margin-top:0.5rem;"></div>
           <form method="post" style="margin-top:1rem;" id="ai-summary-form"
                 onsubmit="this.querySelectorAll('button').forEach(function(b){b.disabled=true});">
-            <input type="hidden" name="domainId" value="{{ domainId }}">
             <input type="hidden" name="pid" value="{{ pid }}">
             <input type="hidden" name="action" id="ai-summary-action" value="">
             <button type="submit" onclick="document.getElementById('ai-summary-action').value='regenerate';" class="rounded primary button">{% if summary %}{{ _('Regenerate with {0}').format(summaryModel) }}{% else %}{{ _('Generate with {0}').format(summaryModel) }}{% endif %}</button>

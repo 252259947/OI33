@@ -44,11 +44,11 @@
     <meta property="og:description" content="{{ renderredContent|problemPreview|truncate(100, true) }}" />
   {% endblock %}
 {% endif %}
-<div class="row" data-sticky-parent>
-  <div class="medium-9 columns">
-    <div class="section">
-      <div class="section__header">
-        <h1 class="section__title">
+<div class="row oi33-problem-workbench" data-sticky-parent data-oi33-problem-workbench>
+  <div class="medium-9 columns oi33-problem-workbench__main">
+    <div class="section oi33-problem-hero">
+      <div class="section__header oi33-problem-hero__header{% if tdoc and tdoc.pids|length <= 26 and tdoc.pids|length > 1 %} oi33-problem-hero__header--with-contest-nav{% endif %}">
+        <h1 class="section__title oi33-problem-hero__title">
           {% if rdoc %}
             <a href="{{ url('record_detail', {rid:rdoc._id}) }}">
               <span class="icon record-status--icon {{ model.builtin.STATUS_CODES[rdoc['status']] }}"></span>
@@ -56,7 +56,7 @@
             </a>
           {% endif %}
           {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) and not tdoc %}
-            <form class="form--inline" action="" method="post">
+            <form class="form--inline oi33-problem-hero__star" action="" method="post">
               <input type="hidden" name="star" value="{{ 'true' if not psdoc.star else 'false' }}">
               <input type="hidden" name="operation" value="star">
               <button class="star{% if psdoc.star %} activated{% endif %}" type="submit">
@@ -75,7 +75,7 @@
           {%- endif -%}. {% endif %}{{ pdoc.title }}
         </h1>
         {% if tdoc and tdoc.pids|length <= 26 and tdoc.pids|length > 1 %}
-          <div class="section__tools contest-problems">
+          <div class="section__tools contest-problems oi33-problem-hero__contest-nav">
             {% for pid in tdoc.pids -%}
               {% set status = tsdoc.detail[pid].status %}
               {% set pass = status == STATUS.STATUS_ACCEPTED %}
@@ -90,36 +90,36 @@
           </div>
         {% endif %}
       </div>
-      <div class="section__body">
-        <ul class="problem__tags">
+      <div class="section__body oi33-problem-hero__meta-body">
+        <ul class="problem__tags oi33-problem-meta">
           {% if not tdoc %}
-            <span class="problem__tag-item">{{ _('ID') }}: {{ pdoc.docId }}</span>
+            <span class="problem__tag-item oi33-problem-meta__item oi33-problem-meta__item--secondary">{{ _('ID') }}: {{ pdoc.docId }}</span>
           {% endif %}
-          <span class="problem__tag-item icon icon-book">{{ _('problem_type.' + pdoc.config.type).format(pdoc.config.subType) }}</span>
+          <span class="problem__tag-item icon icon-book oi33-problem-meta__item oi33-problem-meta__item--primary">{{ _('problem_type.' + pdoc.config.type).format(pdoc.config.subType) }}</span>
           {% if pdoc.config.type == 'default' and pdoc.config.subType %}
-            <span class="problem__tag-item icon icon-book">{{ _('File IO: {0}').format(pdoc.config.subType) }}</span>
+            <span class="problem__tag-item icon icon-book oi33-problem-meta__item oi33-problem-meta__item--primary">{{ _('File IO: {0}').format(pdoc.config.subType) }}</span>
           {% endif %}
           {% if pdoc.config.type != 'objective' and pdoc.config.type != 'submit_answer' %}
-            <span class="problem__tag-item icon icon-stopwatch">{{ pdoc.config.timeMax if pdoc.config.timeMax == pdoc.config.timeMin else pdoc.config.timeMin+'~'+pdoc.config.timeMax }}ms</span>
-            <span class="problem__tag-item icon icon-comparison">{{ pdoc.config.memoryMax if pdoc.config.memoryMax == pdoc.config.memoryMin else pdoc.config.memoryMin+'~'+pdoc.config.memoryMax }}MiB</span>
+            <span class="problem__tag-item icon icon-stopwatch oi33-problem-meta__item oi33-problem-meta__item--primary">{{ pdoc.config.timeMax if pdoc.config.timeMax == pdoc.config.timeMin else pdoc.config.timeMin+'~'+pdoc.config.timeMax }}ms</span>
+            <span class="problem__tag-item icon icon-comparison oi33-problem-meta__item oi33-problem-meta__item--primary">{{ pdoc.config.memoryMax if pdoc.config.memoryMax == pdoc.config.memoryMin else pdoc.config.memoryMin+'~'+pdoc.config.memoryMax }}MiB</span>
           {% endif %}
           {% if not tdoc %}
-            <a class="problem__tag-item interactive" href="{{ url('record_main', query={pid:pdoc.docId}) }}">{{ _('Tried') }}: {{ pdoc.nSubmit }}</a>
-            <a class="problem__tag-item interactive" href="{{ url('record_main', query={pid:pdoc.docId, status:1}) }}">{{ _('Accepted') }}: {{ pdoc.nAccept if ((not tdoc) or showAccept) else '?' }}</a>
+            <a class="problem__tag-item interactive oi33-problem-meta__item oi33-problem-meta__item--secondary" href="{{ url('record_main', query={pid:pdoc.docId}) }}">{{ _('Tried') }}: {{ pdoc.nSubmit }}</a>
+            <a class="problem__tag-item interactive oi33-problem-meta__item oi33-problem-meta__item--secondary" href="{{ url('record_main', query={pid:pdoc.docId, status:1}) }}">{{ _('Accepted') }}: {{ pdoc.nAccept if ((not tdoc) or showAccept) else '?' }}</a>
             {{ oi33diff.renderMasked(pdoc['difficulty'], 'tag') }}
-            <span class="problem__tag-item interactive">{{ _('Uploaded By') }}: {{ user.render_inline(udoc, badge=false) }}</span>
+            <span class="problem__tag-item interactive oi33-problem-meta__item oi33-problem-meta__item--secondary">{{ _('Uploaded By') }}: {{ user.render_inline(udoc, badge=false) }}</span>
           {% endif %}
           {% if pdoc.tag.length %}
-            <span name="show_tags" class="problem__tag-item interactive nojs--hide icon icon-tag">{{ _('Tags') + '>' }}</span>
+            <span name="show_tags" class="problem__tag-item interactive nojs--hide icon icon-tag oi33-problem-meta__item oi33-problem-meta__item--secondary">{{ _('Tags') + '>' }}</span>
             {%- for tag in pdoc.tag -%}
-              <span class="problem__tag-item tags hasjs--hide">{{ tag }}</span>
+              <span class="problem__tag-item tags hasjs--hide oi33-problem-meta__item oi33-problem-meta__item--secondary">{{ tag }}</span>
             {%- endfor -%}
           {% endif %}
         </ul>
       </div>
     </div>
-    <div class="section">
-      <div class="problem-content-container"><div class="problem-content" data-marker-enabled>
+    <div class="section oi33-problem-statement">
+      <div class="problem-content-container oi33-problem-statement__container"><div class="problem-content oi33-problem-statement__content" data-marker-enabled>
         <div class="section__header non-scratchpad--hide">
           <h1 class="section__title">{{ pdoc.title }}</h1>
         </div>
@@ -140,7 +140,7 @@
       </div></div>
     </div>
   </div>
-  <div class="medium-3 columns"><div data-sticky="large">
+  <div class="medium-3 columns oi33-problem-workbench__rail"><div class="oi33-problem-workbench__rail-sticky" data-sticky="large">
     {% include "partials/problem_sidebar.html" %}
   </div></div>
 </div>

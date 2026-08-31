@@ -1,0 +1,29 @@
+{% extends "layout/immersive.html" %}
+{% block content %}
+<div class="row"><div class="columns">
+  <section class="oi33-auth" aria-labelledby="oi33-register-title">
+    <div class="oi33-auth__intro">
+      <a class="oi33-auth__brand" href="/">
+        <span class="oi33-brand__mark" aria-hidden="true">HJ</span>
+        <span>huaji OJ</span>
+      </a>
+      <h1>从第一道题<br>开始积累</h1>
+      <p>创建账号后，你的提交记录、训练进度和比赛成绩都会被保存。</p>
+    </div>
+    <div class="oi33-auth__form">
+      <h2 id="oi33-register-title">创建账号</h2>
+      <p class="oi33-auth__lead">先填写邮箱，我们会发送账号验证邮件。</p>
+      <form method="POST" captcha>
+        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
+        <label class="oi33-field">
+          {{ _('Email') }}
+          <input name="mail" type="email" autofocus autocomplete="email" required>
+        </label>
+        <div class="oi33-auth__captcha">{{ captcha|safe }}</div>
+        <input id="submit" type="submit" value="{{ _('Send Verification Email') }}" class="oi33-auth__submit">
+        <a href="{{ url('user_login') }}" class="oi33-auth__secondary">已有账号？{{ _('Login') }}</a>
+      </form>
+    </div>
+  </section>
+</div></div>
+{% endblock %}

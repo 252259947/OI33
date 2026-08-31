@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">huaji OJ</title>
+  <desc id="description">Practice, submit and improve.</desc>
+  <defs>
+    <linearGradient id="background" x1="80" y1="40" x2="1120" y2="590" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#34358f"/>
+      <stop offset=".55" stop-color="#5b5ce2"/>
+      <stop offset="1" stop-color="#3974cf"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="160" y2="160" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7d7ff7"/>
+      <stop offset="1" stop-color="#4546c7"/>
+    </linearGradient>
+    <pattern id="grid" width="56" height="56" patternUnits="userSpaceOnUse">
+      <path d="M56 0H0V56" fill="none" stroke="#fff" stroke-opacity=".06"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" rx="36" fill="url(#background)"/>
+  <rect width="1200" height="630" rx="36" fill="url(#grid)"/>
+  <circle cx="1080" cy="70" r="250" fill="#fff" opacity=".05"/>
+  <circle cx="1050" cy="610" r="330" fill="#172d77" opacity=".14"/>
+  <g transform="translate(92 111)">
+    <rect width="160" height="160" rx="40" fill="url(#mark)" stroke="#fff" stroke-opacity=".24" stroke-width="2"/>
+    <path d="M31 42H46V73H68V42H83V118H68V87H46V118H31Z" fill="#fff"/>
+    <path d="M88 42H127V56H113V93C113 111 104 121 88 121C76 121 68 115 64 105L77 99C80 106 83 108 89 108C96 108 99 104 99 93V56H88Z" fill="#fff"/>
+  </g>
+  <text x="294" y="193" fill="#dfe3ff" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="7">ONLINE JUDGE</text>
+  <text x="294" y="286" fill="#fff" font-family="Segoe UI, Arial, sans-serif" font-size="82" font-weight="800">huaji OJ</text>
+  <text x="98" y="416" fill="#fff" font-family="Segoe UI, Arial, sans-serif" font-size="38" font-weight="650">Practice. Submit. Improve.</text>
+  <text x="100" y="477" fill="#e6e9ff" font-family="Segoe UI, Arial, sans-serif" font-size="25">A focused workspace for every algorithm learner.</text>
+  <rect x="98" y="530" width="126" height="7" rx="3.5" fill="#70e0b3"/>
+</svg>

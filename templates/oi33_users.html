@@ -8,7 +8,7 @@
   <div class="medium-12 columns">
     <div class="section">
       <div class="section__header">
-        <h1 class="section__title">{{ _('OI33 All Users') }}</h1>
+        <h1 class="section__title">{{ _('huaji OJ All Users') }}</h1>
         <div class="section__tools">
           <a href="/oi33/users" class="rounded button{% if flag is undefined %} primary{% endif %}">{{ _('All') }}</a>
           <a href="/oi33/users?flag=0" class="rounded button{% if flag == 0 %} primary{% endif %}">{{ _('Unverified') }}</a>
@@ -64,8 +64,7 @@
               </td>
               <td class="col--name">{{ udoc.realname_name or '-' }}</td>
               <td class="col--actions">
-                <a href="/oi33/profile/edit/{{ udoc._id }}">{{ _('Edit') }}</a> ·
-                <a href="{{ url('oi33_cat_account', uid=udoc._id) }}">账户</a>
+                <a href="/oi33/profile/edit/{{ udoc._id }}">{{ _('Edit') }}</a>
               </td>
             </tr>
             {%- endfor -%}

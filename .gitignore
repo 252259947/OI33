@@ -1,12 +1,33 @@
 node_modules/
 dist/
 .env
+.env.*
+!.env.example
 *.log
 .DS_Store
 .opencode/
 Thumbs.db
 package-lock.json
 yarn.lock
+
+# Local Hydro/runtime configuration
+.hydro/
+judge.yaml
+
+# Credentials and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Database exports and backups (may contain users and API keys)
+*.archive.gz
+*.backup
+*.bson
+*.db
+dump/
+backups/
+hydro-backups/
 
 # Python
 __pycache__/

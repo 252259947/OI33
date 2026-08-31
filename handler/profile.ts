@@ -6,8 +6,7 @@ import { oi33Model, Oi33RequestPayload, Oi33RequestKind } from '../model';
 
 const COLOR_RE = /(^#?[0-9A-Fa-f]{6}$)|(^#?[0-9A-Fa-f]{3}$)/;
 const KINDS: Oi33RequestKind[] = ['birthday', 'realname', 'badge', 'atcoder', 'codeforces'];
-const LOCK_EMAIL = 'daijianshan@33dai.cn';
-const LOCK_MESSAGE = `该信息已设置，不可自行更改；如需修改请发邮件至 ${LOCK_EMAIL} 说明情况。`;
+const LOCK_MESSAGE = '该信息已设置，不可自行更改；如需修改请联系管理员说明情况。';
 
 // 已设置的字段不允许普通用户自行更改（管理员直接编辑不受限）。
 function lockedKinds(oi33Doc: any): Record<Oi33RequestKind, boolean> {
@@ -96,7 +95,6 @@ class ProfileEditHandler extends Handler {
             canEditRealname,
             maxRealnameFlag,
             lockedMap: canDirect ? {} : lockedKinds(oi33Doc),
-            lockEmail: LOCK_EMAIL,
         };
     }
 

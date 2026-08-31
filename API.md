@@ -1,6 +1,6 @@
 # OI33 / Hydro API Reference for MCP / Agent
 
-本文档供 MCP Server 开发者、AI Agent 集成者参考，说明如何通过 **Bearer Token** 程序化访问 33OJ 的全部数据。
+本文档供 MCP Server 开发者、AI Agent 集成者参考，说明如何通过 **Bearer Token** 程序化访问 huaji OJ 的全部数据。
 
 > **只读保证**：Token 认证的用户只能执行 `GET` / `HEAD` / `OPTIONS` 请求。任何 `POST` / `PUT` / `DELETE` / `PATCH` 请求均会在 `handler/create` 阶段被拦截，抛出 `Read-only token cannot perform write operations` 错误。Token 不会、也无法修改任何数据。
 
@@ -253,7 +253,7 @@ init → handler/create → [TOKEN CHECK: 注入 token 用户 + 方法/白名单
      → handler/before → get()/post() → after → finish
 ```
 
-> 早期版本在 `handler/before` 才注入 token 用户，导致请求先以游客身份撞上 `PERM_VIEW` 闸门——在游客无查看权限的域里会被直接重定向到登录页。现已修复为 `handler/create` 注入。
+> Token 用户会在 `handler/create` 阶段注入，确保只读接口在执行权限检查前就能识别调用者。
 
 ### 4.2 第一层：HTTP 方法限制
 
@@ -337,7 +337,7 @@ if (!READONLY_ROUTE_PATTERNS.some((re) => re.test(h.request.path))) {
 | `200 OK` + JSON | 请求成功，`?noTemplate=1` 生效 |
 | `200 OK` + HTML | 请求成功，但返回了 HTML 页面（未加 `?noTemplate=1`） |
 | `404` / `NotFoundError` | 路径不是有效路由（如把题目列表误写成 `/problem`，正确为 `/p`）。能收到 404 说明 Token 验证和白名单均已通过 |
-| `500` / `Error: Invalid or expired token` | Token 无效、过期或域名不匹配 |
+| `500` / `Error: Invalid or expired token` | Token 无效、过期或不适用于本站数据范围 |
 | `500` / `Error: Read-only token cannot perform write operations` | 尝试用 Token 执行 POST/PUT/DELETE/PATCH |
 | `500` / `Error: This route is not available via token` | 请求的 URL 不在 Token 白名单中 |
 | `500` / `Serialize failure` | JSON 序列化失败（通常数据量过大） |

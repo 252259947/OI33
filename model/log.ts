@@ -51,8 +51,15 @@ export async function getRecentActivities(limit = 40) {
     return await logColl.find().sort({ createdAt: -1, _id: -1 }).limit(limit).toArray();
 }
 
-export async function getRecentActivitiesPaginated(page: number, pageSize = 30, type = '') {
-    const filter: any = type ? { type } : {};
+export async function getRecentActivitiesPaginated(
+    page: number,
+    pageSize = 30,
+    type = '',
+    excludedTypes: string[] = [],
+) {
+    const filter: any = type
+        ? { type }
+        : excludedTypes.length ? { type: { $nin: excludedTypes } } : {};
     // 喵喵 posts that are still pending review are not surfaced — only
     // approved/rejected outcomes (plus follow/unfollow/approve/reject) appear.
     filter.$or = [

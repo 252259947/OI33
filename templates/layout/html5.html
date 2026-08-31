@@ -6,7 +6,7 @@
 {% import "components/user.html" as user with context %}
 <!DOCTYPE html>
 {% set theme = (handler.user|default({})).theme|default('default') %}
-<html data-page="{{ page_name }}" data-layout="{{ layout_name }}" class="layout--{{ layout_name }} page--{{ page_name }} theme--{{ theme }} nojs" data-mantine-color-scheme="{{ 'dark' if theme.includes('dark') else 'light' }}" lang="{{ UserContext.viewLang }}" data-app="Hydro">
+<html data-page="{{ page_name }}" data-layout="{{ layout_name }}" class="layout--{{ layout_name }} page--{{ page_name }} theme--{{ theme }} nojs oi33-booting" data-mantine-color-scheme="{{ 'dark' if theme.includes('dark') else 'light' }}" lang="{{ UserContext.viewLang }}" data-app="Hydro">
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
@@ -19,11 +19,11 @@
   <link rel="icon" type="image/png" href="{{ UiContext.cdn_prefix }}favicon-96x96.png" sizes="96x96">
   <link rel="icon" type="image/png" href="{{ UiContext.cdn_prefix }}favicon-16x16.png" sizes="16x16">
   {% if handler.context.request.url %}<link rel="canonical" href="{{ model.system.get('server.url') }}{{ handler.context.request.url.substring(1) }}">{% endif %}
-  <meta name="theme-color" content="{% if theme == 'dark' %}#121212{% else %}#56758f{% endif %}">
+  <meta name="theme-color" content="{% if theme == 'dark' %}#191f30{% else %}#5b5ce2{% endif %}">
   {% block ogp_site %}
-  <meta property="og:site_name" content="{{ (handler.domain|default({ui:[]})).ui.name|default(model.system.get('server.name')) }}" />
+  <meta property="og:site_name" content="{{ model.system.get('server.name') }}" />
   <meta property="og:url" content="{{ model.system.get('server.url') }}{{ handler.request.path.slice(1) }}" />
-  <meta property="og:image" content="{{ UiContext.cdn_prefix }}favicon-96x96.png" />
+  <meta property="og:image" content="{{ UiContext.cdn_prefix }}huaji-og.png" />
   {% endblock %}
   {% block ogp %}
   <meta property="og:title" content="{{ handler.renderTitle(page_name) }}" />
@@ -41,6 +41,69 @@
     :root { --code-bg: #f5f5f5; }
     :root.theme--dark, :root[data-mantine-color-scheme=dark] { --code-bg: #252525; }
 
+    #oi33-boot-screen { display: none; }
+
+    html.hasjs.oi33-booting { overflow: hidden; }
+
+    html.hasjs.oi33-booting #oi33-boot-screen {
+      position: fixed;
+      z-index: 2147483646;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: #f5f7fb;
+      opacity: 1;
+      transition: opacity 160ms ease-out;
+    }
+
+    html.hasjs.oi33-booting #oi33-boot-screen::before {
+      content: "HJ";
+      display: grid;
+      width: 52px;
+      height: 52px;
+      place-items: center;
+      border-radius: 15px;
+      background: #5b5ce2;
+      box-shadow: 0 14px 36px rgba(91, 92, 226, .24);
+      font: 800 17px/1 "Segoe UI", "PingFang SC", sans-serif;
+      letter-spacing: -.04em;
+    }
+
+    html.hasjs.oi33-booting #oi33-boot-screen::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 66px;
+      height: 66px;
+      margin: -35px 0 0 -35px;
+      border: 2px solid rgba(91, 92, 226, .14);
+      border-top-color: #5b5ce2;
+      border-radius: 50%;
+      animation: oi33-boot-spin .8s linear infinite;
+    }
+
+    html.hasjs.oi33-booting.oi33-revealing #oi33-boot-screen { opacity: 0; }
+
+    html.theme--dark.hasjs.oi33-booting #oi33-boot-screen,
+    html[data-mantine-color-scheme=dark].hasjs.oi33-booting #oi33-boot-screen {
+      background: #111520;
+    }
+
+    html.theme--dark.hasjs.oi33-booting #oi33-boot-screen::before,
+    html[data-mantine-color-scheme=dark].hasjs.oi33-booting #oi33-boot-screen::before {
+      color: #111520;
+      background: #8c8df4;
+    }
+
+    @keyframes oi33-boot-spin { to { transform: rotate(360deg); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      html.hasjs.oi33-booting #oi33-boot-screen { transition: none; }
+      html.hasjs.oi33-booting #oi33-boot-screen::after { animation: none; }
+    }
+
     {% if not isIE(handler.request.headers['user-agent']) and not handler.session.legacy %}
       #panel { display: flex; flex-direction: column; }
     {% endif %}
@@ -55,6 +118,24 @@
     <script>
       var _htmlNode = document.documentElement;
       _htmlNode.className = _htmlNode.className.replace(' nojs', ' hasjs');
+      _htmlNode.setAttribute('aria-busy', 'true');
+      window.__oi33RevealUI = function () {
+        if (!_htmlNode.classList.contains('oi33-booting') || _htmlNode.classList.contains('oi33-revealing')) return;
+        window.clearTimeout(window.__oi33RevealTimer);
+        var _bootScreen = document.getElementById('oi33-boot-screen');
+        var _finishReveal = function () {
+          _htmlNode.classList.remove('oi33-booting', 'oi33-revealing');
+          _htmlNode.removeAttribute('aria-busy');
+          if (_bootScreen) _bootScreen.remove();
+        };
+        if (!_bootScreen || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          _finishReveal();
+          return;
+        }
+        _htmlNode.classList.add('oi33-revealing');
+        window.setTimeout(_finishReveal, 170);
+      };
+      window.__oi33RevealTimer = window.setTimeout(window.__oi33RevealUI, 2500);
       window.UiContext = '{{ UiContext|json|jsesc|safe }}';
       window.UserContext = '{{ UserContext|json|jsesc|safe }}';
     </script>
@@ -63,6 +144,7 @@
   {% set UserContext = Object.create(UserContext) %}
 </head>
 <body>
+  <div id="oi33-boot-screen" aria-hidden="true"></div>
   {% if not isIE(handler.request.headers['user-agent']) and not handler.session.legacy %}
     <script type="text/javascript" src="{{ UiContext.cdn_prefix if UiContext.cdn_dynamic else '/' }}resource/{{ UiContext.constantVersion }}/entry.js"></script>
     <script type="text/javascript" src="{{ UiContext.cdn_prefix }}resource/{{ global.Hydro.version['ui-default'] }}/lang-{{ _('__id') }}.js"></script>

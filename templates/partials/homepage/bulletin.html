@@ -1,0 +1,10 @@
+{% if domain.bulletin and not domain.bulletin.includes('Welcome to Hydro') %}
+  <div class="section oi33-home__bulletin">
+    <div class="section__header">
+      <h1 class="section__title">站点公告</h1>
+    </div>
+    <div class="section__body typo richmedia">
+      {{ domain.bulletin|markdown|safe }}
+    </div>
+  </div>
+{% endif %}

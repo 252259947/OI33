@@ -1,68 +1,97 @@
 {% extends "layout/basic.html" %}
 {% import "partials/oi33_contest_table.html" as oi33contest with context %}
-{# OI33: replace core's tall "important contest" cards and the date-box list with
-   one unified compact table (two rows x three columns per contest, see
-   partials/oi33_contest_table.html); ended contests included, status shown via
-   the leading icon. #}
 {% block content %}
 <div class="row">
-  <div class="medium-9 columns">
-    <div class="section">
-      <div class="section__header">
-        <h1 class="section__title">{{ _('All Contests') if not rule else _('All {0} Contests').format(_(model.contest.RULES[rule].TEXT)) }}</h1>
-        <div class="section__tools">
-          <form method="get" name="filter-form">
-            <input type="text" class="inline compact textbox" name="q" value="{{ q }}" placeholder="{{ _('Search contests...') }}">
-            <select class="inline compact select" name="group">
-              <option value=""{% if not group %} selected{% endif %}>{{ _('All') }}</option>
-              {%- for g in groups -%}
-                <option value="{{ g }}"{% if group == g %} selected{% endif %}>{{ g }}</option>
-              {%- endfor -%}
-              {%- if not groups|length -%}
-                <option disabled>{{ _('No group available') }}</option>
-              {%- endif -%}
-            </select>
-            <select class="inline compact select" name="rule">
+  <div class="columns">
+    <header class="oi33-contest-head">
+      <div>
+        <p class="oi33-contest-head__eyebrow">CONTESTS</p>
+        <h1>{{ _('All Contests') if not rule else _('All {0} Contests').format(_(model.contest.RULES[rule].TEXT)) }}</h1>
+        <p>查看比赛时间与参赛状态，及时报名并回到正在进行的比赛。</p>
+      </div>
+      {% if handler.user.hasPerm(perm.PERM_CREATE_CONTEST) %}
+        <a href="{{ url('contest_create') }}" class="primary button oi33-contest-head__action"><span class="icon icon-add" aria-hidden="true"></span> {{ _('Create Contest') }}</a>
+      {% endif %}
+    </header>
+
+    <div class="oi33-contest-catalog">
+      <section class="oi33-contest-toolbar" aria-label="比赛筛选">
+        <div class="oi33-contest-toolbar__copy">
+          <span class="oi33-contest-toolbar__icon icon icon-award" aria-hidden="true"></span>
+          <span>
+            <strong>查找比赛</strong>
+            <small>{% if groups|length %}按名称、分组或赛制筛选{% else %}按名称或赛制筛选{% endif %}</small>
+          </span>
+        </div>
+        <form method="get" name="filter-form" class="oi33-contest-filters filter-form{% if not groups|length %} is-without-groups{% endif %}" role="search">
+          <label class="oi33-contest-filter oi33-contest-filter--query" for="oi33-contest-query">
+            <span class="oi33-visually-hidden">关键词</span>
+            <span class="icon icon-search" aria-hidden="true"></span>
+            <input id="oi33-contest-query" type="search" class="textbox" name="q" value="{{ q }}" placeholder="{{ _('Search contests...') }}">
+          </label>
+          {% if groups|length %}
+            <label class="oi33-contest-filter" for="oi33-contest-group">
+              <span>分组</span>
+              <select id="oi33-contest-group" class="select" name="group">
+                <option value=""{% if not group %} selected{% endif %}>{{ _('All') }}</option>
+                {%- for g in groups -%}<option value="{{ g }}"{% if group == g %} selected{% endif %}>{{ g }}</option>{%- endfor -%}
+              </select>
+            </label>
+          {% endif %}
+          <label class="oi33-contest-filter" for="oi33-contest-rule">
+            <span>赛制</span>
+            <select id="oi33-contest-rule" class="select" name="rule">
               <option value=""{% if not rule %} selected{% endif %}>{{ _('All') }}</option>
               {%- for k, v in model.contest.RULES -%}
-                {% if not v.hidden %}
-                  <option value="{{ k }}"{% if rule == k %} selected{% endif %}>{{ _('All {0} Contests').format(v.TEXT) }}</option>
-                {% endif %}
+                {% if not v.hidden %}<option value="{{ k }}"{% if rule == k %} selected{% endif %}>{{ _(v.TEXT) }}</option>{% endif %}
               {%- endfor -%}
             </select>
-            <button type="submit" class="button hasjs--hide">
-              {{ _('Search') }}
-            </button>
-          </form>
-        </div>
-      </div>
-      <div class="section__body no-padding oi33-contest-table__wrap">
-      {% if not tdocs.length %}
-        {{ nothing.render('There are no contests...') }}
-      {% else %}
-        <table class="oi33-contest-table">
-        {%- for tdoc in tdocs -%}
-          {{ oi33contest.render_compact_contest(tdoc) }}
-        {%- endfor -%}
-        </table>
-        {{ paginator.render(page, tpcount, add_qs=qs) }}
-      {% endif %}
-      </div>
+          </label>
+          <div class="oi33-contest-filter__actions">
+            <button type="submit" class="primary button"><span class="icon icon-search" aria-hidden="true"></span> {{ _('Search') }}</button>
+            {% if q or group or rule %}<a href="{{ url('contest_main') }}" class="oi33-contest-filter__clear">清除筛选</a>{% endif %}
+          </div>
+        </form>
+      </section>
+
+      <section class="oi33-contest-list-panel" aria-labelledby="oi33-contest-list-title">
+        <header class="oi33-contest-list-panel__header">
+          <div>
+            <h2 id="oi33-contest-list-title">比赛列表</h2>
+            <p>开始时间、参赛状态与入口都集中在每张卡片中。</p>
+          </div>
+          {% if tdocs.length %}<span class="oi33-contest-list-panel__count">本页 {{ tdocs.length }} 场</span>{% endif %}
+        </header>
+        {% if not tdocs.length %}
+          <div class="oi33-learning-empty">
+            <span class="oi33-learning-empty__icon icon icon-award" aria-hidden="true"></span>
+            {% if q or group or rule %}
+              <h2>没有符合筛选条件的比赛</h2>
+              <p>调整关键词、分组或赛制，也可以清除筛选查看全部比赛。</p>
+              <a href="{{ url('contest_main') }}" class="primary button">清除筛选</a>
+            {% else %}
+              <h2>这里还没有公开比赛</h2>
+              {% if handler.user.hasPerm(perm.PERM_CREATE_CONTEST) %}
+                <p>创建第一场比赛，设置赛制和开放时间后即可邀请学生参加。</p>
+                <a href="{{ url('contest_create') }}" class="primary button">{{ _('Create Contest') }}</a>
+              {% else %}
+                <p>新比赛发布后会出现在这里。现在可以先完成一组训练。</p>
+                <a href="{{ url('training_main') }}" class="primary button">去训练</a>
+              {% endif %}
+            {% endif %}
+          </div>
+        {% else %}
+          <ol class="oi33-contest-list">
+            {%- for tdoc in tdocs -%}{{ oi33contest.render_contest_card(tdoc) }}{%- endfor -%}
+          </ol>
+          {% if tpcount > 1 %}
+            <nav class="oi33-contest-pagination" aria-label="比赛分页">
+              {{ paginator.render(page, tpcount, add_qs=qs) }}
+            </nav>
+          {% endif %}
+        {% endif %}
+      </section>
     </div>
-  </div>
-  <div class="medium-3 columns">
-  {% if handler.user.hasPerm(perm.PERM_CREATE_CONTEST) %}
-    <div class="section side">
-      <div class="section__header">
-        <h1 class="section__title">
-          {{ _('Create Contest') }}
-        </h1>
-      </div>
-      <div class="section__body">
-        <p><a href="{{ url('contest_create') }}" class="expanded primary button">{{ _('Create a contest') }}</a></p>
-      </div>
-    </div>
-  {% endif %}
   </div>
 </div>
 {% endblock %}

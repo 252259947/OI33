@@ -1,4 +1,9 @@
 {% extends "layout/basic.html" %}
+{% set isLoggedIn = handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+{% set canViewAllRecords = handler.user.hasPerm(perm.PERM_VIEW_RECORD) %}
+{% set canManageRecords = handler.user.hasPerm(perm.PERM_REJUDGE) %}
+{% set selfFilter = handler.user._id if handler.user.oi33_profile_hidden else handler.user.uname %}
+{% set isSelfView = isLoggedIn and (filterUidOrName == handler.user.uname or filterUidOrName == handler.user._id.toString()) %}
 {% block content %}
 {{ set(
   UiContext, 'socketUrl',
@@ -6,76 +11,92 @@
   + (("&tid=" + filterTid) if filterTid else "")
   + (("&uidOrName=" + filterUidOrName) if filterUidOrName else "")
   + (("&pid=" + filterPid) if filterPid else "")
+  + (("&lang=" + filterLang) if filterLang else "")
+  + (("&status=" + filterStatus) if typeof(filterStatus) == 'number' else "")
   + ("&all=1" if all else "")
-  + ("&allDomain=1" if allDomain else "")
 ) }}
 {{ set(UiContext, 'rids', rdocs.map(eval("rdoc=>rdoc._id.toString()"))) }}
-<div class="row">
+{{ set(UiContext, 'oi33RecordCsrfToken', handler.csrfToken) }}
+<div class="row oi33-records{% if isSelfView %} is-self-view{% else %} is-all-view{% endif %}">
   <div class="medium-12 columns">
-    <form method="get">
-      <div class="section">
-        <div class="section__header">
-          <h1 class="section__title">{{ _('Filter') }}</h1>
-          <div class="section__tools">
-            {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-            <a href="{{ url('record_main', query={uidOrName: handler.user._id if handler.user.oi33_profile_hidden else handler.user.uname}) }}" class="button{% if filterUidOrName == handler.user.uname or filterUidOrName == handler.user._id.toString() %} primary{% endif %}">{{ _('My Submissions') }}</a>
-            {% endif %}
-            <a href="{{ url('record_main') }}" class="button{% if filterUidOrName is undefined and not allDomain %} primary{% endif %}">{{ _('All Submissions') }}</a>
-            <a href="{{ url('record_main', query={allDomain: '1'}) }}" class="button{% if allDomain %} primary{% endif %}">{{ _('All Domain Submissions') }}</a>
-            <button type="submit" class="button"><span class="icon icon-filter"></span> {{ _('Filter By Conditions') }}</button>
-          </div>
-        </div>
-        <div class="section__body">
-          <div class="row">
-            <div class="medium-2 columns">
-              <label class="filter-user">
-                {{ _('By Username / UID') }}
-                <input name="uidOrName" type="text" class="textbox" value="{{ filterUidOrName }}" autocomplete="off" data-autofocus>
-              </label>
-            </div>
-            <div class="medium-2 columns">
-              <label>
-                {{ _('By Problem') }}
-                <input name="pid" type="text" class="textbox" value="{{ filterPid }}">
-              </label>
-            </div>
-            <div class="medium-2 columns">
-              <label>
-                {{ _('By Contest') }}
-                <input name="tid" type="text" class="textbox" value="{{ filterTid }}">
-              </label>
-            </div>
-            <div class="medium-3 columns">
-              <label>
-                {{ _('By Language') }}
-              </label>
-              <select class="compact select" name="lang">
-                <option value="">{{ _('All Languages') }}</option>
-              </select>
-            </div>
-            <div class="medium-3 columns">
-              <label>
-                {{ _('By Status') }}
-              </label>
-              <select class="compact select" name="status">
-                <option value="" {% if typeof(filterStatus) != 'number' %}selected{% else %}{% endif %}>{{ _('All Submissions') }}</option>
-                {%- for k,v in utils.status.STATUS_TEXTS -%}
-                <option value="{{k}}" {% if filterStatus == k %}selected{% else %}{% endif %}>{{v}}</option>
-                {%- endfor -%}
-              </select>
-            </div>
-          </div>
-        </div>
+    <header class="oi33-record-pagehead">
+      <div>
+        <span class="oi33-record-pagehead__eyebrow">SUBMISSIONS</span>
+        <h1>{% if isSelfView %}我的评测记录{% else %}评测记录{% endif %}</h1>
+        <p>{% if isSelfView %}回顾每次提交，评测结果会在这里实时更新。{% else %}查看当前范围内的提交与评测状态。{% endif %}</p>
       </div>
-    </form>
-    <div class="section">
+      <nav class="oi33-record-scope" aria-label="评测记录范围">
+        {% if isLoggedIn %}
+        <a href="{{ url('record_main', query={uidOrName: selfFilter}) }}" class="oi33-record-scope__item{% if isSelfView %} is-active{% endif %}"{% if isSelfView %} aria-current="page"{% endif %}>{{ _('My Submissions') }}</a>
+        {% endif %}
+        {% if canViewAllRecords %}
+        <a href="{{ url('record_main') }}" class="oi33-record-scope__item{% if not isSelfView %} is-active{% endif %}"{% if not isSelfView %} aria-current="page"{% endif %}>{{ _('All Submissions') }}</a>
+        {% endif %}
+      </nav>
+    </header>
+
+    <section class="section oi33-record-filter" aria-label="{{ _('Filter By Conditions') }}">
+      <form class="oi33-record-filter__content" method="get" action="{{ url('record_main') }}">
+        {% if isSelfView %}
+        <span class="oi33-record-self-filter" aria-hidden="true">
+          <input type="text" name="uidOrName" value="{{ selfFilter }}" tabindex="-1" readonly>
+        </span>
+        {% elif all %}
+        <input type="hidden" name="all" value="1">
+        {% endif %}
+        <div class="oi33-record-filter__grid">
+          {% if canViewAllRecords and not isSelfView %}
+          <label class="filter-user">
+            <span>{{ _('By Username / UID') }}</span>
+            <input name="uidOrName" type="text" class="textbox" value="{{ filterUidOrName }}" autocomplete="off">
+          </label>
+          {% endif %}
+          <label>
+            <span>{{ _('By Problem') }}</span>
+            <input name="pid" type="text" class="textbox" value="{{ filterPid }}" autocomplete="off">
+          </label>
+          <label>
+            <span>{{ _('By Contest') }}</span>
+            <input name="tid" type="text" class="textbox" value="{{ filterTid }}">
+          </label>
+          <label>
+            <span>{{ _('By Language') }}</span>
+            <select class="compact select" name="lang">
+              <option value="">{{ _('All Languages') }}</option>
+            </select>
+          </label>
+          <label>
+            <span>{{ _('By Status') }}</span>
+            <select class="compact select" name="status">
+              <option value="" {% if typeof(filterStatus) != 'number' %}selected{% endif %}>{{ _('All Submissions') }}</option>
+              {%- for k,v in utils.status.STATUS_TEXTS -%}
+              <option value="{{ k }}" {% if filterStatus == k %}selected{% endif %}>{{ _(v) }}</option>
+              {%- endfor -%}
+            </select>
+          </label>
+        </div>
+        <div class="oi33-record-filter__actions">
+          <button type="submit" class="primary button"><span class="icon icon-filter" aria-hidden="true"></span> 应用筛选</button>
+          {% if isSelfView %}
+          <a class="button" href="{{ url('record_main', query={uidOrName: selfFilter}) }}">{{ _('Reset') }}</a>
+          {% else %}
+          <a class="button" href="{{ url('record_main') }}">{{ _('Reset') }}</a>
+          {% endif %}
+        </div>
+      </form>
+    </section>
+
+    <section class="section oi33-record-list" aria-label="评测记录列表">
       <div class="section__body no-padding">
       {% if not rdocs.length %}
-        {% if not filterUidOrName and not filterPid and not filterTid %}
-        {{ nothing.render('Oh, there is no task in the queue!') }}
-        {% else %}
-        {{ nothing.render('Oh, there are no tasks that match the filter!') }}
-        {% endif %}
+        <div class="oi33-record-empty">
+          <span class="oi33-record-empty__icon icon icon-inbox" aria-hidden="true"></span>
+          <h2>{% if isSelfView and not filterPid and not filterTid and not filterLang and typeof(filterStatus) != 'number' %}还没有提交记录{% else %}没有找到符合条件的记录{% endif %}</h2>
+          <p>{% if isSelfView and not filterPid and not filterTid and not filterLang and typeof(filterStatus) != 'number' %}完成一次题目提交后，结果会出现在这里。{% else %}可以放宽筛选条件后再试一次。{% endif %}</p>
+          {% if isSelfView and not filterPid and not filterTid and not filterLang and typeof(filterStatus) != 'number' %}
+          <a class="primary button" href="{{ url('problem_main') }}">去题库练习</a>
+          {% endif %}
+        </div>
       {% else %}
         <table class="data-table record_main__table">
           <colgroup>
@@ -86,6 +107,7 @@
             <col class="col--memory">
             <col class="col--lang">
             <col class="col--submit-at">
+            {% if canManageRecords %}<col class="col--actions">{% endif %}
           </colgroup>
           <thead>
             <tr>
@@ -96,6 +118,7 @@
               <th class="col--memory">{{ _('Memory') }}</th>
               <th class="col--lang">{{ _('Language') }}</th>
               <th class="col--submit-at">{{ _('Submit At') }}</th>
+              {% if canManageRecords %}<th class="col--actions">操作</th>{% endif %}
             </tr>
           </thead>
           <tbody>
@@ -107,26 +130,25 @@
           </tbody>
         </table>
         {% if handler.user.hasPriv(PRIV.PRIV_VIEW_JUDGE_STATISTICS) or filterTid or filterPid or filterUidOrName %}
-        <ul class="pager">
+        <ul class="pager oi33-record-pager">
           <li>
             <a class="pager__item next link" href="?page={{ page + 1 }}{{
               (('&tid=' + filterTid) if filterTid else '')
               + (('&uidOrName=' + filterUidOrName) if filterUidOrName else '')
               + (('&lang=' + filterLang) if filterLang else '')
-              + (('&status=' + filterStatus) if filterStatus else '')
+              + (('&status=' + filterStatus) if typeof(filterStatus) == 'number' else '')
               + (('&pid=' + filterPid) if filterPid else '')
-              + ('&all=1' if all else '')
-              + ('&allDomain=1' if allDomain else '') }}">{{ _('pager_next') }}</a>
+              + ('&all=1' if all else '') }}">{{ _('pager_next') }}</a>
           </li>
         </ul>
         {% endif %}
       {% endif %}
       </div>
-    </div>
+    </section>
     {% if statistics %}
-    <div class="section">
+    <section class="section oi33-record-statistics">
       <div class="section__header">
-        <h1 class="section__title">{{ _('Statistics') }}</h1>
+        <h2 class="section__title">{{ _('Statistics') }}</h2>
       </div>
       <div class="section__body">
         <dl class="large horizontal">
@@ -139,7 +161,7 @@
           <dt>{{ _('Total') }}</dt><dd>{{ statistics['total'] }}</dd>
         </dl>
       </div>
-    </div>
+    </section>
     {% endif %}
   </div>
 </div>

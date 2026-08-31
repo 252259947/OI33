@@ -5,7 +5,6 @@
     {% if showAuthor %}
       {% if udict[p.uid] %}
         {{ user.render_inline(udict[p.uid]) }}
-        <span class="meow-balance">{ {{- model.oi33.formatCatFood(udict[p.uid].cat_food or 0) -}}, {{ udict[p.uid].cat_can or 0 -}}🥫}</span>
       {% else %}UID {{ p.uid }}{% endif %}
     {% endif %}
     <span class="meow-card__time">{{ datetimeSpan(p.createdAt)|safe }}</span>

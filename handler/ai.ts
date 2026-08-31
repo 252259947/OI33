@@ -663,11 +663,11 @@ class Ai33ModelsHandler extends Handler {
 // --- Problem summary (精简题意) view / edit / regenerate ---
 
 class Ai33SummaryHandler extends Handler {
-    @query('domainId', Types.String, true)
     @query('pid', Types.ProblemId, true)
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    async get(_d: any, domainId = 'system', pid?: number | string) {
+    async get(_d: any, pid?: number | string) {
         await checkOi33Admin(this.user._id);
+        const domainId = 'system';
         // Accept both numeric docId and display pid (e.g. P1000);
         // summaries are keyed by docId.
         const pdoc = pid
@@ -677,15 +677,15 @@ class Ai33SummaryHandler extends Handler {
         const cfg = await oi33Model.aiGetConfig();
         this.response.template = 'oi33_ai_summary.html';
         this.response.body = {
-            domainId, pid: pid ?? '', pdoc, summary, summaryModel: cfg.summary_model,
+            pid: pid ?? '', pdoc, summary, summaryModel: cfg.summary_model,
         };
     }
 
     @param('action', Types.String)
-    @param('domainId', Types.String, true)
     @param('pid', Types.ProblemId)
-    async post(_d: string, action: string, domainId = 'system', pid: number | string) {
+    async post(_d: string, action: string, pid: number | string) {
         await checkOi33Admin(this.user._id);
+        const domainId = 'system';
         const cfg = await oi33Model.aiGetConfig();
         if (action === 'regenerate') {
             const pdoc = await global.Hydro.model.problem.get(domainId, pid).catch(() => null);
@@ -707,7 +707,7 @@ class Ai33SummaryHandler extends Handler {
             if (!difficulty) throw new Error(`难度评判失败：${error || '请稍后再试。'}`);
             await applyAiDifficultyIfUnset(domainId, pdoc, difficulty);
         }
-        this.response.redirect = this.url('oi33_ai_summary', { query: { domainId, pid } });
+        this.response.redirect = this.url('oi33_ai_summary', { query: { pid } });
     }
 }
 
@@ -814,10 +814,10 @@ class Ai33SummaryBatchHandler extends Handler {
 
     @param('start', Types.String)
     @param('end', Types.String)
-    @param('domainId', Types.String, true)
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    async post(_d: any, start: string, end: string, domainId = 'system') {
+    async post(_d: any, start: string, end: string) {
         await checkOi33Admin(this.user._id);
+        const domainId = 'system';
         if (summaryBatchRunning) throw new ValidationError('批量生成正在进行中。');
         const startKey = parseSortKey(start);
         const endKey = parseSortKey(end);
@@ -1004,10 +1004,10 @@ class Ai33BalanceHandler extends Handler {
 const summaryStreamInFlight = new Set<string>();
 
 class Ai33SummaryStreamHandler extends ConnectionHandler {
-    @query('domainId', Types.String, true)
     @query('pid', Types.ProblemId)
     @query('action', Types.String)
-    async prepare(_d: string, domainId = 'system', pid: number | string, action: string) {
+    async prepare(_d: string, pid: number | string, action: string) {
+        const domainId = 'system';
         if ((await checkUserFlag(this.user._id)) < 2) {
             this.send({ error: 'Permission denied.' });
             this.close(4000, 'Forbidden');

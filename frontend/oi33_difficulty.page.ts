@@ -47,4 +47,11 @@ addPage(() => {
             if (real) real.style.display = shown ? 'inline-block' : 'none';
         }
     });
+    document.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        const target = ev.target as HTMLElement;
+        if (!target?.matches('.oi33-diff-mask, .oi33-diff-col-toggle')) return;
+        ev.preventDefault();
+        target.click();
+    });
 });

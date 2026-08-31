@@ -5,14 +5,14 @@
   <div class="medium-12 columns">
     <div class="section">
       <div class="section__header">
-        <h1 class="section__title">{{ _('OI33 Permissions') }}</h1>
+        <h1 class="section__title">{{ _('huaji OJ Permissions') }}</h1>
         <div class="section__tools">
           <a href="/oi33/admin" class="rounded button">{{ _('Back to Admin') }}</a>
         </div>
       </div>
       <div class="section__body no-padding">
         <p style="padding:0.5rem 1rem;margin:0;font-size:0.9rem;opacity:0.7;">
-          {{ _('realname_flag is the OI33 identity tag (0=Unverified, 1=Verified, 2=Teacher, 3=Admin). PRIV is the Hydro built-in privilege level.') }}
+          {{ _('realname_flag is the huaji OJ identity tag (0=Unverified, 1=Verified, 2=Teacher, 3=Admin). PRIV is the Hydro built-in privilege level.') }}
         </p>
         <table class="data-table">
           <colgroup>
@@ -174,47 +174,6 @@
               <td class="text-green">✓</td>
               <td class="text-green">✓</td>
               <td>flag ≥ 2</td>
-            </tr>
-            <tr>
-              <td>单人发放猫粮</td>
-              <td class="text-red">✗</td><td class="text-red">✗</td><td class="text-red">✗</td>
-              <td class="text-green">✓</td><td class="text-green">✓</td><td>flag ≥ 2</td>
-            </tr>
-            <tr>
-              <td>手动发放 / 扣除猫罐头</td>
-              <td class="text-red">✗</td><td class="text-red">✗</td><td class="text-red">✗</td>
-              <td class="text-green">✓</td><td class="text-green">✓</td><td>flag ≥ 2</td>
-            </tr>
-            <tr>
-              <td>批量发放猫粮</td>
-              <td class="text-red">✗</td><td class="text-red">✗</td><td class="text-red">✗</td><td class="text-red">✗</td>
-              <td class="text-green">✓</td><td>flag = 3</td>
-            </tr>
-            <tr>
-              <td>撤销罐头交易</td>
-              <td class="text-red">✗</td><td class="text-red">✗</td><td class="text-red">✗</td>
-              <td class="text-green">✓</td><td class="text-green">✓</td><td>flag ≥ 2</td>
-            </tr>
-            <tr><td colspan="7" style="font-weight:600;background:var(--table-header-bg, rgba(128,128,128,.08));">猫咪像素地图</td></tr>
-            <tr>
-              <td>查看地图</td>
-              <td class="text-green">✓</td><td class="text-green">✓</td><td class="text-green">✓</td>
-              <td class="text-green">✓</td><td class="text-green">✓</td><td>公开</td>
-            </tr>
-            <tr>
-              <td>首次免费选择位置加入（允许与其他小猫重叠）；加入后移动、传送与设置自己的格子颜色（同一当前大猫领地内传送为 3g，猫粮移动同时计入当前大猫贡献）</td>
-              <td class="text-red">✗</td><td class="text-red">✗</td><td class="text-green">✓</td>
-              <td class="text-green">✓</td><td class="text-green">✓</td><td>flag ≥ 1</td>
-            </tr>
-            <tr>
-              <td>行政管理员绘图后台（矩形绘图、按 UID 随机迁移小猫、按最后绘图者刷新领地归属）</td>
-              <td class="text-red">✗</td><td class="text-red">✗</td><td class="text-red">✗</td>
-              <td class="text-red">✗</td><td class="text-green">✓</td><td>flag = 3</td>
-            </tr>
-            <tr>
-              <td>创建/改名特殊大猫、转移大猫记录、回算历史移动贡献、手动恢复每周罐头奖励结算</td>
-              <td class="text-red">✗</td><td class="text-red">✗</td><td class="text-red">✗</td>
-              <td class="text-red">✗</td><td class="text-green">✓</td><td>flag = 3</td>
             </tr>
             <tr>
               <td>{{ _('Manage badges') }}</td>

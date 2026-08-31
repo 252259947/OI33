@@ -1,38 +1,91 @@
 {% import "components/contest.html" as contest with context %}
-{# OI33 shared compact contest table row-group, used by contest_main.html and
-   partials/homepage/contest.html. Each contest takes two rows x three columns:
-     status icon (rowspan 2) | title link                       | participant count
-                             | rule, start ~ end, duration      | (rowspan 2, centered)
-   Rule shows the rule's TEXT, except OC which is shortened to "OC".
-   Status icon: green play = live, blue schedule = upcoming, gray flag = ended. #}
+
 {% macro render_contest_status(tdoc) %}
-  {%- if model.contest.isOngoing(tdoc, tsdict[tdoc.docId]) -%}
-    <span class="icon icon-play text-green" title="{{ _('Live') }}"></span>
-  {%- elif model.contest.isDone(tdoc, tsdict[tdoc.docId]) -%}
-    <span class="icon icon-flag text-gray" title="{{ _('Ended') }}"></span>
+  {% set statusDoc = tsdict[tdoc.docId]|default({}) %}
+  {%- if model.contest.isOngoing(tdoc, statusDoc) -%}
+    <span class="oi33-contest-status is-live"><span class="icon icon-play" aria-hidden="true"></span> {{ _('Live') }}</span>
+  {%- elif model.contest.isDone(tdoc, statusDoc) -%}
+    <span class="oi33-contest-status is-ended"><span class="icon icon-flag" aria-hidden="true"></span> {{ _('Ended') }}</span>
   {%- else -%}
-    <span class="icon icon-schedule text-blue" title="{{ _('Ready') }}"></span>
+    <span class="oi33-contest-status is-ready"><span class="icon icon-schedule" aria-hidden="true"></span> {{ _('Ready') }}</span>
   {%- endif -%}
 {% endmacro %}
-{% macro render_compact_contest(tdoc) %}
-<tbody class="oi33-contest-table__group">
+
+{% macro render_contest_card(tdoc) %}
+{% set statusDoc = tsdict[tdoc.docId]|default({}) %}
+{% set isLive = model.contest.isOngoing(tdoc, statusDoc) %}
+{% set isDone = model.contest.isDone(tdoc, statusDoc) %}
+<li class="oi33-contest-card" data-status="{% if isLive %}live{% elif isDone %}ended{% else %}ready{% endif %}">
+  <article class="oi33-contest-card__body">
+    <div class="oi33-contest-card__main">
+      <div class="oi33-contest-card__topline">
+        {{ render_contest_status(tdoc) }}
+        <span class="oi33-contest-rule"><span class="icon icon-award" aria-hidden="true"></span> {% if tdoc.rule == 'oc' %}OC{% else %}{{ _(model.contest.RULES[tdoc['rule']].TEXT) }}{% endif %}</span>
+        {% if tdoc.rated %}<span class="oi33-contest-rated"><span class="icon icon-star" aria-hidden="true"></span> Rated</span>{% endif %}
+      </div>
+      <h3 class="oi33-contest-card__title"><a href="{{ url('contest_detail', tid=tdoc.docId) }}" data-emoji-enabled>{{ tdoc.title }}</a></h3>
+      <div class="oi33-contest-card__schedule" aria-label="比赛时间">
+        <span class="oi33-contest-card__time">
+          <small>开始</small>
+          <strong>{{ contest.render_time(tdoc.beginAt) }}</strong>
+        </span>
+        <span class="oi33-contest-card__time-arrow" aria-hidden="true">→</span>
+        <span class="oi33-contest-card__time">
+          <small>结束</small>
+          <strong>{{ contest.render_time(tdoc.endAt) }}</strong>
+        </span>
+      </div>
+      <ul class="oi33-contest-card__meta">
+        <li><span class="icon icon-schedule--fill" aria-hidden="true"></span> {{ contest.render_duration(tdoc) }} {{ _('hour(s)') }}</li>
+        <li><span class="icon icon-user--multiple" aria-hidden="true"></span> {{ tdoc.attend|default(0) }} 人参加</li>
+      </ul>
+    </div>
+    <div class="oi33-contest-card__aside">
+      {% if statusDoc.attend %}
+        <span class="oi33-contest-card__participation is-attended"><span class="icon icon-check" aria-hidden="true"></span> {{ _('Attended') }}</span>
+      {% elif handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+        <span class="oi33-contest-card__participation">{% if isDone %}未参加{% elif isLive %}尚未参加{% else %}尚未报名{% endif %}</span>
+      {% else %}
+        <span class="oi33-contest-card__participation">登录后查看参赛状态</span>
+      {% endif %}
+      <a href="{{ url('contest_detail', tid=tdoc.docId) }}" class="oi33-contest-card__action{% if isLive %} is-primary{% endif %}">
+        {% if isLive and statusDoc.attend %}继续比赛{% elif isLive %}查看比赛{% elif isDone and statusDoc.attend %}查看成绩{% elif isDone %}回顾比赛{% elif statusDoc.attend %}查看安排{% else %}查看并报名{% endif %}<span aria-hidden="true">→</span>
+      </a>
+    </div>
+  </article>
+</li>
+{% endmacro %}
+
+{% macro render_compact_contest(tdoc, showAction=false) %}
+{% set statusDoc = tsdict[tdoc.docId]|default({}) %}
+{% set isLive = model.contest.isOngoing(tdoc, statusDoc) %}
+{% set isDone = model.contest.isDone(tdoc, statusDoc) %}
+<tbody class="oi33-contest-table__group{% if showAction %} has-action{% else %} is-compact{% endif %}" data-status="{% if isLive %}live{% elif isDone %}ended{% else %}ready{% endif %}">
   <tr>
     <td class="oi33-contest-table__status" rowspan="2">{{ render_contest_status(tdoc) }}</td>
     <td class="oi33-contest-table__title">
       <a href="{{ url('contest_detail', tid=tdoc.docId) }}" data-emoji-enabled>{{ tdoc.title }}</a>
-      {% if tdoc.rated %}<span class="icon icon-star text-orange" title="Rated"></span>{% endif %}
+      {% if tdoc.rated %}<span class="oi33-contest-rated"><span class="icon icon-star" aria-hidden="true"></span> Rated</span>{% endif %}
     </td>
-    <td class="oi33-contest-table__attend" rowspan="2">
-      <span class="icon icon-user--multiple"></span> {{ tdoc['attend']|default(0) }}
-    </td>
+    {% if showAction %}
+      <td class="oi33-contest-table__action" rowspan="2">
+        {% if statusDoc.attend %}<span class="oi33-contest-attended"><span class="icon icon-check" aria-hidden="true"></span> {{ _('Attended') }}</span>{% endif %}
+        <a href="{{ url('contest_detail', tid=tdoc.docId) }}" class="button{% if isLive %} primary{% endif %}">
+          {% if isLive and statusDoc.attend %}继续比赛{% elif isLive %}查看比赛{% elif isDone and statusDoc.attend %}查看成绩{% elif isDone %}回顾比赛{% elif statusDoc.attend %}查看安排{% else %}查看并报名{% endif %}
+        </a>
+      </td>
+    {% else %}
+      <td class="oi33-contest-table__attend" rowspan="2"><span class="icon icon-user--multiple" aria-hidden="true"></span> {{ tdoc.attend|default(0) }}</td>
+    {% endif %}
   </tr>
   <tr>
     <td class="oi33-contest-table__meta">
-      <span class="icon icon-award"></span> {% if tdoc.rule == 'oc' %}OC{% else %}{{ _(model.contest.RULES[tdoc['rule']].TEXT) }}{% endif %}
-      &middot;
-      <span class="icon icon-calendar"></span> {{ contest.render_time(tsdict[tdoc.docId].startAt or tdoc.beginAt) }} ~ {{ contest.render_time(tsdict[tdoc.docId].endAt or tdoc.endAt) }}
-      &middot;
-      <span class="icon icon-schedule--fill"></span> {{ contest.render_duration(tdoc) }} {{ _('hour(s)') }}
+      <div class="oi33-contest-table__meta-inner">
+        <span><span class="icon icon-award" aria-hidden="true"></span> {% if tdoc.rule == 'oc' %}OC{% else %}{{ _(model.contest.RULES[tdoc['rule']].TEXT) }}{% endif %}</span>
+        <span><span class="icon icon-calendar" aria-hidden="true"></span> {{ contest.render_time(statusDoc.startAt or tdoc.beginAt) }} ~ {{ contest.render_time(statusDoc.endAt or tdoc.endAt) }}</span>
+        <span><span class="icon icon-schedule--fill" aria-hidden="true"></span> {{ contest.render_duration(tdoc) }} {{ _('hour(s)') }}</span>
+        {% if showAction %}<span><span class="icon icon-user--multiple" aria-hidden="true"></span> {{ tdoc.attend|default(0) }}</span>{% endif %}
+      </div>
     </td>
   </tr>
 </tbody>

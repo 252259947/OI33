@@ -29,23 +29,17 @@
         <form method="post" action="/oi33/tokens/create">
           <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
           <div class="row">
-            <div class="medium-3 columns">
+            <div class="medium-4 columns">
               <label>{{ _('Token Name') }}
                 <input type="text" name="name" placeholder="{{ _('e.g. Data Export Script') }}" required>
               </label>
             </div>
-            <div class="medium-3 columns">
+            <div class="medium-4 columns">
               <label>{{ _('For User UID') }}
                 <input type="number" name="uid" placeholder="{{ _('Leave empty for self') }}">
               </label>
             </div>
-            <div class="medium-3 columns">
-              <label>{{ _('Allowed Domains') }}
-                <input type="text" name="domains" placeholder="*">
-                <span class="help-text">{{ _('Comma-separated, * for all') }}</span>
-              </label>
-            </div>
-            <div class="medium-3 columns">
+            <div class="medium-4 columns">
               <label>{{ _('Expires At') }}
                 <input type="datetime-local" name="expires">
                 <span class="help-text">{{ _('Leave empty for no expiration') }}</span>
@@ -65,7 +59,6 @@
               <th>{{ _('Name') }}</th>
               {% if isAdmin %}<th>{{ _('Token Owner') }}</th>{% endif %}
               <th>{{ _('Token') }}</th>
-              <th>{{ _('Domains') }}</th>
               <th>{{ _('Created') }}</th>
               <th>{{ _('Last Used') }}</th>
               <th>{{ _('Expires') }}</th>
@@ -78,7 +71,6 @@
               <td>{{ t.name }}</td>
               {% if isAdmin %}<td><a href="{{ url('user_detail', uid=t.uid) }}">UID {{ t.uid }}</a></td>{% endif %}
               <td><code>{{ t.tokenPrefix }}...</code></td>
-              <td>{{ t.domains.join(', ') }}</td>
               <td>{{ datetimeSpan(t.createdAt)|safe }}</td>
               <td>{{ datetimeSpan(t.lastUsedAt)|safe }}</td>
               <td>{% if t.expiresAt %}{{ datetimeSpan(t.expiresAt)|safe }}{% else %}{{ _('Never') }}{% endif %}</td>

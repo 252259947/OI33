@@ -82,7 +82,7 @@ export async function wikiGetOrCreateIndex(): Promise<Oi33Wiki> {
             $setOnInsert: {
                 _id: 'index',
                 title: 'Wiki Index',
-                content: '欢迎来到 33OJ 百科！这里会发布最新的通知公告。',
+                content: '欢迎来到 huaji OJ 百科！这里会发布最新的通知公告。',
                 category: 'announcement',
                 order: 0,
                 createdAt: now,

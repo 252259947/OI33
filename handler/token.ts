@@ -19,15 +19,12 @@ class TokenListHandler extends Handler {
 
 class TokenCreateHandler extends Handler {
     @param('name', Types.String)
-    @param('domains', Types.String, true)
     @param('expires', Types.String, true)
     @param('uid', Types.Int, true)
-    async post(domainId: string, name: string, domains = '', expires = '', uid?: number) {
+    async post(_domainId: string, name: string, expires = '', uid?: number) {
         this.checkPriv(PRIV.PRIV_ALL);
         const targetUid = uid || this.user._id;
-        const domainList = domains.trim()
-            ? domains.split(',').map((d: string) => d.trim()).filter(Boolean)
-            : ['*'];
+        const domainList = ['system'];
         const expiresAt = expires ? new Date(expires) : undefined;
         const { _id, rawToken } = await oi33Model.createToken(targetUid, name, domainList, expiresAt);
         this.response.template = 'oi33_tokens.html';

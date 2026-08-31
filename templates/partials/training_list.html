@@ -1,72 +1,79 @@
 {% if not tdocs.length %}
-{{ nothing.render('Sorry, there are no training plans.') }}
-{% else %}
-
-
-
-<style>
-    .col--status { width: 8.75rem; position: relative; border-right: 1px solid color-mix(in srgb, #ddd 80%, white 20%); }
-    .col--ac-tried{width: 8.75rem; text-align: center; border-left: 1px solid color-mix(in srgb, #ddd 80%, white 20%); }
-    .col--difficulty{ width: 7rem; text-align: center; }
-    .theme--dark .col--status { border-right-color: #2b2b2b; }
-    .theme--dark .col--ac-tried { border-left-color: #2b2b2b; }
-</style>
-
-<table class="data-table">
-    <colgroup>
-    {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-      <col class="col--status edit-mode-hide">
+  <div class="oi33-learning-empty">
+    <span class="oi33-learning-empty__icon icon icon-flag" aria-hidden="true"></span>
+    {% if q %}
+      <h2>没有找到匹配的训练计划</h2>
+      <p>换一个关键词，或者清除搜索后查看全部计划。</p>
+      <a href="{{ url('training_main') }}" class="primary button">清除搜索</a>
+    {% else %}
+      <h2>这里还没有训练计划</h2>
+      {% if handler.user.hasPerm(perm.PERM_CREATE_TRAINING) %}
+        <p>创建第一个计划，把一组题组织成清晰的学习路径。</p>
+        <a href="{{ url('training_create') }}" class="primary button">{{ _('New Training Plan') }}</a>
+      {% else %}
+        <p>训练计划发布后会出现在这里。现在可以先从题库选一道题开始。</p>
+        <a href="{{ url('problem_main') }}" class="primary button">去题库练习</a>
+      {% endif %}
     {% endif %}
-      <col class="col--name">
-      <col class="col--ac-tried">
-      <col class="col--difficulty">
-    </colgroup>
-    <thead>
-        <tr>
+  </div>
+{% else %}
+  <ol class="oi33-training-grid training__list">
+    {%- for tdoc in tdocs -%}
+      {% set tsdoc = tsdict[tdoc.docId]|default({}) %}
+      {% set problemCount = model.training.getPids(tdoc.dag)|length %}
+      {% set doneCount = tsdoc['donePids']|default([])|length %}
+      {% set progress = ((100 * doneCount / problemCount)|round|int) if problemCount else 0 %}
+      <li class="oi33-training-card training__item{% if tsdoc['enroll'] %} is-enrolled{% endif %}{% if tsdoc['done'] %} is-complete{% endif %}">
+        <article class="oi33-training-card__body">
+          <div class="oi33-training-card__topline">
+            <span class="oi33-training-card__kind"><span class="icon icon-flag" aria-hidden="true"></span> 学习计划</span>
             {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-            <th class="col--status">完成情况</th>
+              {% if tsdoc['done'] %}
+                <span class="oi33-training-status is-complete"><span class="icon icon-check" aria-hidden="true"></span> {{ _('Completed') }}</span>
+              {% elif tsdoc['enroll'] %}
+                <span class="oi33-training-status is-progress"><span class="icon icon-schedule" aria-hidden="true"></span> {{ _('In Progress') }}</span>
+              {% else %}
+                <span class="oi33-training-status is-outside">{{ _('Not Enrolled') }}</span>
+              {% endif %}
             {% endif %}
-            <th class="col--name"> 训练计划名称 </th>
-            <th class="col--ac-tried">题目数量</th>
-            <th class="col--difficulty">参加人数</th>
-        </tr>
-    </thead>
-    <tbody>
-        {%- for tdoc in tdocs -%}
-        <tr>
-            {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-            <td class="col--status">
-                {% if tsdict[tdoc.docId]['enroll'] %}
-                {% if not tsdict[tdoc.docId]['done'] %}
-                <span class="icon training-status--icon progress"></span>
-                <span class="training-status--text progress">{{ _('Completed') }} {{ (100 *
-                    tsdict[tdoc.docId]['donePids']|length / model.training.getPids(tdoc.dag)|length)|round|int
-                    }}%</span>
-                {% else %}
-                <span class="icon training-status--icon done"></span>
-                <span class="training-status--text done">{{ _('Completed') }} 100%</span>
-                {% endif %}
-                {% elif handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-                <span class="icon training-status--icon outside"></span> <span class="training-status--text outside">{{
-                    _('Not Enrolled') }}</span>
-                {% endif %}
-            </td>
-            {% endif %}
-
-            <td class="col--name ">
-                <a href="{{ url('training_detail', tid=tdoc.docId) }}">{{ tdoc.title }}</a>
-            </td>
-            <td class="col--ac-tried">
-                {{ _('{0} sections').format(tdoc['dag']|length) }} /
-                {{ _('{0} problems').format(model.training.getPids(tdoc.dag)|length) }}
-            </td>
-            <td class="col--difficulty">
-                {{ tdoc.attend|default(0) }} {{ _('Enrolled') }}
-            </td>
-        </tr>
-        {%- endfor -%}
-    </tbody>
-</table>
-{{ paginator.render(page, tpcount, add_qs=qs) }}
-
+          </div>
+          <h2 class="training__title"><a href="{{ url('training_detail', tid=tdoc.docId) }}" data-emoji-enabled>{{ tdoc.title }}</a></h2>
+          {% if tdoc['content'] %}
+            <p class="oi33-training-card__intro">{{ tdoc['content'] }}</p>
+          {% else %}
+            <p class="oi33-training-card__intro is-empty">这个计划暂时没有简介，进入后查看章节安排。</p>
+          {% endif %}
+          <ul class="oi33-training-card__meta">
+            <li><span class="icon icon-flag" aria-hidden="true"></span> {{ _('{0} sections').format(tdoc['dag']|length) }}</li>
+            <li><span class="icon icon-book" aria-hidden="true"></span> {{ _('{0} problems').format(problemCount) }}</li>
+            <li><span class="icon icon-user--multiple" aria-hidden="true"></span> {{ tdoc.attend|default(0) }} {{ _('Enrolled') }}</li>
+          </ul>
+          {% if tsdoc['enroll'] %}
+            <div class="oi33-training-progress">
+              <div class="oi33-training-progress__labels">
+                <span>{{ _('Progress') }}</span>
+                <strong>{{ progress }}%</strong>
+              </div>
+              <div class="oi33-training-progress__bar" role="progressbar" aria-label="{{ _('Progress') }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ progress }}">
+                <span style="width: {{ progress }}%"></span>
+              </div>
+            </div>
+          {% endif %}
+          <div class="oi33-training-card__footer">
+            <span class="oi33-training-card__hint">
+              {% if tsdoc['done'] %}已完成，可以随时回来复习{% elif tsdoc['enroll'] %}从上次的进度继续{% else %}查看章节与题目安排{% endif %}
+            </span>
+            <a href="{{ url('training_detail', tid=tdoc.docId) }}" class="oi33-training-card__action{% if tsdoc['enroll'] and not tsdoc['done'] %} is-primary{% endif %}">
+              {% if tsdoc['done'] %}回顾训练{% elif tsdoc['enroll'] %}继续训练{% else %}查看计划{% endif %}<span aria-hidden="true">→</span>
+            </a>
+          </div>
+        </article>
+      </li>
+    {%- endfor -%}
+  </ol>
+  {% if tpcount > 1 %}
+    <nav class="oi33-training-pagination" aria-label="训练计划分页">
+      {{ paginator.render(page, tpcount, add_qs=utils.buildQueryString(q=q)) }}
+    </nav>
+  {% endif %}
 {% endif %}

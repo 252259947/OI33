@@ -1,0 +1,105 @@
+{% set page_name = "homepage" %}
+{% extends "layout/basic.html" %}
+{% import "components/contest.html" as contest with context %}
+{% import "components/problem.html" as problem with context %}
+{% import "components/user.html" as user with context %}
+{% set oi33RecordUrl = url('record_main', query={uidOrName: handler.user._id if handler.user.oi33_profile_hidden else handler.user.uname}) if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) else url('record_main') %}
+{% block content %}
+<div class="row oi33-home">
+  <div class="columns">
+    <section class="oi33-home__hero" aria-labelledby="oi33-home-title">
+      <div class="oi33-home__hero-copy">
+        <div class="oi33-home__eyebrow">huaji OJ · Online Judge</div>
+        {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+          <h1 id="oi33-home-title">欢迎回来，{% if handler.user.oi33_profile_hidden %}UID {{ handler.user._id }}{% else %}{{ handler.user.uname }}{% endif %}</h1>
+          <p>从一道合适的题开始，提交、复盘，再把今天的进步积累下来。</p>
+          <div class="oi33-home__actions">
+            <a class="oi33-home__action oi33-home__action--primary" href="{{ url('problem_main') }}">开始刷题</a>
+            <a class="oi33-home__action" href="{{ url('training_main') }}">继续训练</a>
+          </div>
+        {% else %}
+          <h1 id="oi33-home-title">让每一次提交，都变成看得见的进步</h1>
+          <p>在 huaji OJ 练习算法、参加比赛、追踪评测结果，用清晰的路径稳步提升。</p>
+          <div class="oi33-home__actions">
+            <a class="oi33-home__action oi33-home__action--primary" href="{{ url('user_register') }}">免费开始</a>
+            <a class="oi33-home__action" href="{{ url('problem_main') }}">先看看题库</a>
+          </div>
+        {% endif %}
+      </div>
+      <div class="oi33-home__hero-panel" aria-label="学习流程">
+        <div class="oi33-home__hero-panel-title">今天的学习路径</div>
+        <ol class="oi33-home__journey">
+          <li><span class="oi33-home__step">1</span><span>选择一道适合当前水平的题</span></li>
+          <li><span class="oi33-home__step">2</span><span>编写并提交 C++ 代码</span></li>
+          <li><span class="oi33-home__step">3</span><span>根据评测结果复盘改进</span></li>
+        </ol>
+      </div>
+    </section>
+
+    <nav class="oi33-home__quick" aria-label="常用学习入口">
+      <a class="oi33-quick-card" href="{{ url('problem_main') }}">
+        <span class="oi33-quick-card__icon icon icon-book" aria-hidden="true"></span>
+        <span><span class="oi33-quick-card__title">题库</span><span class="oi33-quick-card__desc">搜索并完成一道题</span></span>
+        <span class="oi33-quick-card__arrow">›</span>
+      </a>
+      <a class="oi33-quick-card" href="{{ url('training_main') }}">
+        <span class="oi33-quick-card__icon icon icon-flag" aria-hidden="true"></span>
+        <span><span class="oi33-quick-card__title">训练</span><span class="oi33-quick-card__desc">按目标系统练习</span></span>
+        <span class="oi33-quick-card__arrow">›</span>
+      </a>
+      <a class="oi33-quick-card" href="{{ url('contest_main') }}">
+        <span class="oi33-quick-card__icon icon icon-award" aria-hidden="true"></span>
+        <span><span class="oi33-quick-card__title">比赛</span><span class="oi33-quick-card__desc">查看近期赛事安排</span></span>
+        <span class="oi33-quick-card__arrow">›</span>
+      </a>
+      <a class="oi33-quick-card" href="{{ oi33RecordUrl }}">
+        <span class="oi33-quick-card__icon icon icon-check" aria-hidden="true"></span>
+        <span><span class="oi33-quick-card__title">评测记录</span><span class="oi33-quick-card__desc">复盘提交与错误</span></span>
+        <span class="oi33-quick-card__arrow">›</span>
+      </a>
+    </nav>
+
+    <section class="section oi33-home__starter">
+      <div class="section__header">
+        <div>
+          <h1 class="section__title">选择今天的学习方式</h1>
+          <p>不用一次做很多，先完成一个清晰的小目标。</p>
+        </div>
+      </div>
+      <div class="section__body oi33-home__starter-grid">
+        <a class="oi33-home__starter-item" href="{{ url('problem_detail', pid='P1000') }}">
+          <span class="oi33-home__starter-index">01</span>
+          <span><strong>入门热身</strong><small>从 A+B Problem 熟悉评测流程</small></span>
+          <span aria-hidden="true">›</span>
+        </a>
+        <a class="oi33-home__starter-item" href="{{ url('problem_main') }}">
+          <span class="oi33-home__starter-index">02</span>
+          <span><strong>自由选题</strong><small>搜索题号、标题或知识点</small></span>
+          <span aria-hidden="true">›</span>
+        </a>
+        <a class="oi33-home__starter-item" href="{{ oi33RecordUrl }}">
+          <span class="oi33-home__starter-index">03</span>
+          <span><strong>复盘提交</strong><small>找到错误，重新完成一道题</small></span>
+          <span aria-hidden="true">›</span>
+        </a>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="row oi33-home__content">
+  {% for column in contents %}
+    <div class="large-{{ column.width }} columns oi33-home__column">
+      {% for s in column.sections %}
+        {% if templateExists("partials/homepage/" + s[0] + ".html") %}
+          {% set payload = s[1] %}
+          {% include "partials/homepage/" + s[0] + ".html" %}
+        {% else %}
+          {% set payload = _("Template {0} not found.").format(s[0]) %}
+          {% include "partials/homepage/error.html" %}
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

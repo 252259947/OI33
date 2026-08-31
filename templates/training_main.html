@@ -1,57 +1,42 @@
 {% extends "layout/basic.html" %}
 {% block content %}
 <div class="row">
-  <div class="large-9 columns">
-    <div class="section">
-      <div class="section__header">
-        <h1 class="section__title">{{ _('All Training Plans') }}</h1>
+  <div class="columns">
+    <header class="oi33-training-head">
+      <div class="oi33-training-head__copy">
+        <p class="oi33-training-head__eyebrow">TRAINING</p>
+        <h1>训练计划</h1>
+        <p>按章节循序练习，把每一次完成都变成看得见的进步。</p>
       </div>
-        {% include "partials/training_list.html" %}
-    </div>
-  </div>
-  <div class="large-3 columns">
-    {% if handler.user.hasPerm(perm.PERM_CREATE_TRAINING) %}
-      <div class="section side">
-        <div class="section__header">
-          <h1 class="section__title">{{ _('Create Training Plan') }}</h1>
+      {% if handler.user.hasPerm(perm.PERM_CREATE_TRAINING) %}
+        <a href="{{ url('training_create') }}" class="primary button oi33-training-head__action">
+          <span class="icon icon-add" aria-hidden="true"></span> {{ _('New Training Plan') }}
+        </a>
+      {% endif %}
+    </header>
+
+    <div class="oi33-training-catalog">
+      <div class="oi33-training-toolbar">
+        <div class="oi33-training-toolbar__copy">
+          <span class="oi33-training-toolbar__icon icon icon-book" aria-hidden="true"></span>
+          <span>
+            <strong>找到适合你的计划</strong>
+            <small>按计划标题快速筛选</small>
+          </span>
         </div>
-        <ol class="menu">
-          <li class="menu__item">
-            <a href="{{ url('training_create') }}" class="menu__link"><span class="icon icon-add"></span> {{ _('New Training Plan') }}</a>
-          </li>
-        </ol>
-        <div class="section__body">
-          <div class="typo supplementary">
-            <p>{{ _('You can create your own training plans and share them with others.') }}</p>
+        <form method="get" class="oi33-training-search filter-form" name="filter-form" role="search">
+          <div class="oi33-training-search__field">
+            <span class="icon icon-search" aria-hidden="true"></span>
+            <input id="oi33-training-query" type="search" class="textbox" name="q" value="{{ q }}" placeholder="搜索计划标题" aria-label="搜索训练计划">
+            {% if q %}
+              <a href="{{ url('training_main') }}" class="oi33-training-search__clear" aria-label="清除搜索">×</a>
+            {% endif %}
           </div>
-        </div>
+          <button type="submit" class="primary button oi33-training-search__submit">{{ _('Search') }}</button>
+        </form>
       </div>
-    {% endif %}
-    {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-      <div class="section side">
-        <div class="section__header">
-          <h1 class="section__title">{{ _('Enrolled') }}</h1>
-        </div>
-        <div class="section__body">
-          <ol class="my secondary training__list">
-            {%- for tid, tsdoc in tsdict -%}
-              {% if tsdoc['enroll'] %}
-                {% set progress = (100 * (tsdoc['donePids']|length) / (model.training.getPids(tdict[tsdoc['docId']].dag)|length))|round|int %}
-                <li class="training__item"><div class="media">
-                  <div class="media__left">
-                    <span class="icon training-status--icon {% if tsdoc['done'] %}done{% else %}progress{% endif %}"></span>
-                  </div>
-                  <div class="media__body">
-                    <h1 class="training__title"><a href="{{ url('training_detail', tid=tsdoc.docId) }}" data-emoji-enabled>{{ tdict[tsdoc['docId']]['title'] }}</a></h1>
-                    <div class="supplementary training__progress"><div class="training__progress-bar"><div class="training__progress-track" style="width:{{ progress }}%;"></div></div> {{ _('Complete') }} {{ progress }}%</div>
-                  </div>
-                </div></li>
-              {% endif %}
-            {%- endfor -%}
-          </ol>
-        </div>
-      </div>
-    {% endif %}
+      {% include "partials/training_list.html" %}
+    </div>
   </div>
 </div>
 {% endblock %}

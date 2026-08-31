@@ -1,0 +1,27 @@
+{% extends "layout/immersive.html" %}
+{% block content %}
+<div class="row"><div class="columns">
+  <section class="oi33-auth" aria-labelledby="oi33-register-code-title">
+    <div class="oi33-auth__intro">
+      <a class="oi33-auth__brand" href="/">
+        <span class="oi33-brand__mark" aria-hidden="true">HJ</span>
+        <span>huaji OJ</span>
+      </a>
+      <h1>最后一步<br>设置你的账号</h1>
+      <p>选择容易记住的用户名，并妥善保管密码。</p>
+    </div>
+    <div class="oi33-auth__form">
+      <h2 id="oi33-register-code-title">完善账号信息</h2>
+      <p class="oi33-auth__lead">验证已经通过，请设置用户名和密码。</p>
+      <form method="POST">
+        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
+        <label class="oi33-field">{{ _('Email') }}<input type="email" value="{{ mail }}" disabled></label>
+        <label class="oi33-field">{{ _('Username') }}<input name="uname" value="{{ username or '' }}" type="text" autocomplete="username" autofocus required></label>
+        <label class="oi33-field">{{ _('Password') }}<input name="password" type="password" autocomplete="new-password" required></label>
+        <label class="oi33-field">{{ _('Repeat Password') }}<input name="verifyPassword" type="password" autocomplete="new-password" required></label>
+        <input type="submit" value="{{ _('user_register') }}" class="oi33-auth__submit">
+      </form>
+    </div>
+  </section>
+</div></div>
+{% endblock %}

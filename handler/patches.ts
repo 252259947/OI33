@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { HomeHandler } from 'hydrooj/src/handler/home';
-import { RecordMainConnectionHandler } from 'hydrooj/src/handler/record';
+import { RecordListHandler, RecordMainConnectionHandler } from 'hydrooj/src/handler/record';
 import { oi33Model } from '../model';
 
 export function applyPatches(_ctx: Context) {
@@ -324,12 +324,96 @@ export function applyPatches(_ctx: Context) {
         }
     });
 
+    // Keep pushed rows inside the same language/status scope as the initial
+    // HTTP query. Hydro's socket omits language filtering and treats status 0
+    // as unset. When a visible row leaves the active scope, send a hidden
+    // marker so the page can refresh the filtered slice without showing stale
+    // data; unrelated pushed rows are discarded before rendering.
+    // huaji OJ exposes one site only. Ignore Hydro's cross-domain record flag
+    // even when somebody crafts the legacy query parameter by hand.
+    const recordListPrototype = RecordListHandler.prototype as any;
+    const origRecordListGet = recordListPrototype.get;
+    recordListPrototype.get = async function (...args: any[]) {
+        if (args.length === 1 && args[0] && typeof args[0] === 'object') {
+            args[0] = { ...args[0], allDomain: false };
+        } else if (args.length > 9) {
+            args[9] = false;
+        }
+        return origRecordListGet.apply(this, args);
+    };
+
+    const recordConnectionPrototype = RecordMainConnectionHandler.prototype as any;
+    const origRecordConnectionPrepare = recordConnectionPrototype.prepare;
+    recordConnectionPrototype.prepare = async function (...args: any[]) {
+        if (args.length === 1 && args[0] && typeof args[0] === 'object') {
+            args[0] = { ...args[0], allDomain: false };
+        } else if (args.length > 7) {
+            args[7] = false;
+        }
+        const result = await origRecordConnectionPrepare.apply(this, args);
+        const rawStatus = this.args?.status;
+        const parsedStatus = rawStatus === undefined || rawStatus === ''
+            ? undefined
+            : Number(rawStatus);
+        this.oi33RecordStatus = Number.isInteger(parsedStatus) ? parsedStatus : undefined;
+        const rawLang = this.args?.lang;
+        this.oi33RecordLang = typeof rawLang === 'string' && rawLang.trim()
+            ? rawLang.trim()
+            : undefined;
+        if (this.oi33RecordStatus === 0) this.status = 0;
+        return result;
+    };
+
+    const origRecordConnectionMessage = recordConnectionPrototype.message;
+    recordConnectionPrototype.message = async function (msg: any) {
+        if (Array.isArray(msg?.rids)) {
+            this.oi33VisibleRecordIds = new Set(msg.rids.map((rid: any) => String(rid)));
+        }
+        return origRecordConnectionMessage.call(this, msg);
+    };
+
+    const origRecordConnectionChange = recordConnectionPrototype.onRecordChange;
+    const filteredRecordConnectionChange = async function (this: any, rdoc: any) {
+        const rid = rdoc?._id?.toHexString?.() || String(rdoc?._id || '');
+        const hasStatusFilter = typeof this.oi33RecordStatus === 'number';
+        const hasLangFilter = typeof this.oi33RecordLang === 'string';
+        const matchesStatus = !hasStatusFilter || rdoc?.status === this.oi33RecordStatus;
+        const matchesLang = !hasLangFilter || rdoc?.lang === this.oi33RecordLang;
+        if (matchesStatus && matchesLang) {
+            const visibleIds = this.oi33VisibleRecordIds as Set<string> | undefined;
+            if (rid && visibleIds?.size && !visibleIds.has(rid)) {
+                const capacity = visibleIds.size;
+                const nextVisibleIds = new Set([rid, ...visibleIds]);
+                while (nextVisibleIds.size > capacity) {
+                    const lastRid = [...nextVisibleIds].pop();
+                    if (lastRid) nextVisibleIds.delete(lastRid);
+                }
+                this.oi33VisibleRecordIds = nextVisibleIds;
+            }
+            return origRecordConnectionChange.call(this, rdoc);
+        }
+
+        if (!rid || !this.oi33VisibleRecordIds?.has(rid)) return;
+        this.oi33VisibleRecordIds.delete(rid);
+        if (this.pretest || this.noTemplate) return;
+        this.queueSend(rid, async () => ({
+            html: `<tr data-rid="${rid}" data-oi33-filtered-out="1" aria-hidden="true"></tr>`,
+        }));
+    };
+    recordConnectionPrototype.onRecordChange = filteredRecordConnectionChange;
+    for (const subscription of recordConnectionPrototype.__subscribe || []) {
+        if (subscription.name === 'record/change'
+            && subscription.target === origRecordConnectionChange) {
+            subscription.target = filteredRecordConnectionChange;
+        }
+    }
+
     // WebSocket connections do not pass through the normal HTTP user layer.
     // Hydrate both the viewer and row owner immediately before rendering a
     // pushed record row, so real-name visibility follows the same rule as the
     // initial page render.
-    const origRecordConnectionRender = (RecordMainConnectionHandler.prototype as any).renderHTML;
-    (RecordMainConnectionHandler.prototype as any).renderHTML = async function (template: string, body: any) {
+    const origRecordConnectionRender = recordConnectionPrototype.renderHTML;
+    recordConnectionPrototype.renderHTML = async function (template: string, body: any) {
         if (template === 'record_main_tr.html') {
             const viewerUid = Number(this.user?._id) || 0;
             const ownerUid = Number(body?.udoc?._id) || 0;
@@ -390,13 +474,14 @@ export function applyPatches(_ctx: Context) {
 
     async function verifyBearerToken(authHeader: string, domainId: string) {
         if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+        if (domainId !== 'system') return null;
         const rawToken = authHeader.slice(7).trim();
         if (!rawToken) return null;
         const hash = createHash('sha256').update(rawToken).digest('hex');
         const doc = await oi33Model.getTokenByHash(hash);
         if (!doc) return null;
         if (doc.expiresAt && new Date(doc.expiresAt) < new Date()) return null;
-        if (!doc.domains.includes('*') && !doc.domains.includes(domainId)) return null;
+        if (!doc.domains.includes('*') && !doc.domains.includes('system')) return null;
         await oi33Model.touchToken(doc._id);
         return doc;
     }

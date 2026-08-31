@@ -1,0 +1,76 @@
+{% extends "layout/basic.html" %}
+{% block content %}
+<div class="row oi33-discuss">
+  <div class="columns">
+    <header class="oi33-discuss__hero">
+      <div>
+        <div class="oi33-discuss__eyebrow">Discuss &amp; Learn</div>
+        <h1>{% if vnode._id %}{{ vnode.title }}{% else %}讨论交流{% endif %}</h1>
+        <p>{% if vnode._id %}围绕这个主题分享思路、提出问题，并从其他人的讨论中继续学习。{% else %}围绕题目、训练和比赛交流思路。提问时写清尝试过程，比只贴代码更容易获得帮助。{% endif %}</p>
+      </div>
+      {% if vnode._id and handler.user.hasPerm(perm.PERM_CREATE_DISCUSSION) %}
+        <a class="primary rounded button" href="{{ url('discussion_create', type=model.discussion.typeDisplay[vnode.type], name=vnode.id) }}"><span class="icon icon-add" aria-hidden="true"></span> 发起讨论</a>
+      {% elif not handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+        <a class="rounded button" href="{{ url('user_login') }}">登录后参与</a>
+      {% endif %}
+    </header>
+  </div>
+
+  <div class="medium-8 columns">
+    <section class="section oi33-discuss__main">
+      <div class="section__header"><h2 class="section__title">{% if vnode._id %}相关讨论{% else %}最新讨论{% endif %}</h2></div>
+      {% include "partials/oi33_discussion_list.html" %}
+    </section>
+  </div>
+
+  <aside class="medium-4 columns">
+  {% if vnode.type == model.document.TYPE_PROBLEM %}
+    {% set pdoc = vnode %}
+    {% set owner_udoc = udict[vnode.owner] %}
+    {% include "partials/problem_sidebar.html" %}
+  {% elif vnode.type == model.document.TYPE_CONTEST %}
+    {% set tdoc = vnode %}
+    {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}{% set tsdoc = { attend: tdoc.attend } %}{% endif %}
+    {% set owner_udoc = udict[vnode.owner] %}
+    {% include "partials/contest_sidebar.html" %}
+  {% else %}
+    <section class="section side oi33-discuss__side">
+      <div class="section__header"><h2 class="section__title">如何参与</h2></div>
+      <div class="section__body">
+        {% if vnode._id %}
+          <p class="oi33-discuss__side-copy">先说明题意理解和已经尝试的方法，再指出具体卡住的位置。</p>
+          {% if handler.user.hasPerm(perm.PERM_CREATE_DISCUSSION) %}
+            <a class="expanded primary rounded button" href="{{ url('discussion_create', type=model.discussion.typeDisplay[vnode.type], name=vnode.id) }}">发起讨论</a>
+          {% elif not handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+            <a class="expanded primary rounded button" href="{{ url('user_login') }}">登录后发言</a>
+          {% else %}
+            <span class="expanded disabled rounded button">暂时没有发言权限</span>
+          {% endif %}
+        {% else %}
+          <p class="oi33-discuss__side-copy">讨论会归属到一道题、一次比赛或一个讨论节点。你可以先从题库选择内容。</p>
+          <a class="expanded primary rounded button" href="{{ url('problem_main') }}">浏览题库</a>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% if vnodes.length %}
+    <section class="section side oi33-discuss__side">
+      <div class="section__header"><h2 class="section__title">讨论节点</h2></div>
+      <div class="section__body">
+        <ul class="oi33-discuss__nodes">
+        {% for category, nodes in vnodes|groupby('content') %}
+          <li>
+            {% if category %}<h3>{{ category }}</h3>{% endif %}
+            <ol class="oi33-discuss__node-list">
+            {% for node in nodes %}<li><a href="{{ url('discussion_node', type=model.discussion.typeDisplay[model.document.TYPE_DISCUSSION_NODE], name=node.docId) }}">{{ node.docId }}</a></li>{% endfor %}
+            </ol>
+          </li>
+        {% endfor %}
+        </ul>
+      </div>
+    </section>
+  {% endif %}
+  </aside>
+</div>
+{% endblock %}

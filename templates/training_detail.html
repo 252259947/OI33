@@ -1,120 +1,139 @@
 {% extends "layout/basic.html" %}
 {% import "components/oi33_user.html" as user with context %}
 {% block content %}
-<div class="row" data-sticky-parent>
-  {%- if Object.keys(udict).length -%}
-  <div class="medium-2 columns mobile--hide">
-    <div data-sticky="large"><div class="section side">
-      <ol class="menu">
-        <li class="menu__item nojs--hide">
-          <form method="get" id="searchForm">
-            <select name="group" class="select"{% if not groups.length %} style="display:none"{% endif %}>
-              <option value="all" selected>{{ _('All') }}</option>
-              {% for group in groups %}
-                <option value="{{ group.uids.join(',') }}">{{ group.name }}</option>
-              {% endfor %}
-            </select>
-            <input name="uid" type="text" class="search__input textbox" placeholder="{{ _('Select User') }}">
-          </form>
-        </li>
-        <ul class="enroll_user_menu">
-        {%- for uid, udoc in udict -%}
-        <li class="menu__item enroll_user_menu_item" data-uid="{{ uid }}" data-uname="{{ udoc.uname }}" {% if handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and udoc.displayName %}data-displayname="{{ udoc.displayName }}"{% endif %}>
-          <a href="./{{ tdoc._id }}?uid={{ uid }}" class="menu__link{% if (handler.request.query.uid or handler.user._id) == uid %} active{% endif %}">
-            <span class="user-profile-link">
-              <img class="small user-profile-avatar v-center" loading="lazy" src="{{ avatarUrl(udoc.avatar|default('')) }}" width="20" height="20">
-              <span class="user-profile-name">
-                {% if handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and udoc.displayName and udoc.displayName != udoc.uname %}
-                  {{ udoc.displayName }} ({{ udoc.uname }})
-                {% else %}
-                  {{ udoc.uname }}
-                {% endif %}
-              </span>
-            </span>
-          </a>
-        </li>
-        {%- endfor -%}
-        </ul>
-      </ol>
-    </div></div>
-  </div>
-  <div class="medium-7 columns">
-  {%- else -%}
+{% set problemCount = pids|length %}
+{% set doneCount = tsdoc['donePids']|default([])|length %}
+{% set progress = ((100 * doneCount / problemCount)|round|int) if problemCount else 0 %}
+<div class="row oi33-training-detail" data-sticky-parent>
   <div class="medium-9 columns">
-  {%- endif -%}
-    <div class="section">
-      <div class="section__header" style="align: center">
-        <h1 class="section__title">{{ tdoc.title }}</h1>
-      </div>
-    </div>
-    <div class="section">
-      <div class="section__body typo">
-        {{ tdoc['content'] }}
-      </div>
-      <div class="section__body typo richmedia">
-        {% if not handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-          <blockquote class="typo note">
-            <p>{{ _('Login to join training plan') }}</p>
-          </blockquote>
-        {% elif not tsdoc.enroll %}
-          <blockquote class="typo note">
-            <p>{{ _('page.training_detail.invalid_when_not_enrolled') }}</p>
-          </blockquote>
-        {% endif %}
-        {{ tdoc.description|default('')|markdown|safe }}
-      </div>
-    </div>
-    <div class="section">
-      {% include "partials/training_detail.html" %}
-    </div>
-  </div>
-  <div class="medium-3 columns" data-sticky="large">
-    <div class="section side">
-      <div>
-        <ol class="menu">
-        {% if not tsdoc['enroll'] and handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-          <li class="menu__item">
-            <form action="" method="POST">
-              <input type="hidden" name="operation" value="enroll">
-              <button class="menu__link" type="submit">
-                <span class="icon icon-add"></span> {{ _('Enroll Training') }}
-              </button>
-            </form>
-          </li>
-        {% endif %}
-        {% if handler.user.own(tdoc) or handler.user.hasPerm(perm.PERM_EDIT_TRAINING) %}
-          <li class="menu__item"><a class="menu__link" href="{{ url('training_edit', tid=tdoc.docId) }}">
-            <span class="icon icon-edit"></span>  {{ _('Edit') }}
-          </a></li>
-          <li class="menu__item"><a class="menu__link" href="{{ url('training_files', tid=tdoc.docId) }}">
-            <span class="icon icon-file"></span> {{ _('Files') }}
-          </a></li>
-        {% endif %}
-          <li class="menu__item"><a class="menu__link" href="{{ url('wiki_help', anchor='training') }}">
-            <span class="icon icon-help"></span> {{ _('Help') }}
-          </a></li>
-          <li class="menu__seperator"></li>
-        </ol>
-      </div>
-      <div class="section__body typo">
-        <dl class="large horizontal">
-        {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-          <dt>{{ _('Status') }}</dt><dd>{% if tsdoc['enroll'] %}{{ _('Completed' if tsdoc['done'] else 'In Progress') }}{% else %}{{ _('Not Enrolled') }}{% endif %}</dd>
-        {% endif %}
-          {% if tsdoc['enroll'] %}
-          <dt>{{ _('Progress') }}</dt><dd>{{ _('Completed') }} {{ (100 * tsdoc['donePids']|length / pids|length)|round|int }}%</dd>
+    <section class="section oi33-training-hero">
+      <div class="section__body">
+        <div class="oi33-training-hero__heading">
+          <div>
+            <p class="oi33-training-head__eyebrow">TRAINING PLAN</p>
+            <h1>{{ tdoc.title }}</h1>
+          </div>
+          {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+            {% if tsdoc['done'] %}
+              <span class="oi33-training-status is-complete"><span class="icon icon-check" aria-hidden="true"></span> {{ _('Completed') }}</span>
+            {% elif tsdoc['enroll'] %}
+              <span class="oi33-training-status is-progress"><span class="icon icon-schedule" aria-hidden="true"></span> {{ _('In Progress') }}</span>
+            {% else %}
+              <span class="oi33-training-status is-outside">{{ _('Not Enrolled') }}</span>
+            {% endif %}
           {% endif %}
-          <dt>{{ _('Enrollees') }}</dt><dd>{{ tdoc.attend|default(0) }}</dd>
-          <dt>{{ _('Created By') }}</dt>
-          <dd>{{ user.render_inline(udoc, badge=false) }}</dd>
-        </dl>
+        </div>
+        {% if tdoc['content'] %}<p class="oi33-training-hero__summary">{{ tdoc['content'] }}</p>{% endif %}
+        <ul class="oi33-training-card__meta">
+          <li><span class="icon icon-flag" aria-hidden="true"></span> {{ _('{0} sections').format(tdoc['dag']|length) }}</li>
+          <li><span class="icon icon-book" aria-hidden="true"></span> {{ _('{0} problems').format(problemCount) }}</li>
+          <li><span class="icon icon-user--multiple" aria-hidden="true"></span> {{ tdoc.attend|default(0) }} {{ _('Enrolled') }}</li>
+        </ul>
+        {% if tsdoc['enroll'] %}
+          <div class="oi33-training-progress oi33-training-hero__progress">
+            <div class="oi33-training-progress__labels">
+              <span>{{ _('Progress') }}</span>
+              <strong>{{ doneCount }} / {{ problemCount }} · {{ progress }}%</strong>
+            </div>
+            <div class="oi33-training-progress__bar" role="progressbar" aria-label="{{ _('Progress') }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ progress }}">
+              <span style="width: {{ progress }}%"></span>
+            </div>
+          </div>
+        {% endif %}
+        <div class="oi33-training-hero__actions">
+          {% if not handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+            <a href="{{ url('user_login') }}" class="primary button">登录后加入训练</a>
+          {% elif not tsdoc['enroll'] %}
+            <form action="" method="POST">
+              <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
+              <input type="hidden" name="operation" value="enroll">
+              <button class="primary button" type="submit"><span class="icon icon-add" aria-hidden="true"></span> {{ _('Enroll Training') }}</button>
+            </form>
+          {% else %}
+            <a href="#training-sections" class="primary button">{% if tsdoc['done'] %}回顾训练章节{% else %}继续训练{% endif %}</a>
+          {% endif %}
+          {% if handler.user.own(tdoc) or handler.user.hasPerm(perm.PERM_EDIT_TRAINING) %}
+            <a class="button" href="{{ url('training_edit', tid=tdoc.docId) }}"><span class="icon icon-edit" aria-hidden="true"></span> {{ _('Edit') }}</a>
+            <a class="button" href="{{ url('training_files', tid=tdoc.docId) }}"><span class="icon icon-file" aria-hidden="true"></span> {{ _('Files') }}</a>
+          {% endif %}
+        </div>
       </div>
-    </div>
-    <div class="section side">
+    </section>
+
+    {% if tdoc.description %}
+      <section class="section oi33-training-description">
+        <div class="section__header"><h2 class="section__title">计划说明</h2></div>
+        <div class="section__body typo richmedia">{{ tdoc.description|markdown|safe }}</div>
+      </section>
+    {% endif %}
+
+    {% if not handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+      <div class="oi33-training-note"><span class="icon icon-info" aria-hidden="true"></span> {{ _('Login to join training plan') }}</div>
+    {% elif not tsdoc['enroll'] %}
+      <div class="oi33-training-note"><span class="icon icon-info" aria-hidden="true"></span> {{ _('page.training_detail.invalid_when_not_enrolled') }}</div>
+    {% endif %}
+    {% if missing.length %}
+      <div class="oi33-training-note" role="status">
+        <span class="icon icon-warning" aria-hidden="true"></span>
+        <span>{{ _('Some problems in the training are missing or you do not have permission to view them.') }} <strong>{{ missing|join(', ') }}</strong></span>
+      </div>
+    {% endif %}
+
+    <section id="training-sections" class="section oi33-training-sections">
+      <div class="section__header">
+        <h2 class="section__title">训练章节</h2>
+        <p>从当前开放的章节继续，完成题目后进度会自动更新。</p>
+      </div>
+      {% include "partials/training_detail.html" %}
+    </section>
+  </div>
+
+  <aside class="medium-3 columns oi33-training-sidebar" data-sticky="large">
+    <section class="section side oi33-training-summary">
+      <div class="section__header"><h2 class="section__title">计划概览</h2></div>
+      <div class="section__body typo">
+        <dl class="oi33-training-summary__list">
+          {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+            <dt>{{ _('Status') }}</dt><dd>{% if tsdoc['done'] %}{{ _('Completed') }}{% elif tsdoc['enroll'] %}{{ _('In Progress') }}{% else %}{{ _('Not Enrolled') }}{% endif %}</dd>
+          {% endif %}
+          {% if tsdoc['enroll'] %}<dt>{{ _('Progress') }}</dt><dd>{{ progress }}%</dd>{% endif %}
+          <dt>{{ _('Enrollees') }}</dt><dd>{{ tdoc.attend|default(0) }}</dd>
+          <dt>{{ _('Created By') }}</dt><dd>{{ user.render_inline(udoc, badge=false) }}</dd>
+        </dl>
+        <a class="oi33-training-help" href="{{ url('wiki_help', anchor='training') }}"><span class="icon icon-help" aria-hidden="true"></span> {{ _('Help') }}</a>
+      </div>
+    </section>
+
+    {% if Object.keys(udict).length %}
+      <section class="section side oi33-training-members mobile--hide">
+        <div class="section__header"><h2 class="section__title">参训学生</h2></div>
+        <div class="section__body">
+          <form method="get" id="searchForm" class="nojs--hide oi33-training-member-search">
+            <select name="group" class="select"{% if not groups.length %} style="display:none"{% endif %} aria-label="选择用户组">
+              <option value="all" selected>{{ _('All') }}</option>
+              {% for group in groups %}<option value="{{ group.uids.join(',') }}">{{ group.name }}</option>{% endfor %}
+            </select>
+            <input name="uid" type="text" class="search__input textbox" placeholder="{{ _('Select User') }}" aria-label="{{ _('Select User') }}">
+          </form>
+          <ol class="enroll_user_menu oi33-training-member-list">
+            {%- for uid, member in udict -%}
+              <li class="enroll_user_menu_item" data-uid="{{ uid }}" data-uname="{{ member.uname }}"{% if handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and member.displayName %} data-displayname="{{ member.displayName }}"{% endif %}>
+                <a href="./{{ tdoc._id }}?uid={{ uid }}" class="{% if (handler.request.query.uid or handler.user._id) == uid %}active{% endif %}">
+                  <img class="small user-profile-avatar v-center" loading="lazy" src="{{ avatarUrl(member.avatar|default('')) }}" width="24" height="24" alt="">
+                  <span>{% if handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and member.displayName and member.displayName != member.uname %}{{ member.displayName }} ({{ member.uname }}){% else %}{{ member.uname }}{% endif %}</span>
+                </a>
+              </li>
+            {%- endfor -%}
+          </ol>
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="section side oi33-training-outline">
       <ol class="menu">
         {{ sidemenu.render_item('list', 'training_detail', {tid:tdoc._id}, label='tasks_list', menu_item='training_detail') }}
       </ol>
-    </div>
-  </div>
+    </section>
+  </aside>
 </div>
 {% endblock %}

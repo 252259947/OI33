@@ -12,37 +12,26 @@ export const achievementColl = db.collection('oi33_achievement');
 export const userAchievementColl = db.collection('oi33_user_achievement');
 
 const ACCEPTED_PROBLEM_DOMAINS_KEY = 'oi33.achievement.accepted_problem_domains';
+const SINGLE_SITE_DOMAIN_ID = 'system';
 
-function normalizeAcceptedDomains(values: unknown[]): string[] {
-    return [...new Set(values.map((value) => String(value).trim()).filter(Boolean))];
-}
-
-// An empty list means every domain. The value is JSON-encoded so it remains
-// portable across Hydro versions whose SystemModel value typing differs.
+// huaji OJ is a single-site product. Hydro still needs its internal system
+// domain, but achievement rules must never span user-created domains.
 export function achievementGetAcceptedDomains(): string[] {
-    const raw = SystemModel.get(ACCEPTED_PROBLEM_DOMAINS_KEY) as unknown;
-    if (Array.isArray(raw)) return normalizeAcceptedDomains(raw);
-    if (typeof raw !== 'string' || !raw.trim()) return [];
-    try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return normalizeAcceptedDomains(parsed);
-    } catch { /* Backward-compatible plain text value. */ }
-    return normalizeAcceptedDomains(raw.split(/[,，\s]+/));
+    return [SINGLE_SITE_DOMAIN_ID];
 }
 
 export function achievementAcceptedDomainIncluded(domainId: string): boolean {
-    const domains = achievementGetAcceptedDomains();
-    return !domains.length || domains.includes(domainId);
+    return domainId === SINGLE_SITE_DOMAIN_ID;
 }
 
-export async function achievementSetAcceptedDomains(domainIds: string[], operator: number) {
-    const normalized = normalizeAcceptedDomains(domainIds);
-    await SystemModel.set(ACCEPTED_PROBLEM_DOMAINS_KEY, JSON.stringify(normalized));
+export async function achievementSetAcceptedDomains(_domainIds: string[], operator: number) {
+    const acceptedDomains = [SINGLE_SITE_DOMAIN_ID];
+    await SystemModel.set(ACCEPTED_PROBLEM_DOMAINS_KEY, JSON.stringify(acceptedDomains));
     await addLog({
         type: 'achievement', userId: operator, action: 'config_update',
-        reason: normalized.join(', '),
+        reason: SINGLE_SITE_DOMAIN_ID,
     });
-    return normalized;
+    return acceptedDomains;
 }
 
 export async function ensureAchievementIndexes() {

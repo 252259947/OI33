@@ -302,7 +302,7 @@ class JudgeMonitorHandler extends Handler {
             const statuses = await getJudgeStatuses();
             sendResult = await sendWecom(webhookUrl, buildManualMessage(statuses));
         } else if (action === 'test') {
-            const msg = `## 🧪 Webhook 测试\n\nOI33 评测机监控 Webhook 测试消息。\n\n> 发送时间：${fmtDate(new Date())}`;
+            const msg = `## 🧪 Webhook 测试\n\nhuaji OJ 评测机监控 Webhook 测试消息。\n\n> 发送时间：${fmtDate(new Date())}`;
             sendResult = await sendWecom(webhookUrl, msg);
         } else if (action === 'run_check') {
             const prevNotifyAt = SystemModel.get(KEY_LAST_NOTIFY_AT) as string | undefined;

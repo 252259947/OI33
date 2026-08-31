@@ -1,4 +1,4 @@
-# OI33 — 33OJ 统一插件
+# OI33 — huaji OJ 统一插件
 
 > ⚠️ **使用前必读**
 >
@@ -33,14 +33,14 @@
 | AT/CF 用户名 | 设置 AtCoder / Codeforces 用户名（走审批流程），rating 字段由后台脚本自动更新 | `/oi33/profile/edit/:uid` |
 | AT/CF Rating 排名 | 公开展示已绑定 AT/CF 用户的信息及 rating，支持按任意 rating 排序 | `/oi33/at-cf-rating` |
 | 统一资料审批 | 生日、实名、徽章、AT/CF 用户名 均走提交→审批流；未认证用户只能提交认证申请 | `/oi33/requests` |
-| MCP / Agent API 令牌 | 供外部 MCP 工具或 AI Agent 调用的只读 Bearer Token，可限定域和过期时间 | `/oi33/tokens` |
-| OAuth2 登录 | 33OJ 作为 OAuth2 身份提供方，让其他网站实现「使用 33OJ 登录」 | `/oi33/oauth/*` |
+| MCP / Agent API 令牌 | 供外部 MCP 工具或 AI Agent 调用的只读 Bearer Token，仅访问本站，可设置过期时间 | `/oi33/tokens` |
+| OAuth2 登录 | huaji OJ 作为 OAuth2 身份提供方，让其他网站实现「使用 huaji OJ 登录」 | `/oi33/oauth/*` |
 | 评测机监控 | 每 5 分钟检查心跳，离线/恢复时通过企业微信 Webhook 推送通知 | `/oi33/judge-monitor` |
 | AI 代码分析 | DeepSeek 思考模型流式点评提交代码，学生引导/教师诊断双 prompt，精简题意缓存，按 token 计费 | `/oi33/ai/*` |
 | AI 讨论审核 | 讨论区仅实名用户可用；规则层 + AI 双层审核（结构化裁决、fail-closed），存疑进人工队列 | `/oi33/ai/moderation` |
 | 个人简介审核 | 已认证用户简介展示在个人页首个标签；每次修改（2 小时冷却）自动 AI 审核，失败隐藏并私信通知，存疑进人工队列 | `/oi33/ai/bio-review` |
 | 喵喵时间线 | 犇犇式短博客：仅实名用户可发，每天首条免费、后续每条 1 猫罐头，上一条后 2 小时冷却；单向关注/粉丝、点赞、纯文字转发、AI+人工审核，首页模块 | `/oi33/meow/*` |
-| 成就系统 | 8/16/24/32 像素 PNG；支持通过题数、连续/累计登录、猫粮/罐头余额五类阈值自动发放；AC 统计域可全局配置并按题号跨域去重；个人页提供 4×4 成就展示柜（用户自选最多 16 个徽章，可自由排序）和紧凑成就列表面板（最多 50 条，可跳全部成就页）；稀有（可售卖）成就和手动授予时自动发布个人喵喵 | `/oi33/achievements` |
+| 成就系统 | 8/16/24/32 像素 PNG；支持通过题数、连续/累计登录、猫粮/罐头余额五类阈值自动发放；通过题数按本站题号去重统计；个人页提供 4×4 成就展示柜（用户自选最多 16 个徽章，可自由排序）和紧凑成就列表面板（最多 50 条，可跳全部成就页）；稀有（可售卖）成就和手动授予时自动发布个人喵喵 | `/oi33/achievements` |
 | 成就拍卖 | 管理员上架成就拍卖（时长 1–720 小时 + 起拍价），有效出价至少保留 1 分钟竞价时间；出价托管扣款、被超越自动退款、成交后赢家获得成就且罐头回流罐头池 | `/oi33/auction` |
 | 成就交易合同 | 标记为「可售卖」的成就被拍卖或合同交易获得后，可挂给指定用户按约定猫粮数量转售；对方接受即成交（成就转让、猫粮转账） | `/oi33/contracts` |
 | 权限速查表 | 按角色列出各功能权限矩阵 | `/oi33/permissions` |
@@ -173,7 +173,7 @@
 | `/oi33/meow/delete/:postId` | `PRIV_USER_PROFILE`（仅本人，或 OI33 身份 ≥ 2） | 删除自己的喵喵（POST；不退还罐头） |
 | `/oi33/achievements` | OI33 身份 ≥ 2 | 成就定义、自动指标、像素图、手动授予与撤销管理 |
 | `/oi33/achievements/save` | OI33 身份 ≥ 2 | 创建/修改成就定义（POST，PNG 原始尺寸仅 8/16/24/32） |
-| `/oi33/achievements/config` | OI33 身份 ≥ 2 | 保存 AC 统计域全局配置（POST；留空为全部域，不同域按题目 `sort` 跨域去重） |
+| `/oi33/achievements/config` | OI33 身份 ≥ 2 | 兼容旧版本的内部配置入口；统计范围固定为本站 |
 | `/oi33/achievements/grant`、`/oi33/achievements/revoke` | OI33 身份 ≥ 2 | 授予/撤销用户成就（POST） |
 | `/oi33/achievements/scan` | OI33 身份 ≥ 2 | 逐用户扫描并补发自动成就；猫粮读取账户明细历史峰值，扫描补发不发布喵喵（POST） |
 | `/oi33/achievements/showcase` | `PRIV_USER_PROFILE` + 已认证 | 编辑自己的成就展示柜（最多 16 个徽章，GET/POST） |
@@ -451,7 +451,7 @@ hydrooj addon remove frontend-33oj
 ### AI 参考难度与批量生成
 
 - `/oi33/ai/summary`：查看/重新生成精简题意，WebSocket 流式输出（实时显示思考过程与题意 markdown）；一次调用同时产出精简题意和难度（模型在末尾输出 `[[难度]]N` 标记，入库前剥离，不会混入缓存）。
-- `/oi33/ai/summary/batch`：按 sort 题号区间批量补齐，可指定域（默认 `system`），支持纯数字（`1000 ~ 1500`）和字母数字混合（`ABC123A ~ ABC200D`，按前缀→数字→后缀比较）两种格式；单次最多 500 题，后台顺序执行、只补缺口、可重复跑，页面每 10 秒自动刷新进度。
+- `/oi33/ai/summary/batch`：按本站 sort 题号区间批量补齐，支持纯数字（`1000 ~ 1500`）和字母数字混合（`ABC123A ~ ABC200D`，按前缀→数字→后缀比较）两种格式；单次最多 500 题，后台顺序执行、只补缺口、可重复跑，页面每 10 秒自动刷新进度。
 - 题目未评级（难度为 0/未设置）时 AI 难度直接写入题目；已评级题目保留原评级，AI 参考难度仅在 `/oi33/ai/summary` 展示。
 - 难度评判的 system prompt 可在 `/oi33/ai/models` 配置（`difficulty_prompt`，留空用内置默认；仅对单独评判路径生效，合并生成使用内置难度说明）。
 - 后台分析时自动生成的精简题意不评判难度，可在 summary 页用「生成 AI 参考难度」单独补判。
@@ -633,24 +633,24 @@ OI33 内置 Wiki 百科，支持 Markdown 页面 CRUD、多级分类目录和 JS
 
 ## MCP / Agent API 令牌
 
-为外部 MCP 工具、AI Agent 或自动化脚本提供**只读** Bearer Token 认证，绕过登录访问 33OJ 公开数据。完整端点与错误码见 [API.md](API.md)。
+为外部 MCP 工具、AI Agent 或自动化脚本提供**只读** Bearer Token 认证，绕过登录访问 huaji OJ 公开数据。完整端点与错误码见 [API.md](API.md)。
 
 | 特性 | 说明 |
 |------|------|
 | Token 格式 | `33tok_<base64url>`，创建时仅显示一次；数据库存 SHA-256 hash |
 | 权限模型 | 只读：HTTP 方法限制（仅 `GET`/`HEAD`/`OPTIONS`）+ 路由白名单双重拦截 |
-| 域限制 | 可限定允许访问的域（`*` 为全部），未授权域返回 403 |
+| 站点限制 | 只允许访问 huaji OJ 的内部 `system` 数据范围 |
 | 创建权限 | 仅 `PRIV_ALL` 超级管理员，管理入口 `/oi33/tokens` |
 
-使用：请求头 `Authorization: Bearer 33tok_xxx`。令牌经 `handler/create` 钩子最早注入，游客无权限的私有域也能正常访问。
+使用：请求头 `Authorization: Bearer 33tok_xxx`。令牌经 `handler/create` 钩子最早注入，仅用于本站只读接口。
 
 **白名单路由**：Hydro 核心 `/record/*`、`/p`、`/contest/*`、`/homework/*`、`/user/*`、`/ranking`、`/discuss/*`、`/training/*`；OI33 插件 `/oi33/users`、`/oi33/birthday`、`/oi33/badge*`、`/oi33/at-cf-rating`、`/oi33/paste/*`、`/oi33/coin/bill/*`、`/oi33/admin`、`/oi33/requests`、`/oi33/tokens`。**明确禁止**：`/oi33/checkin`（GET 会写入）、`/oi33/badge/manage/*/del`，以及所有未列出的路径。白名单精确匹配或前缀匹配，未命中即拒绝。
 
 典型场景：AI Agent 拉取题目/提交/排行做分析、MCP Server 只读凭证、定时报表脚本、第三方只读对接。
 
-## OAuth2 登录（33OJ 作为身份提供方）
+## OAuth2 登录（huaji OJ 作为身份提供方）
 
-33OJ 可作为 OAuth2 身份提供方（IdP），让其他网站实现「使用 33OJ 登录」——标准 **Authorization Code** 流程（RFC 6749），支持 PKCE（RFC 7636）和刷新令牌。应用详情页 `/oi33/oauth/clients/:id` 自带完整接入指南和可复制端点。
+huaji OJ 可作为 OAuth2 身份提供方（IdP），让其他网站实现「使用 huaji OJ 登录」——标准 **Authorization Code** 流程（RFC 6749），支持 PKCE（RFC 7636）和刷新令牌。应用详情页 `/oi33/oauth/clients/:id` 自带完整接入指南和可复制端点。
 
 ### 快速接入
 
