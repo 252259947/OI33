@@ -379,6 +379,15 @@ async function getScratchpadMonaco() {
     return scratchpad?.monaco || (window as any).monaco;
 }
 
+async function compactScratchpadEditorGutter() {
+    const scratchpad = (ctx as any).scratchpad;
+    if (!scratchpad?.editor && scratchpad?.load) await scratchpad.load;
+    scratchpad?.editor?.updateOptions({
+        glyphMargin: false,
+        lineNumbersMinChars: 3,
+    });
+}
+
 async function applyEditorTheme(store: ScratchpadStore, theme: string) {
     const monaco = await getScratchpadMonaco();
     if (!monaco?.editor || !isKnownEditorTheme(theme)) throw new Error('编辑器主题不可用');
@@ -603,6 +612,7 @@ function mountScratchpadWorkbench() {
     }));
     mountProblemTabs(root, store);
     mountEditorSettings(toolbar, store);
+    void compactScratchpadEditorGutter();
     installPretestFlow(root, store);
     installScratchpadObserver(root, store);
     return true;
