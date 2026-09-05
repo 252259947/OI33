@@ -59,31 +59,6 @@
       </a>
     </nav>
 
-    <section class="section oi33-home__starter">
-      <div class="section__header">
-        <div>
-          <h1 class="section__title">选择今天的学习方式</h1>
-          <p>不用一次做很多，先完成一个清晰的小目标。</p>
-        </div>
-      </div>
-      <div class="section__body oi33-home__starter-grid">
-        <a class="oi33-home__starter-item" href="{{ url('problem_detail', pid='P1000') }}">
-          <span class="oi33-home__starter-index">01</span>
-          <span><strong>入门热身</strong><small>从 A+B Problem 熟悉评测流程</small></span>
-          <span aria-hidden="true">›</span>
-        </a>
-        <a class="oi33-home__starter-item" href="{{ url('problem_main') }}">
-          <span class="oi33-home__starter-index">02</span>
-          <span><strong>自由选题</strong><small>搜索题号、标题或知识点</small></span>
-          <span aria-hidden="true">›</span>
-        </a>
-        <a class="oi33-home__starter-item" href="{{ oi33RecordUrl }}">
-          <span class="oi33-home__starter-index">03</span>
-          <span><strong>复盘提交</strong><small>找到错误，重新完成一道题</small></span>
-          <span aria-hidden="true">›</span>
-        </a>
-      </div>
-    </section>
   </div>
 </div>
 
@@ -91,7 +66,7 @@
   {% for column in contents %}
     <div class="large-{{ column.width }} columns oi33-home__column">
       {% for s in column.sections %}
-        {% if s[0] != 'meow' %}
+        {% if s[0] != 'meow' and s[0] != 'recent_problems' %}
           {% if templateExists("partials/homepage/" + s[0] + ".html") %}
             {% set payload = s[1] %}
             {% include "partials/homepage/" + s[0] + ".html" %}

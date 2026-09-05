@@ -68,7 +68,6 @@ server.name: huaji OJ
 pagination.problem: 30
 hydrooj.homepage:
   - width: 9
-    recent_problems: 12
     contest: 5
     training: 6
     discussion: 8
