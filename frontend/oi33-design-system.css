@@ -475,6 +475,11 @@ table {
   padding-top: 24px;
 }
 
+.oi33-home > .columns {
+  padding-right: 10px;
+  padding-left: 10px;
+}
+
 .oi33-home__hero {
   position: relative;
   display: grid;
@@ -482,7 +487,7 @@ table {
   grid-template-columns: minmax(0, 1.3fr) minmax(280px, .7fr);
   gap: 32px;
   min-height: 290px;
-  margin: 0 10px 20px;
+  margin: 0 0 20px;
   padding: 42px 46px;
   border: 1px solid rgba(91, 92, 226, .2);
   border-radius: var(--oi33-radius-lg);
@@ -632,7 +637,7 @@ table {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin: 0 10px 22px;
+  margin: 0 0 22px;
 }
 
 .oi33-quick-card {
