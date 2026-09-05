@@ -194,6 +194,39 @@ table {
   background: var(--oi33-surface-2);
 }
 
+/* Homework list cards come from Hydro's core template. Stretch their native
+   title link across the row without adding click handlers or duplicate focus. */
+.homework__item {
+  position: relative;
+  isolation: isolate;
+  cursor: pointer;
+  transition: background-color .16s ease;
+}
+
+.homework__item:hover,
+.homework__item:has(.homework__title > a:focus-visible) {
+  background: var(--oi33-surface-2);
+}
+
+.homework__item .homework__title > a {
+  position: static;
+}
+
+.homework__item .homework__title > a::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+}
+
+.homework__item .homework__title > a:focus-visible {
+  outline: 0;
+}
+
+.homework__item .homework__title > a:focus-visible::after {
+  box-shadow: inset 0 0 0 3px rgba(91, 92, 226, .45);
+}
+
 /* Product navigation */
 .oi33-nav {
   /* ui-default pins `.nav` with !important. Keep the new header in normal

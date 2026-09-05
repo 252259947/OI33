@@ -38,7 +38,7 @@
                 {% if ddoc.hidden %}<span class="oi33-article-badge is-review">审核中</span>{% endif %}
                 {% if parentDoc and ddoc.oi33ProblemId %}<span class="oi33-article-badge is-problem">{{ parentDoc.title }}</span>{% endif %}
               </div>
-              <h2><a href="{{ url('discussion_detail', did=ddoc.docId) }}">{{ ddoc.title }}</a></h2>
+              <h2><a class="oi33-article-mine__primary-link" href="{{ url('discussion_detail', did=ddoc.docId) }}">{{ ddoc.title }}</a></h2>
               {% if ddoc.content %}<p>{{ ddoc.content|markdown|striptags|truncate(180) }}</p>{% endif %}
               <div class="oi33-article-mine__meta"><span>{{ datetimeSpan(ddoc.updateAt)|safe }}</span><span>{{ ddoc.views }} 次浏览</span><span>{{ ddoc.nReply }} 条回复</span></div>
             </div>

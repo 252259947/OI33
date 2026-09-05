@@ -181,12 +181,14 @@
 
 .oi33-training-card {
   position: relative;
+  isolation: isolate;
   overflow: hidden;
   min-width: 0;
   border: 1px solid var(--oi33-line, #e3e8f2);
   border-radius: var(--oi33-radius, 16px);
   background: var(--oi33-surface, #fff);
   box-shadow: var(--oi33-shadow-sm, 0 8px 24px rgba(47, 55, 89, .05));
+  cursor: pointer;
   transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
 }
 
@@ -209,6 +211,11 @@
   border-color: color-mix(in srgb, var(--oi33-brand, #5b5ce2) 35%, var(--oi33-line, #e3e8f2));
   box-shadow: 0 16px 38px rgba(46, 55, 94, .12);
   transform: translateY(-2px);
+}
+
+.oi33-training-card:has(.oi33-training-card__primary-link:focus-visible) {
+  border-color: var(--oi33-brand, #5b5ce2);
+  box-shadow: 0 16px 38px rgba(46, 55, 94, .12);
 }
 
 .oi33-training-card__body {
@@ -241,11 +248,29 @@
   line-height: 1.4;
 }
 
-.oi33-training-card .training__title a {
+.oi33-training-card__primary-link {
+  position: static;
   color: var(--oi33-text, #182033);
 }
 
-.oi33-training-card .training__title a:hover {
+.oi33-training-card__primary-link::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.oi33-training-card__primary-link:focus-visible {
+  outline: 0;
+}
+
+.oi33-training-card__primary-link:focus-visible::after {
+  box-shadow: inset 0 0 0 3px rgba(91, 92, 226, .45);
+}
+
+.oi33-training-card:hover .oi33-training-card__primary-link,
+.oi33-training-card:has(.oi33-training-card__primary-link:focus-visible) .oi33-training-card__primary-link {
   color: var(--oi33-brand, #5b5ce2);
 }
 
@@ -372,9 +397,11 @@
   background: var(--oi33-surface, #fff);
   font-size: 13px;
   font-weight: 700;
+  pointer-events: none;
 }
 
-.oi33-training-card__action:hover {
+.oi33-training-card:hover .oi33-training-card__action,
+.oi33-training-card:has(.oi33-training-card__primary-link:focus-visible) .oi33-training-card__action {
   border-color: var(--oi33-brand, #5b5ce2);
   color: var(--oi33-brand, #5b5ce2);
   background: var(--oi33-brand-soft, #eeefff);
@@ -386,7 +413,8 @@
   background: var(--oi33-brand, #5b5ce2);
 }
 
-.oi33-training-card__action.is-primary:hover {
+.oi33-training-card:hover .oi33-training-card__action.is-primary,
+.oi33-training-card:has(.oi33-training-card__primary-link:focus-visible) .oi33-training-card__action.is-primary {
   border-color: var(--oi33-brand-strong, #4546c7);
   color: #fff;
   background: var(--oi33-brand-strong, #4546c7);

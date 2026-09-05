@@ -232,8 +232,10 @@
 
 .oi33-contest-card {
   position: relative;
+  isolation: isolate;
   min-width: 0;
   background: var(--oi33-surface, #fff);
+  cursor: pointer;
   transition: background .18s ease;
 }
 
@@ -262,6 +264,10 @@
 
 .oi33-contest-card:hover {
   background: color-mix(in srgb, var(--oi33-brand-soft, #eeefff) 32%, var(--oi33-surface, #fff));
+}
+
+.oi33-contest-card:has(.oi33-contest-card__primary-link:focus-visible) {
+  background: var(--oi33-brand-soft, #eeefff);
 }
 
 .oi33-contest-card__body {
@@ -336,11 +342,28 @@
   line-height: 1.4;
 }
 
-.oi33-contest-card__title a {
+.oi33-contest-card__primary-link {
+  position: static;
   color: inherit;
 }
 
-.oi33-contest-card__title a:hover {
+.oi33-contest-card__primary-link::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+}
+
+.oi33-contest-card__primary-link:focus-visible {
+  outline: 0;
+}
+
+.oi33-contest-card__primary-link:focus-visible::after {
+  box-shadow: inset 0 0 0 3px rgba(91, 92, 226, .45);
+}
+
+.oi33-contest-card:hover .oi33-contest-card__primary-link,
+.oi33-contest-card:has(.oi33-contest-card__primary-link:focus-visible) .oi33-contest-card__primary-link {
   color: var(--oi33-brand, #5b5ce2);
 }
 
@@ -435,10 +458,12 @@
   font-size: 13px;
   font-weight: 700;
   line-height: 1;
+  pointer-events: none;
   white-space: nowrap;
 }
 
-.oi33-contest-card__action:hover {
+.oi33-contest-card:hover .oi33-contest-card__action,
+.oi33-contest-card:has(.oi33-contest-card__primary-link:focus-visible) .oi33-contest-card__action {
   border-color: var(--oi33-brand, #5b5ce2);
   color: var(--oi33-brand, #5b5ce2);
   background: var(--oi33-brand-soft, #eeefff);
@@ -450,7 +475,8 @@
   background: var(--oi33-brand, #5b5ce2);
 }
 
-.oi33-contest-card__action.is-primary:hover {
+.oi33-contest-card:hover .oi33-contest-card__action.is-primary,
+.oi33-contest-card:has(.oi33-contest-card__primary-link:focus-visible) .oi33-contest-card__action.is-primary {
   border-color: var(--oi33-brand-strong, #4546c7);
   color: #fff;
   background: var(--oi33-brand-strong, #4546c7);

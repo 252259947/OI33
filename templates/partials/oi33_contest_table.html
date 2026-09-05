@@ -23,7 +23,7 @@
         <span class="oi33-contest-rule"><span class="icon icon-award" aria-hidden="true"></span> {% if tdoc.rule == 'oc' %}OC{% else %}{{ _(model.contest.RULES[tdoc['rule']].TEXT) }}{% endif %}</span>
         {% if tdoc.rated %}<span class="oi33-contest-rated"><span class="icon icon-star" aria-hidden="true"></span> Rated</span>{% endif %}
       </div>
-      <h3 class="oi33-contest-card__title"><a href="{{ url('contest_detail', tid=tdoc.docId) }}" data-emoji-enabled>{{ tdoc.title }}</a></h3>
+      <h3 class="oi33-contest-card__title"><a class="oi33-contest-card__primary-link" href="{{ url('contest_detail', tid=tdoc.docId) }}" data-emoji-enabled>{{ tdoc.title }}</a></h3>
       <div class="oi33-contest-card__schedule" aria-label="比赛时间">
         <span class="oi33-contest-card__time">
           <small>开始</small>
@@ -48,9 +48,9 @@
       {% else %}
         <span class="oi33-contest-card__participation">登录后查看参赛状态</span>
       {% endif %}
-      <a href="{{ url('contest_detail', tid=tdoc.docId) }}" class="oi33-contest-card__action{% if isLive %} is-primary{% endif %}">
+      <span class="oi33-contest-card__action{% if isLive %} is-primary{% endif %}" aria-hidden="true">
         {% if isLive and statusDoc.attend %}继续比赛{% elif isLive %}查看比赛{% elif isDone and statusDoc.attend %}查看成绩{% elif isDone %}回顾比赛{% elif statusDoc.attend %}查看安排{% else %}查看并报名{% endif %}<span aria-hidden="true">→</span>
-      </a>
+      </span>
     </div>
   </article>
 </li>

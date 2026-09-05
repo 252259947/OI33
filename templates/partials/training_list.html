@@ -37,7 +37,7 @@
               {% endif %}
             {% endif %}
           </div>
-          <h2 class="training__title"><a href="{{ url('training_detail', tid=tdoc.docId) }}" data-emoji-enabled>{{ tdoc.title }}</a></h2>
+          <h2 class="training__title"><a class="oi33-training-card__primary-link" href="{{ url('training_detail', tid=tdoc.docId) }}" data-emoji-enabled>{{ tdoc.title }}</a></h2>
           {% if tdoc['content'] %}
             <p class="oi33-training-card__intro">{{ tdoc['content'] }}</p>
           {% else %}
@@ -63,9 +63,9 @@
             <span class="oi33-training-card__hint">
               {% if tsdoc['done'] %}已完成，可以随时回来复习{% elif tsdoc['enroll'] %}从上次的进度继续{% else %}查看章节与题目安排{% endif %}
             </span>
-            <a href="{{ url('training_detail', tid=tdoc.docId) }}" class="oi33-training-card__action{% if tsdoc['enroll'] and not tsdoc['done'] %} is-primary{% endif %}">
+            <span class="oi33-training-card__action{% if tsdoc['enroll'] and not tsdoc['done'] %} is-primary{% endif %}" aria-hidden="true">
               {% if tsdoc['done'] %}回顾训练{% elif tsdoc['enroll'] %}继续训练{% else %}查看计划{% endif %}<span aria-hidden="true">→</span>
-            </a>
+            </span>
           </div>
         </article>
       </li>
