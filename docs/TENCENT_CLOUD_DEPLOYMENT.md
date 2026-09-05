@@ -88,7 +88,8 @@ OI33 的 `/resource/<内容哈希>/` 静态资源可以长期缓存；内容更�
 
 ```caddyfile
 @oi33VersionedResource path_regexp oi33VersionedResource ^/resource/[0-9a-f]{8}/
-header @oi33VersionedResource Cache-Control "public, max-age=31536000, immutable"
+# `>` 会在 file_server 写入默认缓存头之后覆盖它，避免同时返回两个 max-age。
+header @oi33VersionedResource >Cache-Control "public, max-age=31536000, immutable"
 
 # “获取链接可见”文章的分享令牌在首次访问路径中，不写入访问日志。
 @oi33ArticleShare path /article/share/*
