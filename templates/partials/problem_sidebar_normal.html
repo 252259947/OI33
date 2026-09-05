@@ -10,7 +10,7 @@
     <ol class="menu">
     {% if page_name == 'discussion_node' or page_name == 'discussion_detail' %}
     {% if handler.user.hasPerm(perm.PERM_CREATE_DISCUSSION) %}
-      <li class="menu__item"><a class="menu__link highlight" href="{{ url('discussion_create', type='problem', name=pdoc.docId) }}">
+      <li class="menu__item"><a class="menu__link highlight" href="/article/new?problem={{ pdoc.docId }}">
         <span class="icon icon-add"></span> {{ _('Create a Discussion') }}
       </a></li>
     {% else %}

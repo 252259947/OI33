@@ -484,12 +484,32 @@
 }
 
 .oi33-training-hero__actions form {
+  display: flex;
   margin: 0;
 }
 
 .oi33-training-hero__actions .button {
-  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 140px;
+  height: 42px;
+  gap: 7px;
   margin: 0;
+  padding: 0 16px;
+  line-height: 1;
+}
+
+.oi33-training-hero__actions .button .icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  margin: 0;
+  line-height: 1;
 }
 
 .oi33-training-description .section__body {

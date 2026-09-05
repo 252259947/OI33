@@ -1,7 +1,6 @@
 {% import "components/home.html" as home with context %}
 {% import "components/problem.html" as problem with context %}
 {% import "components/user.html" as user with context %}
-{% import "components/meow_post.html" as spost with context %}
 {% extends "layout/basic.html" %}
 {%- macro atcolor(r) -%}{% if r >= 2800 %}#FF0000{% elif r >= 2400 %}#FF8000{% elif r >= 2000 %}#C0C000{% elif r >= 1600 %}#0000FF{% elif r >= 1200 %}#00C0C0{% elif r >= 800 %}#008000{% elif r >= 400 %}#804000{% else %}#808080{% endif %}{%- endmacro -%}
 {%- macro cfcolor(r) -%}{% if r >= 3000 %}#CC0000{% elif r >= 2400 %}#FF0000{% elif r >= 2100 %}#FF8C00{% elif r >= 1900 %}#AA00AA{% elif r >= 1600 %}#0000FF{% elif r >= 1400 %}#03A89E{% elif r >= 1200 %}#008000{% else %}#808080{% endif %}{%- endmacro -%}
@@ -171,9 +170,6 @@
                 <a href="/oi33/profile/edit/{{ udoc._id }}" class="rounded primary button">
                   <span class="icon icon-wrench"></span> {{ _('Edit huaji OJ Profile') }}
                 </a>
-                {% if not _profileHidden %}<a href="/oi33/coin/bill/{{ udoc._id }}" class="rounded button">
-                  <span class="icon icon-search"></span> {{ _('View Coin Bill') }}
-                </a>{% endif %}
               </div>
               {% endif %}
             </div>
@@ -233,40 +229,6 @@
                 </div>
               </div>
             </li>
-            {% if oi33MeowPanel %}
-            <li class="section__tab-item">
-              <h1 class="section__tab-title">喵喵</h1>
-              <div class="section__tab-main">
-                <div class="typo section__body no-media">
-                  <div class="oi33-meow-panelbar">
-                    {% if not oi33MeowPanel.isSelf and handler.user._id %}
-                      {% if oi33MeowPanel.viewerFollows %}
-                      <form method="post" action="{{ url('oi33_meow_unfollow', uid=udoc._id) }}" style="display:inline;">
-                        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
-                        <button type="submit" class="rounded button">{{ _('Unfollow') }}</button>
-                      </form>
-                      {% else %}
-                      <form method="post" action="{{ url('oi33_meow_follow', uid=udoc._id) }}" style="display:inline;">
-                        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
-                        <button type="submit" class="rounded primary button">{{ _('Follow') }}</button>
-                      </form>
-                      {% endif %}
-                    {% endif %}
-                    <a href="{{ url('oi33_meow_user', uid=udoc._id) }}" class="rounded button" style="margin-left:auto;">进入喵喵</a>
-                  </div>
-                  {% if oi33MeowPanel.posts.length %}
-                    {% for p in oi33MeowPanel.posts %}
-                      {{ spost.render(p, oi33MeowPanel.udict, oi33MeowPanel.likedMap, oi33MeowPanel.isSelf, false, true) }}
-                    {% endfor %}
-                  {% elif not oi33MeowPanel.canSeePosts %}
-                    <p>{{ _('Meow posts hidden') }}</p>
-                  {% else %}
-                    <p>{{ _('No meow posts yet.') }}</p>
-                  {% endif %}
-                </div>
-              </div>
-            </li>
-            {% endif %}
             {% if oi33AchievementPanel %}
             <li class="section__tab-item">
               <h1 class="section__tab-title">成就（{{ oi33AchievementPanel.awards.length }}）</h1>
@@ -398,12 +360,7 @@
     {% endif %}
   </div>
 </div>
-{% include 'partials/meow_style.html' %}
 <style>
-  .oi33-meow-panelbar { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
-  .oi33-meow-panelbar form { margin: 0; }
-  .oi33-meow-paneltitle { margin: 1.25rem 0 0.5rem !important; font-size: 1.05em; }
-  .oi33-meow-panellist__row { padding: 0.3rem 0; }
   .oi33-showcase-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; }
   .oi33-showcase-badge {
     display:flex; flex-direction:column; align-items:center; min-width:0;

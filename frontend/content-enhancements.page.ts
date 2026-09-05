@@ -98,4 +98,4 @@ function mountAiSummaryTag() {
 
 addPage(new NamedPage(['problem_detail', 'contest_detail_problem', 'homework_detail_problem'], emphasizeFileIoTag));
 addPage(new NamedPage('problem_detail', mountAiSummaryTag));
-addPage(new NamedPage(['oi33_wiki_main', 'oi33_wiki_show', 'oi33_paste_show'], mountContentToc));
+addPage(new NamedPage(['oi33_wiki_main', 'oi33_wiki_show', 'oi33_paste_show', 'discussion_detail'], mountContentToc));

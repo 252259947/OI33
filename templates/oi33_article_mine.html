@@ -1,0 +1,57 @@
+{% extends "layout/basic.html" %}
+{% import "components/paginator.html" as paginator with context %}
+{% block content %}
+<div class="row oi33-article-mine">
+  <div class="columns">
+    <header class="oi33-article-mine__head">
+      <div>
+        <div class="oi33-discuss__eyebrow">MY WRITING</div>
+        <h1>我的文章</h1>
+        <p>公开文章、私人笔记和链接剪切板都集中保存在这里。</p>
+      </div>
+      <div class="oi33-article-mine__actions">
+        <a class="rounded button" href="/discuss">文章广场</a>
+        <a class="primary rounded button" href="/article/new"><span class="icon icon-add"></span> 写文章</a>
+      </div>
+    </header>
+
+    <section class="section oi33-article-mine__section">
+      <div class="section__header">
+        <div><h2 class="section__title">全部内容</h2><p>按最近更新排序；非公开文章不会出现在公屏或题目讨论区。</p></div>
+      </div>
+      {% if not ddocs.length %}
+      <div class="oi33-article-mine__empty">
+        <span class="icon icon-file"></span>
+        <h2>还没有保存过文章</h2>
+        <p>可以从公开题解开始，也可以先建一个只通过链接分享的剪切板。</p>
+        <a class="primary rounded button" href="/article/new">开始写作</a>
+      </div>
+      {% else %}
+      <div class="oi33-article-mine__list">
+        {% for ddoc in ddocs %}
+          {% set parentDict = vndict[ddoc.parentType] or {} %}
+          {% set parentDoc = articlePdict[ddoc.oi33ProblemId] if ddoc.oi33ProblemId else parentDict[ddoc.parentId] %}
+          <article class="oi33-article-mine__item">
+            <div class="oi33-article-mine__item-main">
+              <div class="oi33-article-mine__badges">
+                <span class="oi33-article-badge is-{{ ddoc.oi33Visibility }}">{% if ddoc.oi33Visibility == 'private' %}仅自己可见{% elif ddoc.oi33Visibility == 'unlisted' %}获取链接可见{% else %}公开可见{% endif %}</span>
+                {% if ddoc.hidden %}<span class="oi33-article-badge is-review">审核中</span>{% endif %}
+                {% if parentDoc and ddoc.oi33ProblemId %}<span class="oi33-article-badge is-problem">{{ parentDoc.title }}</span>{% endif %}
+              </div>
+              <h2><a href="{{ url('discussion_detail', did=ddoc.docId) }}">{{ ddoc.title }}</a></h2>
+              {% if ddoc.content %}<p>{{ ddoc.content|markdown|striptags|truncate(180) }}</p>{% endif %}
+              <div class="oi33-article-mine__meta"><span>{{ datetimeSpan(ddoc.updateAt)|safe }}</span><span>{{ ddoc.views }} 次浏览</span><span>{{ ddoc.nReply }} 条回复</span></div>
+            </div>
+            <div class="oi33-article-mine__item-actions">
+              <a class="rounded button" href="{{ url('discussion_detail', did=ddoc.docId) }}">查看</a>
+              <a class="rounded button" href="/article/{{ ddoc.docId }}/edit">编辑</a>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+      {% if page != undefined and dpcount != undefined %}{{ paginator.render(page, dpcount) }}{% endif %}
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

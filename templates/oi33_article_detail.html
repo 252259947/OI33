@@ -1,0 +1,145 @@
+{% extends "layout/basic.html" %}
+{% import "components/comments_discussion.html" as comments with context %}
+{% block content %}
+<div class="row oi33-article-detail">
+  <main class="medium-9 columns">
+    <article class="section oi33-article-paper">
+      <header class="oi33-article-paper__head">
+        <div class="oi33-article-paper__labels">
+          <span class="oi33-article-badge is-{{ articleVisibility }}">
+            {% if articleVisibility == 'private' %}仅自己可见{% elif articleVisibility == 'unlisted' %}获取链接可见{% else %}公开文章{% endif %}
+          </span>
+          {% if ddoc.hidden or ddoc.oi33ModerationPending %}<span class="oi33-article-badge is-review">审核中</span>{% endif %}
+          {% if vnode.type == model.document.TYPE_PROBLEM %}
+          <a class="oi33-article-paper__problem" href="{{ url('problem_detail', pid=vnode.docId) }}"><span class="icon icon-tag"></span>{{ vnode.title }}</a>
+          {% endif %}
+        </div>
+        <h1>{{ ddoc.title }}</h1>
+        <div class="oi33-article-paper__meta">
+          {{ user.render_inline(udict[ddoc.owner], avatar=true, badge=true) }}
+          <span>发布于 {{ datetimeSpan(ddoc.oi33CreatedAt or ddoc._id)|safe }}</span>
+          <span>{{ ddoc.views }} 次浏览</span>
+          <span>{{ drcount }} 条评论</span>
+        </div>
+        {% if articleAccessViaShare %}<p class="oi33-article-paper__share-note"><span class="icon icon-link"></span>你正在通过作者分享的专属链接查看这篇文章。</p>{% endif %}
+      </header>
+
+      <div data-content-toc>
+        <div class="oi33-content-toc-controls" data-content-toc-controls hidden>
+          <label class="oi33-content-toc-toggle"><input type="checkbox" role="switch" data-content-toc-toggle> 显示目录</label>
+        </div>
+        <div class="oi33-content-layout" data-content-toc-layout>
+          <div class="typo richmedia oi33-content-main oi33-article-paper__content" data-content-toc-source data-emoji-enabled
+            data-raw-url="{{ url('discussion_raw', did=ddoc.docId) }}">
+            {{ ddoc.content|markdown|safe }}
+          </div>
+          <aside class="oi33-content-toc" data-content-toc-aside hidden aria-label="文章目录">
+            <div class="oi33-content-toc__title">目录</div>
+            <ol class="oi33-content-toc__list" data-content-toc-list></ol>
+          </aside>
+        </div>
+      </div>
+
+      <footer class="oi33-article-paper__footer">
+        <ul class="supplementary dot list">
+          {% if articleCanManage %}<li><a href="/article/{{ ddoc.docId }}/edit"><span class="icon icon-edit"></span> 编辑文章</a></li>{% endif %}
+          {% if ddoc.edited %}<li data-discussion-history data-raw-url="{{ url('discussion_raw', did=ddoc.docId) }}">{{ _('Edited') }}</li>{% endif %}
+          {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+          <li><form class="form--inline" method="post">
+            <input type="hidden" name="operation" value="{% if not dsdoc['star'] %}star{% else %}unstar{% endif %}">
+            <button class="star{% if dsdoc['star'] %} activated{% endif %}" type="submit">
+              <span class="starred--hide"><span class="icon icon-star--outline"></span> {{ _('Star Topic') }}</span>
+              <span class="starred--show"><span class="icon icon-star"></span> {{ _('Unstar Topic') }}</span>
+            </button>
+          </form></li>
+          {% endif %}
+          {% if handler.user.own(ddoc) or handler.user.hasPerm(perm.PERM_LOCK_DISCUSSION) %}
+          <li><form class="form--inline" method="post">
+            <input type="hidden" name="operation" value="set_lock">
+            {% if not ddoc.lock %}<input type="hidden" name="lock" value="1">{% endif %}
+            <button class="star{% if ddoc.lock %} activated{% endif %}" type="submit">
+              <span class="starred--hide">{{ _('Lock Topic') }}</span>
+              <span class="starred--show">{{ _('Unlock Topic') }}</span>
+            </button>
+          </form></li>
+          {% endif %}
+          <li><a href="{{ url('wiki_help', anchor='contact') }}"><span class="icon icon-warning"></span> {{ _('Report') }}</a></li>
+          {% if handler.user.hasPerm(perm.PERM_ADD_REACTION) %}
+          <li><a href="javascript:;" data-op="react" data-type="discuss" data-form="{{ {operation: 'reaction', nodeType:'did', id: ddoc._id }|json }}"><span class="icon icon-emoji"></span></a></li>
+          {% endif %}
+        </ul>
+        <div class="reactions list" data-type="did" data-did="{{ ddoc._id }}">
+          {% for e in Object.entries(ddoc.react or {})|sort(true, false, 1)|selectattr(1) %}
+            <div class="reaction{% if reactions[ddoc.docId][e[0]] %} active{% endif %}"><span class="emoji">{{ e[0] }}</span> {{ e[1] }}</div>
+          {% endfor %}
+        </div>
+      </footer>
+    </article>
+
+    <section class="section oi33-article-comments">
+      <div class="section__header">
+        <div><h2 class="section__title">讨论与补充</h2><p>围绕文章内容交流思路，也可以补充不同做法。</p></div>
+      </div>
+      <div class="section__body">
+        {{ comments.render(
+          view = 'discussion',
+          docs = drdocs,
+          udict = udict,
+          comment_ref = 'drid',
+          reply_ref = 'drrid',
+          comment_post_op = 'reply',
+          reply_post_op = 'tail_reply',
+          comment_edit_op = 'edit_reply',
+          comment_delete_op = 'delete_reply',
+          reply_edit_op = 'edit_tail_reply',
+          reply_delete_op = 'delete_tail_reply',
+          comment_post_perm = perm.PERM_REPLY_DISCUSSION,
+          comment_delete_perm = perm.PERM_DELETE_DISCUSSION_REPLY_SELF_DISCUSSION if handler.user.own(ddoc) else perm.PERM_DELETE_DISCUSSION_REPLY,
+          comment_edit_self_perm = perm.PERM_EDIT_DISCUSSION_REPLY_SELF,
+          comment_delete_self_perm = perm.PERM_DELETE_DISCUSSION_REPLY_SELF,
+          reply_post_perm = perm.PERM_REPLY_DISCUSSION,
+          reply_delete_perm = perm.PERM_DELETE_DISCUSSION_REPLY,
+          reply_edit_self_perm = perm.PERM_EDIT_DISCUSSION_REPLY_SELF,
+          reply_delete_self_perm = perm.PERM_DELETE_DISCUSSION_REPLY_SELF,
+          reactions = reactions,
+          ddoc = ddoc
+        ) }}
+        {{ paginator.render(page, pcount) }}
+        {% if drcount == 0 %}{{ nothing.render('还没有评论，来补充第一条想法吧。') }}{% endif %}
+      </div>
+    </section>
+  </main>
+
+  <aside class="medium-3 columns oi33-article-detail__aside">
+    {% set udoc = udict[ddoc.owner] %}
+    <section class="section side oi33-article-author">
+      <div class="section__body">
+        <img src="{{ avatarUrl(udoc.avatar, 80) }}" width="72" height="72" class="medium user-profile-avatar" alt="">
+        <div><small>作者</small><strong>{{ user.render_inline(udoc, avatar=false, modbadge=false) }}</strong></div>
+      </div>
+    </section>
+
+    {% if articleCanManage %}
+    <section class="section side oi33-article-actions">
+      <div class="section__header"><h2 class="section__title">文章管理</h2></div>
+      <div class="section__body">
+        <a class="expanded primary rounded button" href="/article/{{ ddoc.docId }}/edit">编辑文章</a>
+        {% if articleVisibility == 'unlisted' and articleShareUrl %}
+          <button type="button" class="expanded rounded button" data-article-copy-link="{{ articleShareUrl }}">复制专属链接</button>
+          <p class="oi33-article-actions__hint">只有拿到此链接的人可以访问；文章不会出现在公开列表。</p>
+        {% endif %}
+        <a class="expanded rounded button" href="/article/mine">返回我的文章</a>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="section side oi33-article-info">
+      <div class="section__header"><h2 class="section__title">可见范围</h2></div>
+      <div class="section__body">
+        <div class="oi33-article-info__visibility"><span class="oi33-visibility-dot is-{{ articleVisibility }}"></span><strong>{% if articleVisibility == 'private' %}仅自己可见{% elif articleVisibility == 'unlisted' %}获取链接可见{% else %}公开可见{% endif %}</strong></div>
+        <p>{% if articleVisibility == 'private' %}这篇文章不会被其他用户访问或在列表中出现。{% elif articleVisibility == 'unlisted' %}这篇文章不在公屏展示，通过专属链接可以访问。{% elif vnode.type == model.document.TYPE_PROBLEM %}这篇文章会显示在文章广场和绑定题目的讨论区。{% else %}这篇文章会显示在文章广场。{% endif %}</p>
+      </div>
+    </section>
+  </aside>
+</div>
+{% endblock %}

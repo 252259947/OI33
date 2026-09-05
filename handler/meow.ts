@@ -2,7 +2,6 @@ import {
     Context, ForbiddenError, Handler, NotFoundError, ObjectId, PRIV, Types, UserModel,
     ValidationError, param, query,
 } from 'hydrooj';
-import { HomeHandler } from 'hydrooj/src/handler/home';
 import { oi33Model } from '../model';
 import { addLog } from '../model/log';
 import { checkOi33Admin, checkUserFlag } from './utils';
@@ -10,8 +9,6 @@ import { checkRules, configReviewWords, configWords, hashOf, normalizeText, runA
 
 const MAX_CONTENT_LEN = 256;
 const FEED_PAGE_SIZE = 20;
-const PROFILE_POST_LIMIT = 5;
-const HOME_FEED_LIMIT = 10;
 const CHAIN_MAX_DEPTH = 5;
 
 function escapeHtml(text: string): string {
@@ -320,39 +317,6 @@ class MeowLikeHandler extends Handler {
 
 // --- Follow lists ---
 
-// Inject 喵喵 data into the /user/:id page so the profile panel can show
-// the follow button and the user's recent posts. Full following / follower
-// lists live on the dedicated 喵喵 page (oi33_meow_user). Never throws: a DB
-// hiccup just leaves the panel empty.
-function registerMeowUserPanel(ctx: Context) {
-    ctx.on('handler/after/UserDetail', async (h: any) => {
-        try {
-            const body = h.response?.body;
-            if (!body?.udoc) return;
-            const uid = Number(body.udoc._id);
-            if (!Number.isFinite(uid)) return;
-            const viewerUid = Number(h.user?._id) || 0;
-            const isSelf = viewerUid === uid;
-            const viewerFlag = viewerUid ? await checkUserFlag(viewerUid) : 0;
-            const viewerFollows = viewerUid && !isSelf
-                ? await oi33Model.meowIsFollowing(viewerUid, uid)
-                : false;
-            const canSeePosts = isSelf || viewerFlag >= 2 || viewerFollows;
-            const rawPosts = await oi33Model.meowUserPosts(uid, viewerUid, canSeePosts);
-            const { posts, udict: postUdict, likedMap } = await prepareMeowPosts('', rawPosts.slice(0, PROFILE_POST_LIMIT), viewerUid);
-            for (const p of posts) {
-                p.forwardCount = await oi33Model.meowForwardCount(p._id);
-            }
-            body.oi33MeowPanel = {
-                posts, udict: postUdict, likedMap,
-                isSelf, viewerFollows, canSeePosts, viewerFlag,
-            };
-        } catch (e) {
-            console.error('[oi33] meow profile panel failed:', e);
-        }
-    });
-}
-
 class MeowFollowingHandler extends Handler {
     @query('uid', Types.Int, true)
     async get(domainId: string, targetUid?: number) {
@@ -472,22 +436,6 @@ class MeowDeleteHandler extends Handler {
     }
 }
 
-// --- Homepage module ---
-
-// The 喵喵 homepage module renders only when manually configured in the
-// `hydrooj.homepage` YAML (`meow: <limit>`). `getMeow` is registered on the
-// HomeHandler so Hydro's config-driven module loader calls it; nothing is
-// auto-injected into the homepage.
-function registerHomeMeowModule(ctx: Context) {
-    HomeHandler.prototype.getMeow = async function (domainId: string, limit: any) {
-        const n = Math.max(1, Math.min(50, Number(limit) || HOME_FEED_LIMIT));
-        const viewerUid = this.user?._id || 0;
-        const rawPosts = await oi33Model.meowHomeFeed(viewerUid, n);
-        const { posts, udict, likedMap } = await prepareMeowPosts(domainId, rawPosts, viewerUid);
-        return { posts, udict, likedMap, total: rawPosts.length };
-    };
-}
-
 export async function apply(ctx: Context) {
     ctx.Route('oi33_meow_main', '/oi33/meow', MeowMainHandler, PRIV.PRIV_USER_PROFILE);
     ctx.Route('oi33_meow_post', '/oi33/meow/post', MeowPostHandler, PRIV.PRIV_USER_PROFILE);
@@ -505,6 +453,4 @@ export async function apply(ctx: Context) {
         moderateMeowAsync(uid, postId)
             .catch((e) => console.error('[oi33] meow AI review failed:', e));
     });
-    registerMeowUserPanel(ctx);
-    registerHomeMeowModule(ctx);
 }

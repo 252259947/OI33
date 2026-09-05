@@ -91,12 +91,14 @@
   {% for column in contents %}
     <div class="large-{{ column.width }} columns oi33-home__column">
       {% for s in column.sections %}
-        {% if templateExists("partials/homepage/" + s[0] + ".html") %}
-          {% set payload = s[1] %}
-          {% include "partials/homepage/" + s[0] + ".html" %}
-        {% else %}
-          {% set payload = _("Template {0} not found.").format(s[0]) %}
-          {% include "partials/homepage/error.html" %}
+        {% if s[0] != 'meow' %}
+          {% if templateExists("partials/homepage/" + s[0] + ".html") %}
+            {% set payload = s[1] %}
+            {% include "partials/homepage/" + s[0] + ".html" %}
+          {% else %}
+            {% set payload = _("Template {0} not found.").format(s[0]) %}
+            {% include "partials/homepage/error.html" %}
+          {% endif %}
         {% endif %}
       {% endfor %}
     </div>

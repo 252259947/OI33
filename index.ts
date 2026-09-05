@@ -14,6 +14,7 @@ import { apply as applyCatAccount } from './handler/cat-account';
 import { apply as applySchoolCat } from './handler/school-cat';
 import { apply as applyAi } from './handler/ai';
 import { apply as applyModerate } from './handler/moderate';
+import { apply as applyArticle } from './handler/article';
 import { apply as applyBio } from './handler/bio';
 import { apply as applyMeow } from './handler/meow';
 import { apply as applyAchievement } from './handler/achievement';
@@ -23,6 +24,7 @@ import { apply as applyContest } from './handler/contest';
 import { apply as applyTheme } from './handler/theme';
 import { backfillAllCatFood } from './model/user';
 import { ensureModerationIndexes } from './model/moderate';
+import { ensureArticleIndexes, ensureArticleNode } from './model/article';
 import { ensureCatCanIndexes, ensureCurrentCatCanPrice } from './model/cat-can';
 import { ensureCatAccountIndexes } from './model/cat-account';
 import { ensureCatMapIndexes, recountSchoolCatTerritories } from './model/cat-map';
@@ -86,6 +88,7 @@ export async function apply(ctx: Context) {
     await applySchoolCat(ctx);
     await applyAi(ctx);
     await applyModerate(ctx);
+    await applyArticle(ctx);
     await applyBio(ctx);
     await applyMeow(ctx);
     await applyAchievement(ctx);
@@ -112,6 +115,8 @@ export async function apply(ctx: Context) {
                 // window: a process crash between a cell write and its delta.
                 await recountSchoolCatTerritories();
                 await ensureModerationIndexes();
+                await ensureArticleIndexes();
+                await ensureArticleNode('system');
                 await ensureMeowIndexes();
                 await ensureAchievementIndexes();
                 await ensureAuctionIndexes();

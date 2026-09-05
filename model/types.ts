@@ -286,6 +286,27 @@ export interface Oi33Paste {
     isprivate: boolean;
 }
 
+export type Oi33ArticleVisibility = 'public' | 'private' | 'unlisted';
+
+// Article fields are stored on Hydro's TYPE_DISCUSSION documents so existing
+// replies, reactions, history and moderation continue to work. Legacy Hydro
+// discussions do not have oi33Kind and are treated as public discussions.
+export interface Oi33ArticleFields {
+    oi33Kind: 'article';
+    oi33Visibility: Oi33ArticleVisibility;
+    oi33ProblemId?: number | null;
+    oi33CreatedAt: Date;
+    oi33PublishedAt?: Date | null;
+    oi33ContentUpdatedAt: Date;
+    // Independent from Hydro's `hidden`, which is also rewritten when a bound
+    // problem is hidden/unhidden. This prevents a problem state change from
+    // publishing content that is still waiting for moderation.
+    oi33ModerationPending?: boolean;
+    // Bearer capability for unlisted articles. Never include it in public list
+    // projections, JSON page bodies, logs or rendered markup for non-managers.
+    oi33ShareToken: string;
+}
+
 export interface Oi33Wiki {
     _id: string;
     title: string;

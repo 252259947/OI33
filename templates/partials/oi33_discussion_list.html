@@ -1,33 +1,43 @@
 {% import "components/user.html" as user with context %}
 {% import "components/paginator.html" as paginator with context %}
+{% set isArticleHub = not vnode._id or (vnode.type == model.document.TYPE_DISCUSSION_NODE and vnode.id == 'oi33-articles-internal') %}
+{% set canWriteArticle = handler.user.hasPerm(perm.PERM_CREATE_DISCUSSION) and (handler.user.realname_flag or 0) >= 1 %}
 {% if not ddocs.length %}
   <div class="oi33-discuss__empty">
-    <span class="oi33-discuss__empty-icon icon icon-comment--multiple" aria-hidden="true"></span>
-    <h2>{% if vnode._id %}这个话题还没有讨论{% else %}讨论区正在等待第一篇内容{% endif %}</h2>
-    <p>{% if vnode._id %}提出你的问题、思路或题解，让交流从这里开始。{% else %}从一道题开始练习，遇到问题时可以在题目页发起讨论。{% endif %}</p>
-    {% if vnode._id and handler.user.hasPerm(perm.PERM_CREATE_DISCUSSION) %}
-      <a class="primary rounded button" href="{{ url('discussion_create', type=model.discussion.typeDisplay[vnode.type], name=vnode.id) }}">发起第一篇讨论</a>
+    <span class="oi33-discuss__empty-icon icon icon-file" aria-hidden="true"></span>
+    <h2>{% if isArticleHub %}还没有公开文章{% else %}这道题还没有公开讨论{% endif %}</h2>
+    <p>{% if isArticleHub %}把一段题解、一份学习笔记或一个代码片段整理成第一篇文章。{% else %}发布一篇绑定当前题目的文章，让讨论从这里开始。{% endif %}</p>
+    {% if canWriteArticle %}
+      <a class="primary rounded button oi33-discuss__empty-action" href="/article/new{% if not isArticleHub and vnode.type == model.document.TYPE_PROBLEM %}?problem={{ vnode.docId or vnode.id }}{% endif %}">写第一篇文章</a>
     {% elif not handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-      <a class="primary rounded button" href="{{ url('user_login') }}">登录后参与讨论</a>
-    {% else %}
-      <a class="primary button oi33-discuss__empty-action" href="{{ url('problem_main') }}">浏览题库</a>
+      <a class="primary rounded button oi33-discuss__empty-action" href="{{ url('user_login') }}">登录后参与</a>
     {% endif %}
   </div>
 {% else %}
   <ol class="oi33-discuss__list">
   {%- for ddoc in ddocs -%}
+    {% set parentDict = vndict[ddoc.parentType] or {} %}
+    {% set parentDoc = articlePdict[ddoc.oi33ProblemId] if ddoc.oi33Kind == 'article' and ddoc.oi33ProblemId else parentDict[ddoc.parentId] %}
     <li class="oi33-discuss__item{% if ddoc.highlight %} highlight{% endif %}">
       <article class="oi33-discuss__item-inner">
         <div class="oi33-discuss__replies" aria-label="{{ ddoc.nReply }} 条回复"><strong>{{ ddoc.nReply }}</strong><span>回复</span></div>
-        <div>
+        <div class="oi33-discuss__article-copy">
+          <div class="oi33-discuss__item-kicker">
+            <span>{% if ddoc.oi33Kind == 'article' %}专栏文章{% else %}讨论{% endif %}</span>
+            {% if ddoc.pin %}<span>置顶</span>{% endif %}
+          </div>
           <h2 class="oi33-discuss__title"><a href="{{ url('discussion_detail', did=ddoc._id, anchor=ddoc.updateAt.getTime()) }}" data-emoji-enabled>{{ ddoc.title }}</a></h2>
+          {% if ddoc.content %}<p class="oi33-discuss__excerpt">{{ ddoc.content|markdown|striptags|truncate(150) }}</p>{% endif %}
           <ul class="oi33-discuss__meta">
-            <li><a class="oi33-discuss__node" href="{{ url('discussion_node', type=model.discussion.typeDisplay[ddoc.parentType], name=ddoc.parentId) }}"><span class="icon icon-{% if ddoc.parentType == model.document.TYPE_PROBLEM %}tag{% elif ddoc.parentType == model.document.TYPE_CONTEST %}award{% else %}flag{% endif %}" aria-hidden="true"></span>{{ vndict[ddoc.parentType][ddoc.parentId].title|default(_('(missing)')) }}</a></li>
+            {% if parentDoc and not (ddoc.parentType == model.document.TYPE_DISCUSSION_NODE and ddoc.parentId == 'oi33-articles-internal' and not ddoc.oi33ProblemId) %}
+            <li><a class="oi33-discuss__node" href="{% if ddoc.oi33Kind == 'article' and ddoc.oi33ProblemId %}{{ url('problem_detail', pid=ddoc.oi33ProblemId) }}{% else %}{{ url('discussion_node', type=model.discussion.typeDisplay[ddoc.parentType], name=ddoc.parentId) }}{% endif %}"><span class="icon icon-{% if ddoc.oi33ProblemId or ddoc.parentType == model.document.TYPE_PROBLEM %}tag{% elif ddoc.parentType == model.document.TYPE_CONTEST %}award{% else %}flag{% endif %}" aria-hidden="true"></span>{{ parentDoc.title|default(_('(missing)')) }}</a></li>
+            {% endif %}
             <li>{{ ddoc.views }} 次浏览</li>
             <li>{{ user.render_inline(udict[ddoc.owner], badge=false) }} · {{ datetimeSpan(ddoc.updateAt)|safe }}</li>
             {% if ddoc.hidden %}<li class="text-orange">{{ _('Hidden') }}</li>{% endif %}
           </ul>
         </div>
+        <span class="oi33-discuss__open" aria-hidden="true">›</span>
       </article>
     </li>
   {%- endfor -%}

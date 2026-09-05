@@ -49,59 +49,183 @@
       position: fixed;
       z-index: 2147483646;
       inset: 0;
-      display: grid;
-      place-items: center;
-      color: #fff;
+      display: block;
+      overflow: hidden;
+      color: #182033;
       background: #f5f7fb;
       opacity: 1;
-      transition: opacity 160ms ease-out;
+      transition: opacity 180ms ease-out;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft Yahei", sans-serif;
     }
 
-    html.hasjs.oi33-booting #oi33-boot-screen::before {
-      content: "HJ";
+    .oi33-boot__header {
+      height: 74px;
+      border-bottom: 1px solid #e3e8f2;
+      background: #fff;
+    }
+
+    .oi33-boot__header-inner {
+      display: flex;
+      width: min(1200px, calc(100% - 48px));
+      height: 100%;
+      margin: 0 auto;
+      align-items: center;
+      gap: 28px;
+    }
+
+    .oi33-boot__logo {
       display: grid;
-      width: 52px;
-      height: 52px;
+      width: 40px;
+      height: 40px;
+      flex: 0 0 40px;
       place-items: center;
-      border-radius: 15px;
+      border-radius: 12px;
+      color: #fff;
       background: #5b5ce2;
-      box-shadow: 0 14px 36px rgba(91, 92, 226, .24);
-      font: 800 17px/1 "Segoe UI", "PingFang SC", sans-serif;
+      box-shadow: 0 10px 24px rgba(91, 92, 226, .22);
+      font-size: 14px;
+      font-weight: 800;
       letter-spacing: -.04em;
     }
 
-    html.hasjs.oi33-booting #oi33-boot-screen::after {
+    .oi33-boot__brand {
+      width: 86px;
+      height: 18px;
+    }
+
+    .oi33-boot__nav {
+      display: flex;
+      flex: 1;
+      gap: 24px;
+    }
+
+    .oi33-boot__nav span { width: 38px; height: 12px; }
+    .oi33-boot__search { width: 238px; height: 42px; border-radius: 12px !important; }
+    .oi33-boot__avatar { width: 34px; height: 34px; border-radius: 50% !important; }
+
+    .oi33-boot__main {
+      width: min(1200px, calc(100% - 48px));
+      margin: 44px auto;
+    }
+
+    .oi33-boot__eyebrow { width: 126px; height: 12px; margin-bottom: 16px; }
+    .oi33-boot__title { width: min(390px, 72%); height: 36px; margin-bottom: 14px; }
+    .oi33-boot__subtitle { width: min(520px, 90%); height: 15px; margin-bottom: 30px; }
+
+    .oi33-boot__hero {
+      height: 208px;
+      margin-bottom: 24px;
+      border-radius: 22px !important;
+    }
+
+    .oi33-boot__cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 20px;
+    }
+
+    .oi33-boot__card { height: 126px; border-radius: 16px !important; }
+
+    .oi33-boot__placeholder {
+      position: relative;
+      overflow: hidden;
+      border-radius: 5px;
+      background: #e7ebf3;
+    }
+
+    .oi33-boot__placeholder::after {
       content: "";
       position: absolute;
-      top: 50%;
+      inset: 0;
+      transform: translateX(-100%);
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .7), transparent);
+      animation: oi33-boot-shimmer 1.35s ease-in-out infinite;
+    }
+
+    .oi33-boot__delayed {
+      position: fixed;
       left: 50%;
-      width: 66px;
-      height: 66px;
-      margin: -35px 0 0 -35px;
-      border: 2px solid rgba(91, 92, 226, .14);
-      border-top-color: #5b5ce2;
-      border-radius: 50%;
-      animation: oi33-boot-spin .8s linear infinite;
+      bottom: 28px;
+      display: flex;
+      max-width: calc(100% - 40px);
+      padding: 11px 14px;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid #d8def0;
+      border-radius: 12px;
+      color: #526078;
+      background: rgba(255, 255, 255, .96);
+      box-shadow: 0 12px 34px rgba(46, 55, 94, .13);
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 10px);
+      transition: opacity 180ms ease, transform 180ms ease;
+      font-size: 14px;
+    }
+
+    .oi33-boot__delayed a {
+      flex: none;
+      padding: 6px 10px;
+      border-radius: 8px;
+      color: #fff;
+      background: #5b5ce2;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    html.oi33-boot-delayed .oi33-boot__delayed {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, 0);
     }
 
     html.hasjs.oi33-booting.oi33-revealing #oi33-boot-screen { opacity: 0; }
 
     html.theme--dark.hasjs.oi33-booting #oi33-boot-screen,
     html[data-mantine-color-scheme=dark].hasjs.oi33-booting #oi33-boot-screen {
+      color: #eef1f8;
       background: #111520;
     }
 
-    html.theme--dark.hasjs.oi33-booting #oi33-boot-screen::before,
-    html[data-mantine-color-scheme=dark].hasjs.oi33-booting #oi33-boot-screen::before {
-      color: #111520;
-      background: #8c8df4;
+    html.theme--dark .oi33-boot__header,
+    html[data-mantine-color-scheme=dark] .oi33-boot__header {
+      border-color: #333b50;
+      background: #1a1f2d;
     }
 
-    @keyframes oi33-boot-spin { to { transform: rotate(360deg); } }
+    html.theme--dark .oi33-boot__placeholder,
+    html[data-mantine-color-scheme=dark] .oi33-boot__placeholder { background: #252c3d; }
+
+    html.theme--dark .oi33-boot__placeholder::after,
+    html[data-mantine-color-scheme=dark] .oi33-boot__placeholder::after {
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .06), transparent);
+    }
+
+    html.theme--dark .oi33-boot__delayed,
+    html[data-mantine-color-scheme=dark] .oi33-boot__delayed {
+      border-color: #3a4359;
+      color: #b8c1d3;
+      background: rgba(26, 31, 45, .97);
+    }
+
+    @keyframes oi33-boot-shimmer { to { transform: translateX(100%); } }
+
+    @media (max-width: 760px) {
+      .oi33-boot__header { height: 64px; }
+      .oi33-boot__header-inner, .oi33-boot__main { width: calc(100% - 32px); }
+      .oi33-boot__nav, .oi33-boot__brand { display: none; }
+      .oi33-boot__search { width: auto; flex: 1; }
+      .oi33-boot__main { margin-top: 28px; }
+      .oi33-boot__hero { height: 180px; }
+      .oi33-boot__cards { grid-template-columns: 1fr; gap: 14px; }
+      .oi33-boot__card { height: 88px; }
+      .oi33-boot__cards .oi33-boot__card:nth-child(3) { display: none; }
+    }
 
     @media (prefers-reduced-motion: reduce) {
-      html.hasjs.oi33-booting #oi33-boot-screen { transition: none; }
-      html.hasjs.oi33-booting #oi33-boot-screen::after { animation: none; }
+      html.hasjs.oi33-booting #oi33-boot-screen,
+      .oi33-boot__delayed { transition: none; }
+      .oi33-boot__placeholder::after { animation: none; }
     }
 
     {% if not isIE(handler.request.headers['user-agent']) and not handler.session.legacy %}
@@ -120,11 +244,14 @@
       _htmlNode.className = _htmlNode.className.replace(' nojs', ' hasjs');
       _htmlNode.setAttribute('aria-busy', 'true');
       window.__oi33RevealUI = function () {
-        if (!_htmlNode.classList.contains('oi33-booting') || _htmlNode.classList.contains('oi33-revealing')) return;
-        window.clearTimeout(window.__oi33RevealTimer);
+        if (!_htmlNode.classList.contains('oi33-booting') || _htmlNode.classList.contains('oi33-revealing')) return true;
+        var _runtimeCssReady = window.getComputedStyle(_htmlNode)
+          .getPropertyValue('--oi33-runtime-css-ready').trim() === '1';
+        if (!_runtimeCssReady) return false;
+        window.clearTimeout(window.__oi33BootDelayTimer);
         var _bootScreen = document.getElementById('oi33-boot-screen');
         var _finishReveal = function () {
-          _htmlNode.classList.remove('oi33-booting', 'oi33-revealing');
+          _htmlNode.classList.remove('oi33-booting', 'oi33-revealing', 'oi33-boot-delayed');
           _htmlNode.removeAttribute('aria-busy');
           if (_bootScreen) _bootScreen.remove();
         };
@@ -133,9 +260,15 @@
           return;
         }
         _htmlNode.classList.add('oi33-revealing');
-        window.setTimeout(_finishReveal, 170);
+        window.setTimeout(_finishReveal, 190);
+        return true;
       };
-      window.__oi33RevealTimer = window.setTimeout(window.__oi33RevealUI, 2500);
+      window.__oi33BootDelayTimer = window.setTimeout(function () {
+        if (!_htmlNode.classList.contains('oi33-booting')) return;
+        _htmlNode.classList.add('oi33-boot-delayed');
+        var _message = document.getElementById('oi33-boot-message');
+        if (_message) _message.removeAttribute('aria-hidden');
+      }, 12000);
       window.UiContext = '{{ UiContext|json|jsesc|safe }}';
       window.UserContext = '{{ UserContext|json|jsesc|safe }}';
     </script>
@@ -144,7 +277,36 @@
   {% set UserContext = Object.create(UserContext) %}
 </head>
 <body>
-  <div id="oi33-boot-screen" aria-hidden="true"></div>
+  <div id="oi33-boot-screen" role="status" aria-label="页面正在加载">
+    <div class="oi33-boot__header" aria-hidden="true">
+      <div class="oi33-boot__header-inner">
+        <div class="oi33-boot__logo">HJ</div>
+        <div class="oi33-boot__brand oi33-boot__placeholder"></div>
+        <div class="oi33-boot__nav">
+          <span class="oi33-boot__placeholder"></span><span class="oi33-boot__placeholder"></span>
+          <span class="oi33-boot__placeholder"></span><span class="oi33-boot__placeholder"></span>
+          <span class="oi33-boot__placeholder"></span>
+        </div>
+        <div class="oi33-boot__search oi33-boot__placeholder"></div>
+        <div class="oi33-boot__avatar oi33-boot__placeholder"></div>
+      </div>
+    </div>
+    <div class="oi33-boot__main" aria-hidden="true">
+      <div class="oi33-boot__eyebrow oi33-boot__placeholder"></div>
+      <div class="oi33-boot__title oi33-boot__placeholder"></div>
+      <div class="oi33-boot__subtitle oi33-boot__placeholder"></div>
+      <div class="oi33-boot__hero oi33-boot__placeholder"></div>
+      <div class="oi33-boot__cards">
+        <div class="oi33-boot__card oi33-boot__placeholder"></div>
+        <div class="oi33-boot__card oi33-boot__placeholder"></div>
+        <div class="oi33-boot__card oi33-boot__placeholder"></div>
+      </div>
+    </div>
+    <div id="oi33-boot-message" class="oi33-boot__delayed" aria-hidden="true">
+      <span>页面加载时间比平时稍长，请检查网络后重试。</span>
+      <a href="">重新加载</a>
+    </div>
+  </div>
   {% if not isIE(handler.request.headers['user-agent']) and not handler.session.legacy %}
     <script type="text/javascript" src="{{ UiContext.cdn_prefix if UiContext.cdn_dynamic else '/' }}resource/{{ UiContext.constantVersion }}/entry.js"></script>
     <script type="text/javascript" src="{{ UiContext.cdn_prefix }}resource/{{ global.Hydro.version['ui-default'] }}/lang-{{ _('__id') }}.js"></script>

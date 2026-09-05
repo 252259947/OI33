@@ -1,0 +1,88 @@
+{% extends "layout/basic.html" %}
+{% import "components/form.html" as form with context %}
+{% block content %}
+<div class="row oi33-article-compose">
+  <div class="columns">
+    <header class="oi33-article-compose__head">
+      <div>
+        <div class="oi33-discuss__eyebrow">{% if articleMode == 'edit' %}EDIT ARTICLE{% elif articlePreset == 'paste' %}LINK PASTE{% else %}NEW ARTICLE{% endif %}</div>
+        <h1>{% if articleMode == 'edit' %}编辑文章{% elif articlePreset == 'paste' %}新建链接剪切板{% else %}写一篇文章{% endif %}</h1>
+        <p>{% if articlePreset == 'paste' %}适合临时代码、长文本和资料分享，默认只有拿到链接的人能看到。{% else %}支持 Markdown、数学公式和代码块；绑定题目后，公开文章会同步进入该题讨论区。{% endif %}</p>
+      </div>
+      <div class="oi33-article-compose__head-actions">
+        <a class="rounded button" href="/discuss">文章广场</a>
+        {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}<a class="rounded button" href="/article/mine">我的文章</a>{% endif %}
+      </div>
+    </header>
+
+    <form method="post" class="oi33-article-compose__form">
+      <section class="section oi33-article-compose__main">
+        <div class="section__body">
+          <label class="oi33-article-field">
+            <span>标题</span>
+            <input name="title" class="textbox" maxlength="100" required autofocus
+              value="{{ ddoc.title|default('') }}"
+              placeholder="{% if articlePreset == 'paste' %}例如：临时代码片段{% else %}用一句话概括这篇文章{% endif %}">
+          </label>
+
+          {{ form.form_textarea({
+            columns: 12,
+            label: '正文',
+            name: 'content',
+            value: ddoc.content|default(''),
+            hotkeys: 'ctrl+enter:submit',
+            markdown: true,
+            required: true,
+            extra_style: 'height: 560px',
+            extra_textarea_class: 'auto-resize oi33-article-editor'
+          }) }}
+        </div>
+      </section>
+
+      <aside class="oi33-article-compose__aside">
+        <section class="section side">
+          <div class="section__header"><h2 class="section__title">文章设置</h2></div>
+          <div class="section__body">
+            <label class="oi33-article-field">
+              <span>绑定题目 <small>可选</small></span>
+              <input name="problemId" class="textbox" value="{{ articleProblemId|default('') }}" placeholder="例如 J0001 或 P1000">
+              <small class="oi33-article-field__hint">只有公开文章会显示在对应题目的讨论区；留空就是独立文章。</small>
+            </label>
+          </div>
+        </section>
+
+        <section class="section side">
+          <div class="section__header"><h2 class="section__title">谁可以看到</h2></div>
+          <div class="section__body oi33-article-visibility">
+            <label class="oi33-article-visibility__option">
+              <input type="radio" name="visibility" value="public"{% if articleVisibility == 'public' %} checked{% endif %}>
+              <span class="oi33-visibility-dot is-public"></span>
+              <span><strong>公开可见</strong><small>出现在文章广场，绑定题目后也进入题目讨论区。</small></span>
+            </label>
+            <label class="oi33-article-visibility__option">
+              <input type="radio" name="visibility" value="private"{% if articleVisibility == 'private' %} checked{% endif %}>
+              <span class="oi33-visibility-dot is-private"></span>
+              <span><strong>仅自己可见</strong><small>作为私人笔记保存，其他用户无法访问。</small></span>
+            </label>
+            <label class="oi33-article-visibility__option">
+              <input type="radio" name="visibility" value="unlisted"{% if articleVisibility == 'unlisted' %} checked{% endif %}>
+              <span class="oi33-visibility-dot is-unlisted"></span>
+              <span><strong>获取链接可见</strong><small>不出现在公屏，持有专属链接的人可以查看。</small></span>
+            </label>
+          </div>
+        </section>
+
+        <div class="oi33-article-compose__submit">
+          {% if articleMode == 'edit' %}
+            <button name="operation" value="update" data-default-submit type="submit" class="expanded rounded primary button">保存修改 <span class="oi33-button-shortcut">Ctrl+Enter</span></button>
+            {% if articleCanDelete %}<button name="operation" value="delete" type="submit" class="expanded rounded button" onclick="return confirm('确定删除这篇文章及其全部回复吗？')">删除文章</button>{% endif %}
+          {% else %}
+            <button type="submit" class="expanded rounded primary button">发布文章 <span class="oi33-button-shortcut">Ctrl+Enter</span></button>
+          {% endif %}
+          <button type="button" class="expanded rounded button" onclick="window.history.go(-1)">取消</button>
+        </div>
+      </aside>
+    </form>
+  </div>
+</div>
+{% endblock %}

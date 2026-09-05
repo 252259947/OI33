@@ -1,10 +1,9 @@
 import { addPage, addSpeculationRules } from '@hydrooj/ui-default';
 import './oi33-design-system.css';
 
-const revealUi = (window as Window & { __oi33RevealUI?: () => void }).__oi33RevealUI;
-if (revealUi) requestAnimationFrame(() => requestAnimationFrame(revealUi));
-
 addPage(() => {
+  const revealUi = (window as Window & { __oi33RevealUI?: () => boolean }).__oi33RevealUI;
+  if (revealUi) requestAnimationFrame(() => requestAnimationFrame(revealUi));
   addSpeculationRules({
     prefetch: [{
       source: 'document',

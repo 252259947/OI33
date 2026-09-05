@@ -84,6 +84,19 @@ Caddy 只代理本机 Hydro 端口，配置目标为 `127.0.0.1:8888`。域名�
 https://oj.huaji035.cn/
 ```
 
+OI33 的 `/resource/<内容哈希>/` 静态资源可以长期缓存；内容更新后 URL 中的哈希会自动变化。可在 Caddy 站点块中加入：
+
+```caddyfile
+@oi33VersionedResource path_regexp oi33VersionedResource ^/resource/[0-9a-f]{8}/
+header @oi33VersionedResource Cache-Control "public, max-age=31536000, immutable"
+
+# “获取链接可见”文章的分享令牌在首次访问路径中，不写入访问日志。
+@oi33ArticleShare path /article/share/*
+log_skip @oi33ArticleShare
+```
+
+不要把该规则扩大到整个 `/resource/`，其中还包含 URL 不以内容哈希命名的语言包。也不要缓存 HTML 页面；页面包含登录状态和个性化内容。
+
 ## 7. 上线验收
 
 - 首页、题库、训练、比赛、讨论和管理后台均可打开。

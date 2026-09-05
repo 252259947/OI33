@@ -155,14 +155,18 @@ async function hideTarget(target: Oi33ModerationTarget) {
     if (target.drrid && target.drid) {
         await DocumentModel.setSub(
             target.domainId, DocumentModel.TYPE_DISCUSSION_REPLY,
-            target.drid, 'reply', target.drrid, { hidden: true } as any,
+            target.drid, 'reply', target.drrid,
+            { hidden: true, oi33ModerationPending: true } as any,
         );
     } else if (target.drid) {
         await DocumentModel.set(
-            target.domainId, DocumentModel.TYPE_DISCUSSION_REPLY, target.drid, { hidden: true } as any,
+            target.domainId, DocumentModel.TYPE_DISCUSSION_REPLY, target.drid,
+            { hidden: true, oi33ModerationPending: true } as any,
         );
     } else if (target.did) {
-        await DiscussionModel.edit(target.domainId, target.did, { hidden: true });
+        await DiscussionModel.edit(target.domainId, target.did, {
+            hidden: true, oi33ModerationPending: true,
+        } as any);
     }
 }
 
@@ -173,14 +177,18 @@ async function unhideTarget(target: Oi33ModerationTarget) {
     if (target.drrid && target.drid) {
         await DocumentModel.setSub(
             target.domainId, DocumentModel.TYPE_DISCUSSION_REPLY,
-            target.drid, 'reply', target.drrid, { hidden: false } as any,
+            target.drid, 'reply', target.drrid,
+            { hidden: false, oi33ModerationPending: false } as any,
         );
     } else if (target.drid) {
         await DocumentModel.set(
-            target.domainId, DocumentModel.TYPE_DISCUSSION_REPLY, target.drid, { hidden: false } as any,
+            target.domainId, DocumentModel.TYPE_DISCUSSION_REPLY, target.drid,
+            { hidden: false, oi33ModerationPending: false } as any,
         );
     } else if (target.did) {
-        await DiscussionModel.edit(target.domainId, target.did, { hidden: false });
+        await DiscussionModel.edit(target.domainId, target.did, {
+            hidden: false, oi33ModerationPending: false,
+        } as any);
     }
 }
 
@@ -382,12 +390,16 @@ function applyDiscussionHooks(ctx: Context) {
     // Hide student topics at insert time (discussion.add payload is mutable).
     ctx.on('discussion/before-add', async (payload: any) => {
         try {
-            if (await shouldModerate(payload.owner)) payload.hidden = true;
+            if (await shouldModerate(payload.owner)) {
+                payload.hidden = true;
+                payload.oi33ModerationPending = true;
+            }
         } catch (e) {
             // Safety net (shouldModerate never throws): keep student content
             // hidden rather than publishing unmoderated.
             console.error('[oi33] discussion/before-add hook failed:', e);
             payload.hidden = true;
+            payload.oi33ModerationPending = true;
         }
     });
 
@@ -416,6 +428,45 @@ function applyDiscussionHooks(ctx: Context) {
             if (!h.user.hasPerm(PERM.PERM_REPLY_DISCUSSION)) return;
             if (h.ddoc?.lock) return;
             await syncPrecheck(h, op === 'reply' ? 'reply' : 'tailreply', content);
+            if (op === 'tail_reply' && typeof h.postTailReply === 'function') {
+                h.oi33ModerateTailReply = await shouldModerate(h.user._id);
+                if (h.oi33ModerateTailReply) {
+                    // Core currently discards addTailReply's returned sub-id.
+                    // Handle moderated tail replies here so this request owns
+                    // the exact inserted subdocument even under concurrency.
+                    h.postTailReply = async function postModeratedTailReply() {
+                        const domainId = h.domain._id;
+                        const drid = h.args.drid instanceof ObjectId
+                            ? h.args.drid : new ObjectId(String(h.args.drid));
+                        await h.limitRate('add_discussion', 3600, 60);
+                        const targets = new Set(Array.from(content.matchAll(/@\[\]\(\/user\/(\d+)\)/g))
+                            .map((match: any) => +match[1]));
+                        const uids = Object.keys(await UserModel.getList(domainId, Array.from(targets)))
+                            .map((uid) => +uid);
+                        const message = JSON.stringify({
+                            message: 'User {0} mentioned you in {1:link}',
+                            params: [h.user.uname, `/d/${domainId}${h.request.path}`],
+                        });
+                        await MessageModel.send(
+                            1, uids, message, MessageModel.FLAG_RICHTEXT | MessageModel.FLAG_UNREAD,
+                        );
+                        const [, drrid] = await DiscussionModel.addTailReply(
+                            domainId, drid, h.user._id, content, h.request.ip,
+                        );
+                        h.oi33ModerationTailReplyId = drrid;
+                        try {
+                            await hideTarget({ domainId, drid, drrid });
+                            h.oi33ModerationTailReplyHidden = true;
+                        } catch (e) {
+                            // If hiding fails after insertion, remove this exact
+                            // subdocument instead of publishing it unreviewed.
+                            await DiscussionModel.delTailReply(domainId, drid, drrid).catch(() => {});
+                            throw e;
+                        }
+                        h.back();
+                    };
+                }
+            }
         } else if (op === 'edit_reply' || op === 'edit_tail_reply') {
             if (!h.user.hasPerm(PERM.PERM_EDIT_DISCUSSION_REPLY_SELF)) return;
             await syncPrecheck(h, op === 'edit_reply' ? 'reply_edit' : 'tailreply_edit', content);
@@ -431,7 +482,9 @@ function applyDiscussionHooks(ctx: Context) {
         let target: Oi33ModerationTarget | null = null;
         let kind: Oi33ModerationKind | null = null;
         try {
-            if (!await shouldModerate(h.user._id)) return;
+            const needsModeration = op === 'tail_reply' && typeof h.oi33ModerateTailReply === 'boolean'
+                ? h.oi33ModerateTailReply : await shouldModerate(h.user._id);
+            if (!needsModeration) return;
             const domainId = hookDomain(h);
             if (op === 'reply') {
                 const dridRaw = h.response?.body?.drid;
@@ -439,14 +492,13 @@ function applyDiscussionHooks(ctx: Context) {
                 target = { domainId, drid: new ObjectId(String(dridRaw)) };
                 kind = 'reply';
             } else if (op === 'tail_reply') {
-                // addTailReply returns nothing to the handler, so locate the
-                // user's newest tail reply on this comment.
                 const drid = new ObjectId(String(h.args.drid));
-                const drdoc = await DiscussionModel.getReply(domainId, drid);
-                const mine = (drdoc?.reply || []).filter((r: any) => r.owner === h.user._id);
-                if (!mine.length) return;
-                mine.sort((a: any, b: any) => b._id.getTimestamp().getTime() - a._id.getTimestamp().getTime());
-                target = { domainId, drid, drrid: mine[0]._id };
+                const drrid = h.oi33ModerationTailReplyId;
+                if (!drrid) {
+                    console.error('[oi33] tail reply moderation target was not captured');
+                    return;
+                }
+                target = { domainId, drid, drrid: new ObjectId(String(drrid)) };
                 kind = 'tailreply';
             } else if (op === 'edit_reply') {
                 target = { domainId, drid: new ObjectId(String(h.args.drid)) };
@@ -460,13 +512,16 @@ function applyDiscussionHooks(ctx: Context) {
                 kind = 'tailreply_edit';
             }
             if (target && kind) {
-                try {
-                    await hideTarget(target);
-                } catch (e) {
-                    // Content is already written; still run the AI verdict so
-                    // it lands in the queue. If hiding failed it may stay
-                    // visible until the verdict (or a human) decides.
-                    console.error('[oi33] hideTarget failed:', e);
+                if (!(op === 'tail_reply' && h.oi33ModerationTailReplyHidden)) {
+                    try {
+                        await hideTarget(target);
+                    } catch (e) {
+                        // Content is already written; still run the AI verdict
+                        // so it lands in the queue. Tail replies are hidden
+                        // atomically above; this fallback applies to the other
+                        // discussion operations.
+                        console.error('[oi33] hideTarget failed:', e);
+                    }
                 }
                 kickModeration(kind, h.user._id, content, target);
             }
@@ -505,7 +560,42 @@ function applyDiscussionHooks(ctx: Context) {
         }
     });
 
-    // 4. Rendering: pending-review topics stay unreachable via shared links
+    // 4. Rendering: pending-review topics stay unreachable via shared links.
+    // Keep this independent from `hidden`: Hydro rewrites topic.hidden when a
+    // bound problem changes visibility, which must not clear an AI review.
+    const guardPendingTopic = async (h: any) => {
+        const did = h.ddoc?.docId;
+        if (!did) return;
+        const state = await DocumentModel.get(
+            hookDomain(h), DocumentModel.TYPE_DISCUSSION, did,
+            ['oi33ModerationPending'] as any,
+        ) as any;
+        if (!state?.oi33ModerationPending) return;
+        h.ddoc.oi33ModerationPending = true;
+        h.ddoc.hidden = true;
+        const uid = h.user?._id || 0;
+        const flag = uid ? await checkUserFlag(uid) : 0;
+        const privileged = flag >= 2 || !!h.user?.hasPerm?.(PERM.PERM_EDIT_DISCUSSION);
+        if (!privileged && h.ddoc.owner !== uid) throw new NotFoundError('Discussion');
+    };
+    ctx.on('handler/before/DiscussionDetail', async (h: any) => {
+        await guardPendingTopic(h);
+    });
+    ctx.on('handler/before/DiscussionRaw', async (h: any) => {
+        await guardPendingTopic(h);
+        const pendingReply = h.drdoc && (h.drdoc.hidden || h.drdoc.oi33ModerationPending);
+        const pendingTailReply = h.drrdoc && (h.drrdoc.hidden || h.drrdoc.oi33ModerationPending);
+        if (!pendingReply && !pendingTailReply) return;
+        const uid = h.user?._id || 0;
+        const flag = uid ? await checkUserFlag(uid) : 0;
+        const privileged = flag >= 2 || !!h.user?.hasPerm?.(PERM.PERM_EDIT_DISCUSSION);
+        // Detail pages replace pending replies with a neutral notice. Raw and
+        // history endpoints have no such safe representation, so only staff
+        // may read them while moderation is pending (including the author).
+        if (!privileged) throw new NotFoundError('Discussion');
+    });
+
+    // Pending-review topics stay unreachable via shared links
     // (404 for non-owners/staff). Pending replies are never shown raw to
     // non-staff — their text is replaced with an "under review" notice until a
     // human approves them (the author sees the notice too). Staff still see the
@@ -518,7 +608,8 @@ function applyDiscussionHooks(ctx: Context) {
         const uid = h.user?._id || 0;
         const flag = uid ? await checkUserFlag(uid) : 0;
         const privileged = flag >= 2 || !!h.user?.hasPerm?.(PERM.PERM_EDIT_DISCUSSION);
-        if (body.ddoc?.hidden && !privileged && body.ddoc.owner !== uid) {
+        if ((body.ddoc?.hidden || body.ddoc?.oi33ModerationPending)
+            && !privileged && body.ddoc.owner !== uid) {
             throw new NotFoundError('Discussion');
         }
         const maskReply = (doc: any) => {
