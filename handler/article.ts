@@ -410,12 +410,16 @@ class ArticleShareHandler extends Handler {
     @param('did', Types.ObjectId)
     @param('token', Types.String)
     async get(domainId: string, did: ObjectId, token: string) {
+        // A share URL is a bearer capability even when it is malformed,
+        // expired, or points at a missing article. Apply the privacy headers
+        // before every validation path so error responses cannot be cached,
+        // indexed, or leak the token through a referrer.
+        addPrivateArticleHeaders(this);
         await this.limitRate('article_share', 3600, 120);
         const ddoc = await articleGet(domainId, did);
         if (!ddoc || ddoc.oi33Kind !== 'article' || ddoc.oi33Visibility !== 'unlisted') notFound();
         if (!tokensEqual(ddoc.oi33ShareToken, token)) notFound();
         grantShareAccess(this, ddoc);
-        addPrivateArticleHeaders(this);
         this.response.redirect = this.url('discussion_detail', { did });
     }
 }
