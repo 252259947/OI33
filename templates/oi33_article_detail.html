@@ -46,6 +46,7 @@
           {% if ddoc.edited %}<li data-discussion-history data-raw-url="{{ url('discussion_raw', did=ddoc.docId) }}">{{ _('Edited') }}</li>{% endif %}
           {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
           <li><form class="form--inline" method="post">
+            <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
             <input type="hidden" name="operation" value="{% if not dsdoc['star'] %}star{% else %}unstar{% endif %}">
             <button class="star{% if dsdoc['star'] %} activated{% endif %}" type="submit">
               <span class="starred--hide"><span class="icon icon-star--outline"></span> {{ _('Star Topic') }}</span>
@@ -55,6 +56,7 @@
           {% endif %}
           {% if handler.user.own(ddoc) or handler.user.hasPerm(perm.PERM_LOCK_DISCUSSION) %}
           <li><form class="form--inline" method="post">
+            <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
             <input type="hidden" name="operation" value="set_lock">
             {% if not ddoc.lock %}<input type="hidden" name="lock" value="1">{% endif %}
             <button class="star{% if ddoc.lock %} activated{% endif %}" type="submit">

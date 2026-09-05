@@ -1,6 +1,9 @@
 {% extends "layout/basic.html" %}
 {% set isArticleHub = not vnode._id or (vnode.type == model.document.TYPE_DISCUSSION_NODE and vnode.id == 'oi33-articles-internal') %}
 {% set canWriteArticle = handler.user.hasPerm(perm.PERM_CREATE_DISCUSSION) and (handler.user.realname_flag or 0) >= 1 %}
+{% set hasContextSidebar = not isArticleHub and (vnode.type == model.document.TYPE_PROBLEM or vnode.type == model.document.TYPE_CONTEST) %}
+{% set showArticleManage = handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+{% set hasAside = hasContextSidebar or showArticleManage %}
 {% block content %}
 <div class="row oi33-discuss">
   <div class="columns">
@@ -23,7 +26,7 @@
     </header>
   </div>
 
-  <div class="medium-8 columns">
+  <div class="{% if hasAside %}medium-8{% else %}medium-12{% endif %} columns">
     <section class="section oi33-discuss__main">
       <div class="section__header oi33-discuss__section-head">
         <div>
@@ -35,7 +38,7 @@
     </section>
   </div>
 
-  <aside class="medium-4 columns">
+  {% if hasAside %}<aside class="medium-4 columns">
   {% if vnode.type == model.document.TYPE_PROBLEM and not isArticleHub %}
     {% set pdoc = vnode %}
     {% set owner_udoc = udict[vnode.owner] %}
@@ -45,21 +48,6 @@
     {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}{% set tsdoc = { attend: tdoc.attend } %}{% endif %}
     {% set owner_udoc = udict[vnode.owner] %}
     {% include "partials/contest_sidebar.html" %}
-  {% else %}
-    <section class="section side oi33-discuss__side">
-      <div class="section__header"><h2 class="section__title">三种发布方式</h2></div>
-      <div class="section__body">
-        <ul class="oi33-discuss__visibility-guide">
-          <li><span class="oi33-visibility-dot is-public"></span><span><strong>公开可见</strong><small>展示在文章广场；绑定题目后也会出现在题目讨论区。</small></span></li>
-          <li><span class="oi33-visibility-dot is-private"></span><span><strong>仅自己可见</strong><small>作为私人草稿或笔记，不会出现在任何公开列表。</small></span></li>
-          <li><span class="oi33-visibility-dot is-unlisted"></span><span><strong>获取链接可见</strong><small>不在公屏展示，只有拿到专属链接的人可以访问。</small></span></li>
-        </ul>
-        {% if canWriteArticle %}
-          <a class="expanded primary rounded button" href="/article/new">发布公开文章</a>
-          <a class="expanded rounded button oi33-discuss__paste-action" href="/article/new?preset=paste">新建链接剪切板</a>
-        {% endif %}
-      </div>
-    </section>
   {% endif %}
 
   {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
@@ -67,10 +55,10 @@
       <div class="section__header"><h2 class="section__title">内容管理</h2></div>
       <div class="section__body oi33-discuss__manage-links">
         <a href="/article/mine"><span class="icon icon-file"></span><span>我的文章<small>管理公开、私密和链接文章</small></span><span aria-hidden="true">›</span></a>
-        {% if canWriteArticle %}<a href="/article/new"><span class="icon icon-edit"></span><span>继续创作<small>支持 Markdown 与代码块</small></span><span aria-hidden="true">›</span></a>{% endif %}
+        {% if canWriteArticle %}<a href="/article/new"><span class="icon icon-edit"></span><span>写文章<small>选择公开、私密或链接可见</small></span><span aria-hidden="true">›</span></a>{% endif %}
       </div>
     </section>
   {% endif %}
-  </aside>
+  </aside>{% endif %}
 </div>
 {% endblock %}

@@ -16,6 +16,7 @@
     </header>
 
     <form method="post" class="oi33-article-compose__form">
+      <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
       <section class="section oi33-article-compose__main">
         <div class="section__body">
           <label class="oi33-article-field">
@@ -52,21 +53,18 @@
         </section>
 
         <section class="section side">
-          <div class="section__header"><h2 class="section__title">谁可以看到</h2></div>
-          <div class="section__body oi33-article-visibility">
+          <div class="section__header"><h2 class="section__title" id="oi33-article-visibility-title">谁可以看到</h2></div>
+          <div class="section__body oi33-article-visibility" role="radiogroup" aria-labelledby="oi33-article-visibility-title">
             <label class="oi33-article-visibility__option">
-              <input type="radio" name="visibility" value="public"{% if articleVisibility == 'public' %} checked{% endif %}>
-              <span class="oi33-visibility-dot is-public"></span>
+              <input type="radio" name="visibility" value="public" required aria-label="公开可见：出现在文章广场，绑定题目后也进入题目讨论区"{% if articleVisibility == 'public' %} checked{% endif %}>
               <span><strong>公开可见</strong><small>出现在文章广场，绑定题目后也进入题目讨论区。</small></span>
             </label>
             <label class="oi33-article-visibility__option">
-              <input type="radio" name="visibility" value="private"{% if articleVisibility == 'private' %} checked{% endif %}>
-              <span class="oi33-visibility-dot is-private"></span>
+              <input type="radio" name="visibility" value="private" required aria-label="仅自己可见：作为私人笔记保存，其他用户无法访问"{% if articleVisibility == 'private' %} checked{% endif %}>
               <span><strong>仅自己可见</strong><small>作为私人笔记保存，其他用户无法访问。</small></span>
             </label>
             <label class="oi33-article-visibility__option">
-              <input type="radio" name="visibility" value="unlisted"{% if articleVisibility == 'unlisted' %} checked{% endif %}>
-              <span class="oi33-visibility-dot is-unlisted"></span>
+              <input type="radio" name="visibility" value="unlisted" required aria-label="获取链接可见：不出现在公屏，持有专属链接的人可以查看"{% if articleVisibility == 'unlisted' %} checked{% endif %}>
               <span><strong>获取链接可见</strong><small>不出现在公屏，持有专属链接的人可以查看。</small></span>
             </label>
           </div>

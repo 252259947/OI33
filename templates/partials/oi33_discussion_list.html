@@ -26,7 +26,7 @@
             <span>{% if ddoc.oi33Kind == 'article' %}专栏文章{% else %}讨论{% endif %}</span>
             {% if ddoc.pin %}<span>置顶</span>{% endif %}
           </div>
-          <h2 class="oi33-discuss__title"><a href="{{ url('discussion_detail', did=ddoc._id, anchor=ddoc.updateAt.getTime()) }}" data-emoji-enabled>{{ ddoc.title }}</a></h2>
+          <h2 class="oi33-discuss__title"><a class="oi33-discuss__primary-link" href="{{ url('discussion_detail', did=ddoc._id, anchor=ddoc.updateAt.getTime()) }}" data-emoji-enabled>{{ ddoc.title }}</a></h2>
           {% if ddoc.content %}<p class="oi33-discuss__excerpt">{{ ddoc.content|markdown|striptags|truncate(150) }}</p>{% endif %}
           <ul class="oi33-discuss__meta">
             {% if parentDoc and not (ddoc.parentType == model.document.TYPE_DISCUSSION_NODE and ddoc.parentId == 'oi33-articles-internal' and not ddoc.oi33ProblemId) %}
