@@ -4,9 +4,13 @@
   <div class="section__header"><h1 class="section__title">{% if tdoc %}编辑作业{% else %}布置作业{% endif %}</h1></div>
   <div class="section__body"><form method="post">
     <input type="hidden" name="csrfToken" value="{{ csrfToken }}">
-    <input type="hidden" name="extensionDays" value="0">
-    <input type="hidden" name="penaltyRules" value="{}">
-    <input type="hidden" name="langs" value="">
+    {# Hydro enhances name=langs into a sibling control, even for hidden inputs.
+       Keep the generated control inside this hidden ancestor as well. #}
+    <div class="oi33-homework-fixed-options" hidden aria-hidden="true">
+      <input type="hidden" name="extensionDays" value="0">
+      <input type="hidden" name="penaltyRules" value="{}">
+      <input type="hidden" name="langs" value="">
+    </div>
     <p class="oi33-homework-editor__hint">先确定标题和开放班型，题目与作业介绍可以稍后补充。</p>
     {{ form.form_text({columns:12,label:'Title',name:'title',value:tdoc.title|default(''),required:true}) }}
     <div class="row">

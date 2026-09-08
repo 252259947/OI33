@@ -55,6 +55,20 @@ test('extension, penalty and languages have only fixed hidden controls, includin
   }
 });
 
+test('fixed controls share a hidden ancestor so language enhancement cannot create an unlabeled visible input', () => {
+  for (const tdoc of [null, { title: '旧作业', langs: ['cc'], content: '', assign: [] }]) {
+    const html = env.render('homework_edit.html', state(tdoc));
+    const wrapper = html.match(/<div\b([^>]*\bclass="[^"]*\boi33-homework-fixed-options\b[^"]*"[^>]*)>([\s\S]*?)<\/div>/);
+    assert.ok(wrapper, 'Fixed options must remain together inside their own wrapper');
+    assert.match(wrapper[1], /\bhidden(?:\s|=|$)/);
+    for (const name of ['extensionDays', 'penaltyRules', 'langs']) {
+      assert.ok(input(wrapper[2], name), `${name} must be inside the hidden ancestor`);
+    }
+  }
+  const css = fs.readFileSync(path.join(root, 'frontend/education.css'), 'utf8');
+  assert.match(css, /\.oi33-homework-fixed-options\s*\{[^}]*display\s*:\s*none\s*!important\s*;?[^}]*\}/);
+});
+
 test('empty introduction is omitted without hiding the homework title or problem empty state', () => {
   for (const content of [undefined, null, '', ' \n\t ']) {
     const html = env.render('homework_detail.html', state({ title: '保留标题', pids: [], content }));
@@ -76,4 +90,45 @@ test('nonempty introduction renders and only authorized managers see the add-pro
   assert.match(html, /&lt;script&gt;title&lt;\/script&gt;/);
   assert.match(html, /href="\/homework_edit">添加题目/);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'templates/partials/homework_sidebar.html'), 'utf8'), /Can be Extended For|render_extension/);
+});
+
+if (process.env.OI33_LAYOUT_TEST === '1') test('language enhancer after-inserted UI remains invisible while fixed form fields still submit', async () => {
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  try {
+    const page = await browser.newPage();
+    const css = ['node_modules/@hydrooj/ui-default/public/theme-4.58.4.css', 'frontend/education.css']
+      .map((name) => fs.readFileSync(path.join(root, name), 'utf8')).join('\n');
+    for (const tdoc of [null, { title: '旧作业', langs: ['cc'], content: '', assign: [] }]) {
+      await page.setContent(`<html><head><style>${css}</style></head><body>${env.render('homework_edit.html', state(tdoc))}</body></html>`);
+      const result = await page.evaluate(() => {
+        const langs = document.querySelector('input[name="langs"]');
+        // Hydro's enhancer inserts its visible container after this hidden
+        // input. Retain that exact DOM relationship, not another hidden input.
+        const enhanced = document.createElement('div');
+        enhanced.className = 'fixture-language-enhancer';
+        enhanced.style.cssText = 'display:block;width:300px;height:44px';
+        const textbox = document.createElement('input');
+        textbox.type = 'text'; textbox.className = 'textbox';
+        enhanced.append(textbox);
+        langs.after(enhanced);
+        const fields = new FormData(langs.closest('form'));
+        const wrapper = enhanced.closest('.oi33-homework-fixed-options');
+        return {
+          hasOriginalInput: !!langs, originalValue: langs.value,
+          insideHiddenWrapper: wrapper?.hasAttribute('hidden'),
+          wrapperDisplay: wrapper && getComputedStyle(wrapper).display,
+          enhancedRects: enhanced.getClientRects().length, inputRects: textbox.getClientRects().length,
+          values: Object.fromEntries(['extensionDays', 'penaltyRules', 'langs'].map((name) => [name, fields.getAll(name)])),
+        };
+      });
+      assert.equal(result.hasOriginalInput, true);
+      assert.equal(result.originalValue, '');
+      assert.equal(result.insideHiddenWrapper, true);
+      assert.equal(result.wrapperDisplay, 'none');
+      assert.equal(result.enhancedRects, 0);
+      assert.equal(result.inputRects, 0);
+      assert.deepEqual(result.values, { extensionDays: ['0'], penaltyRules: ['{}'], langs: [''] });
+    }
+  } finally { await browser.close(); }
 });
