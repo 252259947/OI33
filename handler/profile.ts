@@ -94,6 +94,7 @@ class ProfileEditHandler extends Handler {
             canDirect,
             canEditRealname,
             maxRealnameFlag,
+            enrollmentManaged: true,
             lockedMap: canDirect ? {} : lockedKinds(oi33Doc),
         };
     }
@@ -118,6 +119,7 @@ class ProfileEditHandler extends Handler {
         const isHydroSuperAdmin = this.user.hasPriv(PRIV.PRIV_ALL);
         if (uid !== this.user._id && editorRole < 2 && !isHydroSuperAdmin) throw new ForbiddenError('无权编辑其他用户。');
         if (!KINDS.includes(kind as Oi33RequestKind)) throw new ValidationError('kind');
+        if (kind === 'realname') throw new ForbiddenError('实名申请已迁移至「实名与账号」，请使用 /oi33/enrollment；管理员请使用 /oi33/enrollment/review。');
         const udoc = await UserModel.getById(domainId, uid);
         if (!udoc) throw new NotFoundError(uid);
 
@@ -184,6 +186,7 @@ class RequestApproveHandler extends Handler {
             oi33Model.getRequestById(id),
         ]);
         if (!request || request.status !== 'pending') throw new ForbiddenError('申请不存在或已处理。');
+        if (request.kind === 'realname') throw new ForbiddenError('旧实名申请不再审批，请让学生通过 /oi33/enrollment 重新提交，避免旧申请覆盖新身份。');
         if (!canApproveRequest(approverRole, request)) {
             throw new ForbiddenError('当前身份无权批准该认证等级。');
         }

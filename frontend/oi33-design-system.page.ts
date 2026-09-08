@@ -1,5 +1,6 @@
 import { addPage, addSpeculationRules } from '@hydrooj/ui-default';
 import './oi33-design-system.css';
+import './education.css';
 
 addPage(() => {
   const revealUi = (window as Window & { __oi33RevealUI?: () => boolean }).__oi33RevealUI;

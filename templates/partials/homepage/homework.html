@@ -1,0 +1,50 @@
+{% set htdocs = payload[0] %}
+{% set htsdict = payload[1] %}
+<section class="section page--homework_main oi33-homework" aria-labelledby="oi33-homework-title">
+  <div class="section__header">
+    <h1 class="section__title" id="oi33-homework-title">{{ _('Homework') }}</h1>
+  </div>
+  {% if htdocs.length %}
+    <ol class="section__list homework__list">
+      {%- for tdoc in htdocs -%}
+        <li class="section__list__item homework__item">
+          <div class="oi33-homework__row">
+            <span class="oi33-homework__icon icon icon-calendar" aria-hidden="true"></span>
+            <div class="oi33-homework__content">
+              <h2 class="homework__title"><a href="{{ url('homework_detail', tid=tdoc.docId) }}" data-emoji-enabled>{{ tdoc.title }}</a></h2>
+              <ul class="supplementary list">
+                <li>{{ _('Status') }}：{{ _(model.contest.statusText(tdoc)) }}</li>
+                <li>{{ _('Open Since') }}：{{ datetimeSpan(tdoc.beginAt)|safe }}</li>
+                <li>
+                  {% if model.contest.isExtended(tdoc) or model.contest.isDone(tdoc) %}
+                    {{ _('Hard Deadline') }}：{{ datetimeSpan(tdoc.endAt)|safe }}
+                  {% else %}
+                    {{ _('Deadline') }}：{{ datetimeSpan(tdoc.penaltySince)|safe }}
+                  {% endif %}
+                </li>
+                {% if htsdict[tdoc.docId].attend == 1 %}
+                  <li class="homework__info-attended"><span class="icon icon-check" aria-hidden="true"></span> {{ _('Claimed') }}</li>
+                {% endif %}
+              </ul>
+            </div>
+            <span class="oi33-homework__arrow" aria-hidden="true">›</span>
+          </div>
+        </li>
+      {%- endfor -%}
+    </ol>
+  {% else %}
+    <div class="section__body oi33-homework__empty">
+      <span class="oi33-homework__icon icon icon-calendar" aria-hidden="true"></span>
+      <div>
+        {% if payload[2].unavailable %}
+          <p>作业暂时加载失败</p><p class="supplementary">请稍后重试，或前往作业列表查看。</p>
+        {% else %}
+          <p>暂无可查看的作业</p><p class="supplementary">开放给你的作业会展示在这里。</p>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+  {% if handler.user.hasPerm(PERM.PERM_VIEW_HOMEWORK) %}
+    <ul class="pager pager-bottom"><li><a class="pager__item next link" href="{{ url('homework_main') }}">查看全部作业 ›</a></li></ul>
+  {% endif %}
+</section>

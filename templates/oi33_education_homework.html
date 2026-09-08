@@ -1,0 +1,45 @@
+{% extends "layout/basic.html" %}
+{% block content %}
+<div class="row"><div class="medium-12 columns oi33-education">
+  <section class="section"><div class="section__header"><h1 class="section__title">{{ tdoc.title }} · 完成情况</h1>
+    <a class="rounded button" href="{{ url('homework_detail', tid=tdoc.docId) }}">返回作业</a></div>
+    <div class="section__body"><p>按发布时的应交名单统计，未领取、未提交的学生也计入。调整班型不会自动改变历史应交人数；迟交以作业截止时间判断。</p>
+      {% if roster %}<div class="education-stats">
+        <div><strong>{{ summary.total }}</strong><span>应交</span></div><div><strong>{{ summary.complete }}</strong><span>已完成</span></div>
+        <div><strong>{{ summary.partial }}</strong><span>进行中</span></div><div><strong>{{ summary.notStarted }}</strong><span>未开始</span></div>
+        <div><strong>{{ summary.overdue }}</strong><span>逾期未完成</span></div><div><strong>{{ summary.exempt }}</strong><span>已免除</span></div>
+      </div>{% else %}<p class="education-notice">此作业尚未建立应交名单（旧作业不会自动改动）。请先预览当前班型名单，确认后开始全员统计。</p>{% endif %}
+    </div>
+  </section>
+  {% if preview %}
+  <section class="section education-preview"><div class="section__header"><h2 class="section__title">确认名单变更</h2></div><div class="section__body">
+    <p>新增 {{ preview.added|length }} 人，免除 {{ preview.exempted|length }} 人。已有提交记录不会删除。预览 10 分钟内有效。</p>
+    <p>新增：{% for uid in preview.added %}{{ names[uid] }}（{{ uid }}）{% if not loop.last %}、{% endif %}{% else %}无{% endfor %}</p>
+    <p>免除：{% for uid in preview.exempted %}{{ names[uid] }}（{{ uid }}）{% if not loop.last %}、{% endif %}{% else %}无{% endfor %}</p>
+    <form method="post"><input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="confirm"><input type="hidden" name="token" value="{{ preview.token }}"><input type="hidden" name="confirmed" value="yes">
+      <button class="primary rounded button" type="submit">确认应用名单</button><a class="rounded button" href="{{ url('oi33_education_homework', tid=tdoc.docId) }}">取消</a>
+    </form>
+  </div></section>
+  {% endif %}
+  {% if roster %}
+  <section class="section"><div class="section__body no-padding education-table-wrap"><table class="data-table education-progress-table">
+    <thead><tr><th>学生</th><th>完成进度</th><th>状态</th>{% for pid in tdoc.pids %}<th title="{{ pdict[pid].title }}">{{ pdict[pid].pid|default(pid) }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for row in rows %}<tr{% if row.exemptAt %} class="education-exempt"{% endif %}>
+      <th>{{ row.name }}<small>UID {{ row.uid }}{% if not row.claimed %} · 未领取{% endif %}</small></th>
+      <td>{{ row.completed }} / {{ tdoc.pids|length }}</td>
+      <td>{% if row.exemptAt %}<span title="{{ row.exemptReason }}">已免除</span>{% else %}{{ row.state }}{% if row.overdue %}<span class="education-overdue">逾期</span>{% endif %}{% endif %}</td>
+      {% for cell in row.cells %}<td class="{% if cell.complete %}education-complete{% endif %}">{% if cell.rid %}<a href="{{ url('record_detail', rid=cell.rid) }}" target="_blank" rel="noopener">{% if cell.complete %}AC{% else %}{{ cell.score }} 分{% endif %}</a>{% else %}—{% endif %}</td>{% endfor %}
+    </tr>{% else %}<tr><td colspan="{{ tdoc.pids|length + 3 }}">名单暂无学生。</td></tr>{% endfor %}</tbody>
+  </table></div></section>
+  {% endif %}
+  <section class="section"><div class="section__header"><h2 class="section__title">应交名单管理</h2></div><div class="section__body">
+    <form method="post" class="education-class-form"><input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="preview">
+      <label>操作<select class="select" name="mode">{% if not roster %}<option value="initialize">为旧作业建立名单</option>{% else %}<option value="sync">同步班型新增学生（保留原名单及免除状态）</option><option value="add">补发给指定学生</option><option value="exempt">免除指定学生</option>{% endif %}</select></label>
+      {% if roster %}<label>学生 UID（补发或免除时填写）<input class="textbox" name="uids" placeholder="用逗号或空格分隔"></label>
+      <label>免除原因<input class="textbox" name="reason" maxlength="300" placeholder="免除时必填，例如转班或请假"></label>{% endif %}
+      <p class="help-text">同步只补充新成员，不因转班删除原名单，也不会撤销已有免除。补发学生须属于作业开放班型。所有操作均先预览再确认。</p>
+      <button class="rounded button" type="submit">预览名单变化</button>
+    </form>
+  </div></section>
+</div></div>
+{% endblock %}

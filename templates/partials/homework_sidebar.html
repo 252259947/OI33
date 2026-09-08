@@ -26,6 +26,7 @@
       <li class="menu__item">
     {% if handler.user.hasPerm(perm.PERM_ATTEND_HOMEWORK) and handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
         <form action="{{ url('homework_detail', tid=tdoc.docId) }}" method="POST">
+          <input type="hidden" name="csrfToken" value="{{ csrfToken }}">
           <input type="hidden" name="operation" value="attend">
           <button class="menu__link" type="submit">
             <span class="icon icon-add"></span> {{ _('Claim Homework') }}
@@ -51,7 +52,10 @@
         <span class="icon icon-statistics"></span> {{ _('Scoreboard (Hidden)') }}
       </a></li>
     {% endif %}
-    {% if handler.user.own(tdoc) or handler.user.hasPerm(perm.PERM_EDIT_HOMEWORK) %}
+    {% if educationCanManage %}
+      <li class="menu__item"><a class="menu__link" href="{{ url('oi33_education_homework', tid=tdoc.docId) }}">
+        <span class="icon icon-statistics"></span> 全员完成情况
+      </a></li>
       <li class="menu__item"><a class="menu__link" href="{{ url('homework_edit', tid=tdoc.docId) }}">
         <span class="icon icon-edit"></span> {{ _('Edit Homework') }}
       </a></li>

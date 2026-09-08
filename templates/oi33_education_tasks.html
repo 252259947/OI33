@@ -1,0 +1,14 @@
+{% extends "layout/basic.html" %}
+{% block content %}
+<div class="row"><div class="medium-12 columns oi33-education">
+  <section class="section"><div class="section__header"><h1 class="section__title">我的作业</h1><a class="rounded button" href="{{ url('homework_main') }}">全部开放作业</a></div>
+    <div class="section__body"><p>教练布置给你的作业会显示在这里，无需先领取。旧作业须由教练建立应交名单后显示。</p></div>
+    <div class="education-task-list">{% for task in tasks %}
+      <a class="education-task" href="{{ url('homework_detail', tid=task.tdoc.docId) }}"><div><h2>{{ task.tdoc.title }}</h2><p>截止 {{ datetimeSpan(task.tdoc.penaltySince)|safe }} · {{ task.completed }} / {{ task.tdoc.pids|length }} 题</p></div>
+        <span>{{ task.state }}{% if task.overdue %}<span class="education-overdue">逾期</span>{% endif %} <span aria-hidden="true">›</span></span>
+      </a>
+    {% else %}<div class="section__body">这一页暂无分配给你且当前可访问的作业，可以前往全部开放作业查看。</div>{% endfor %}</div>
+    {{ paginator.render(page, tpcount) }}
+  </section>
+</div></div>
+{% endblock %}

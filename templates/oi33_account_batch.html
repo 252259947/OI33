@@ -1,0 +1,28 @@
+{% set page_name = 'oi33_account_batch' %}
+{% extends 'layout/basic.html' %}
+{% block content %}
+<div class="row"><div class="columns"><section class="section">
+  <div class="section__header"><h1 class="section__title">批量创建学生账号</h1></div>
+  <div class="section__body typo">
+    <p>先预览并核对名单，确认后才创建账号。当前域已有的正式账号填写原 UID，仅关联班型，不重置密码、不改变身份和历史成绩。</p>
+    <form method="post">
+      <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
+      <div class="row">
+        <div class="medium-6 columns"><label>账号用途<select class="select" name="accountType"><option value="regular">日常正式账号（名单已核验）</option><option value="temporary">临时比赛账号（名单已核验）</option></select></label></div>
+        <div class="medium-6 columns"><label>班型（可多选）<select class="select" name="groups" multiple size="4">{% for group in groups %}<option value="{{ group.name }}">{{ group.name }}</option>{% endfor %}</select></label><p class="help-text">可按 Ctrl / Command 多选。<a href="{{ url('oi33_education_classes') }}">管理班型</a></p></div>
+      </div>
+      <div class="row">
+        <div class="medium-6 columns"><label>临时账号生效时间（含时区）<input class="textbox" name="validFrom" placeholder="2026-10-01T08:00:00+08:00"></label></div>
+        <div class="medium-6 columns"><label>临时账号到期时间（含时区）<input class="textbox" name="validUntil" placeholder="2026-10-01T18:00:00+08:00"></label></div>
+      </div>
+      <label>允许参加的比赛 ID（临时账号必填，多个用英文逗号分隔）<input class="textbox" name="contestIds" placeholder="从当前域比赛详情地址复制 ID"></label>
+      <p class="help-text">比赛范围不替代原有报名权限。临时批次只能新建比赛专用账号，请不要选择教学班型或填写已有 UID；到期停用，提交与成绩保留。若比赛限制参与分组，请另行在原生域分组管理中配置比赛专用分组，不要用作教学班型。</p>
+      <label>学生名单（每行：用户名、姓名、学号〔可空〕、已有 UID〔可空〕）
+        <textarea class="textbox" name="users" rows="12" required placeholder="可从表格复制，用制表符分列；也支持 CSV。每批最多 200 人。"></textarea>
+      </label>
+      <p>新账号使用系统内部占位邮箱，不发送邮件，忘记密码由管理员重置。初始密码随机生成，只在确认结果中显示一次，请及时安全发放；正式账号首次使用需修改密码。</p>
+      <button class="primary button" type="submit">预览名单</button>
+    </form>
+  </div>
+</section></div></div>
+{% endblock %}

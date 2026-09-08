@@ -1,0 +1,26 @@
+.oi33-enrollment .section__body { padding: 24px; }
+.oi33-enrollment__muted { color: var(--oi33-text-secondary, #64748b); font-size: 14px; line-height: 1.7; }
+.oi33-enrollment__form { display: grid; gap: 18px; margin-top: 24px; }
+.oi33-enrollment label { display: grid; gap: 8px; font-weight: 600; }
+.oi33-enrollment__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.oi33-enrollment .textbox, .oi33-enrollment .select { width: 100%; min-height: 44px; margin: 0; }
+.oi33-enrollment__notice { border: 1px solid #dcdcff; background: #f5f4ff; color: #45416e; border-radius: 12px; padding: 16px; margin: 18px 0; line-height: 1.8; overflow-wrap: anywhere; }
+.oi33-enrollment__status { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 14px 0; }
+.oi33-enrollment__status strong { color: #5146d8; }
+.oi33-enrollment__details { display: grid; grid-template-columns: 145px minmax(0, 1fr); gap: 12px; margin: 22px 0; line-height: 1.7; }
+.oi33-enrollment__details dt { color: #64748b; }
+.oi33-enrollment__details dd { margin: 0; overflow-wrap: anywhere; }
+.oi33-enrollment__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 16px 0; }
+.oi33-enrollment .button { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; height: auto; margin: 0; white-space: normal; }
+.oi33-enrollment__form > .button { justify-self: start; }
+.oi33-enrollment__filters { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
+.oi33-enrollment__filters label { min-width: 160px; flex: 1 1 180px; }
+.oi33-enrollment__history { margin-top: 20px; font-size: 13px; line-height: 1.8; }
+.oi33-enrollment__history summary { cursor: pointer; color: #64748b; }
+.theme--dark .oi33-enrollment__notice { background: #29283e; color: #dddafa; border-color: #4a466a; }
+@media (max-width: 600px) {
+  .oi33-enrollment .section__body { padding: 18px; }
+  .oi33-enrollment__grid { grid-template-columns: minmax(0, 1fr); }
+  .oi33-enrollment__details { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  .oi33-enrollment__details dd { margin-bottom: 10px; }
+}

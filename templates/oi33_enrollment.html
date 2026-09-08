@@ -1,0 +1,53 @@
+{% set page_name = 'oi33_enrollment' %}
+{% extends 'layout/basic.html' %}
+{% block content %}
+<div class="row oi33-enrollment"><div class="medium-9 medium-centered columns">
+  <section class="section">
+    <div class="section__header"><h1 class="section__title">实名与账号</h1>
+      {% if isAdmin %}<div class="section__tools"><a class="button" href="{{ url('oi33_enrollment_review') }}">审核与账号管理</a></div>{% endif %}
+    </div>
+    <div class="section__body">
+      <p class="oi33-enrollment__muted">真实姓名仅用于教练核验身份和教学管理，不会自动公开在文章、排名或个人主页中。</p>
+      {% if legacyVerified %}
+        <div class="oi33-enrollment__notice">原有实名身份继续有效，无需重复申请。更正姓名或归属信息请联系管理员。</div>
+      {% elif enrollment %}
+        <div class="oi33-enrollment__status" role="status">
+          <strong>{% if not enrollment.enabled %}账号已停用{% elif enrollment.status == 'approved' %}身份已审核{% elif enrollment.status == 'rejected' %}需要补充资料{% else %}等待审核{% endif %}</strong>
+          <span>{% if enrollment.accountType == 'temporary' %}临时比赛账号{% else %}日常账号{% endif %}</span>
+        </div>
+        {% if enrollment.rejectionReason %}<div class="oi33-enrollment__notice">审核意见：{{ enrollment.rejectionReason }}</div>{% endif %}
+        {% if active and not active.allowed and enrollment.status == 'approved' %}<div class="oi33-enrollment__notice">{{ active.reason }}</div>{% endif %}
+        {% if enrollment.requiresPasswordChange %}<div class="oi33-enrollment__notice">请先修改初始密码，再开始使用账号。<a href="{{ url('home_security') }}">前往安全设置</a></div>{% endif %}
+        {% if enrollment.status == 'approved' or not enrollment.enabled or enrollment.accountType == 'temporary' %}
+          <dl class="oi33-enrollment__details"><dt>姓名</dt><dd>{{ enrollment.realName }}</dd>
+            <dt>学校</dt><dd>{{ enrollment.school or '未填写' }}</dd><dt>学号 / 名册编号</dt><dd>{{ enrollment.studentId or '未填写' }}</dd>
+            {% if enrollment.validFrom %}<dt>启用时间</dt><dd>{{ datetimeSpan(enrollment.validFrom)|safe }}</dd>{% endif %}
+            {% if enrollment.validUntil %}<dt>到期时间</dt><dd>{{ datetimeSpan(enrollment.validUntil)|safe }}</dd>{% endif %}
+          </dl>
+          {% if enrollment.accountType == 'temporary' and enrollment.status == 'approved' and enrollment.enabled %}
+            <h2 class="section__title">分配的比赛</h2>
+            <div class="oi33-enrollment__actions">{% for scope in enrollment.contestScopes %}
+              <a class="primary button" href="{{ url('contest_detail', domainId=scope.domainId, tid=scope.contestId) }}">进入比赛 {{ loop.index }}</a>
+            {% endfor %}</div>
+            <p class="oi33-enrollment__muted">只能在有效期内使用指定比赛；到期后历史代码、成绩和提交记录仍会保留。</p>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+      {% if not legacyVerified and (not enrollment or (enrollment.enabled and enrollment.accountType == 'regular' and enrollment.status != 'approved')) %}
+      <form method="post" class="oi33-enrollment__form">
+        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
+        <input type="hidden" name="revision" value="{{ enrollment.revision or 0 }}">
+        <label>真实姓名 <span aria-hidden="true">*</span><input class="textbox" type="text" name="realName" required maxlength="80" autocomplete="name" value="{{ enrollment.realName or '' }}"></label>
+        <div class="oi33-enrollment__grid">
+          <label>学校<input class="textbox" type="text" name="school" maxlength="120" value="{{ enrollment.school or '' }}"></label>
+          <label>学号 / 名册编号<input class="textbox" type="text" name="studentId" maxlength="80" value="{{ enrollment.studentId or '' }}"></label>
+        </div>
+        <label>申请班型（选填，多个用逗号分隔）<input class="textbox" type="text" name="requestedGroups" maxlength="2400" value="{{ (enrollment.requestedGroups or []) | join(', ') }}" placeholder="例如：CSP-J 提高班、周六班"></label>
+        <p class="oi33-enrollment__muted">班型由教练核实后分配，填写申请不会自动获得班型权限。身份审核通过前可以浏览公开内容，暂不能提交代码、报名或发布内容。</p>
+        <button type="submit" class="primary button">{% if enrollment %}更新资料并提交审核{% else %}提交实名申请{% endif %}</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+</div></div>
+{% endblock %}

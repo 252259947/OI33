@@ -393,7 +393,10 @@ export interface Oi33OAuthRefreshToken {
 export interface Oi33Log {
     _id: ObjectId;
     createdAt: Date;
-    type: 'coin' | 'birthday' | 'badge' | 'realname' | 'checkin' | 'cat_account' | 'cat_map' | 'paste' | 'request' | 'wiki' | 'oauth' | 'school_cat' | 'meow' | 'achievement' | 'auction' | 'contract' | 'admin';
+    type: 'coin' | 'birthday' | 'badge' | 'realname' | 'checkin' | 'cat_account' | 'cat_map' | 'paste' | 'request' | 'wiki' | 'oauth' | 'school_cat' | 'meow' | 'achievement' | 'auction' | 'contract' | 'admin' | 'education';
+    educationBatchId?: string;
+    count?: number;
+    domainId?: string;
     sender?: number;
     operator?: number;
     receiver?: number;

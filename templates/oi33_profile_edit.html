@@ -79,7 +79,11 @@
       </div>
       <div class="section__body">
         {{ pending_notice('realname') }}
-        {% if lockedMap and lockedMap['realname'] %}
+        {% if enrollmentManaged %}
+        <p>实名申请、审核和账号有效期已迁移到独立入口；身份核验与教练、管理员授权分开管理。</p>
+        {% if isSelf %}<a class="rounded primary button" href="{{ url('oi33_enrollment') }}">实名与账号</a>{% endif %}
+        {% if canDirect %}<a class="rounded button" href="{{ url('oi33_enrollment_review', query={uid: udoc._id}) }}">实名审核与账号管理</a>{% endif %}
+        {% elif lockedMap and lockedMap['realname'] %}
         <p>当前认证：{% if oi33Doc.realname_flag == 3 %}{{ _('Admin') }}{% elif oi33Doc.realname_flag == 2 %}{{ _('Teacher') }}{% elif oi33Doc.realname_flag == 1 %}{{ _('Verified') }}{% else %}{{ _('Unverified') }}{% endif %}{% if oi33Doc.realname_name %}（{{ oi33Doc.realname_name }}）{% endif %}</p>
         {{ locked_notice() }}
         {% elif canEditRealname %}

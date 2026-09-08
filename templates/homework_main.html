@@ -1,0 +1,24 @@
+{% extends "layout/basic.html" %}
+{% block content %}
+<div class="row"><div class="medium-12 columns oi33-education">
+  <section class="section"><div class="section__header"><h1 class="section__title">作业</h1>
+    <div class="section__tools">
+      {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}<a class="rounded button" href="{{ url('oi33_education_tasks') }}">我的作业</a>{% endif %}
+      {% if educationIsCoach %}<a class="rounded button" href="{{ url('oi33_education_classes') }}">班型管理</a>{% endif %}
+      {% if educationIsCoach and handler.user.hasPerm(perm.PERM_CREATE_HOMEWORK) %}<a class="primary rounded button" href="{{ url('homework_create') }}">布置作业</a>{% endif %}
+    </div></div>
+    <div class="section__body"><form method="get" class="filter-form">
+      <input class="inline compact textbox" name="q" value="{{ q }}" placeholder="搜索作业">
+      <select class="inline compact select" name="group"><option value="">全部班型</option>{% for g in groups %}<option value="{{ g }}"{% if group == g %} selected{% endif %}>{{ g }}</option>{% endfor %}</select>
+      <button type="submit" class="rounded button">搜索</button>
+    </form></div>
+    <div class="education-task-list">{% for tdoc in tdocs %}
+      <a class="education-task" href="{{ url('homework_detail', tid=tdoc.docId) }}"><div><h2>{{ tdoc.title }}</h2>
+        <p>{{ tdoc.assign|join(' · ') }} · 截止 {{ datetimeSpan(tdoc.penaltySince)|safe }} · {{ tdoc.pids|length }} 题</p></div>
+        <span>{{ _(model.contest.statusText(tdoc)) }} <span aria-hidden="true">›</span></span>
+      </a>
+    {% else %}<div class="section__body">暂无可访问的作业。</div>{% endfor %}</div>
+    {{ paginator.render(page, tpcount, add_qs=qs) }}
+  </section>
+</div></div>
+{% endblock %}

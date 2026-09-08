@@ -1,0 +1,28 @@
+{% set page_name = 'oi33_education_access' %}
+{% extends 'layout/basic.html' %}
+{% block content %}
+<div class="row"><div class="medium-9 columns"><section class="section">
+  <div class="section__header"><h1 class="section__title">教学权限设置</h1></div>
+  <div class="section__body typo">
+    <p>实名、班型和教练身份彼此独立。教练可以布置和管理自己的作业，学生不能通过加入班型获得教练权限。</p>
+    {% if not coachRole %}
+      <form method="post">
+        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="operation" value="setup">
+        <label><input type="checkbox" name="confirmed" value="true" required> 创建当前域的 coach 角色，保留现有学生和管理员权限配置。</label>
+        <button type="submit" class="primary button">创建教练角色</button>
+      </form>
+    {% else %}<p>教练角色已存在。系统不会自动覆盖其权限；需要调整时请使用域权限管理。</p>{% endif %}
+    <h2>指定教练</h2>
+    <form method="post">
+      <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="operation" value="coach">
+      <label>用户 UID<input class="textbox" name="uid" type="number" min="2" required></label>
+      <label><input type="checkbox" name="confirmed" value="true" required> 确认将该用户设置为本域教练，不修改其实名资料。</label>
+      <button type="submit" class="primary button"{% if not coachRole %} disabled{% endif %}>指定教练</button>
+    </form>
+    <p>撤销教练身份或调整自定义角色请使用 <a href="{{ url('domain_user') }}">域用户管理</a>。不会覆盖管理员或已有自定义角色。</p>
+    <a class="button" href="{{ url('oi33_enrollment_review') }}">实名审核</a>
+    <a class="button" href="{{ url('oi33_education_classes') }}">班型管理</a>
+    <a class="button" href="{{ url('oi33_account_batch') }}">批量建号</a>
+  </div>
+</section></div></div>
+{% endblock %}

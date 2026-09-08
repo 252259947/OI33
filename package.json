@@ -5,12 +5,17 @@
   "main": "index.ts",
   "author": "33DAI",
   "license": "AGPL-3.0",
+  "scripts": {
+    "test": "node --test tests/*.test.cjs"
+  },
   "dependencies": {
     "nunjucks": "3.2.4",
     "schemastery": "3.18.0"
   },
   "devDependencies": {
     "@hydrooj/ui-default": "4.58.4",
-    "hydrooj": "5.0.4"
+    "esbuild": "0.25.2",
+    "hydrooj": "5.0.4",
+    "mongodb": "7.6.0"
   }
 }

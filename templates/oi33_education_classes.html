@@ -1,0 +1,32 @@
+{% extends "layout/basic.html" %}
+{% block content %}
+<div class="row"><div class="medium-12 columns oi33-education">
+  <div class="section"><div class="section__header"><h1 class="section__title">班型管理</h1></div>
+    <div class="section__body">
+      <p>一个学生可以属于多个班型；布置作业时，所选班型的学生合并去重。班型只决定学习范围，不授予教练或管理员权限。仅可添加已加入本域或在本域提交身份申请的日常学生，临时比赛账号不能加入教学班型。</p>
+      <form method="post" class="education-class-form">
+        <input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="update">
+        <label>新班型名称<input class="textbox" name="name" required maxlength="80" placeholder="例如：提高班 / 周六班"></label>
+        <label>学生 UID（可暂时留空）<textarea class="textbox" name="uids" rows="2" placeholder="多个 UID 用逗号或空格分隔"></textarea></label>
+        <button class="primary rounded button" type="submit">保存班型</button>
+      </form>
+    </div>
+  </div>
+  <div class="education-class-grid">
+  {% for group in groups %}
+    <section class="section"><div class="section__header"><h2 class="section__title">{{ group.name }}</h2><span>{{ group.uids|length }} 人</span></div>
+      <div class="section__body"><p class="education-members">{% for uid in group.uids %}<span>{{ names[uid] }} · {{ uid }}</span>{% else %}暂无学生{% endfor %}</p>
+        <details><summary>编辑班型成员</summary>
+          <form method="post" class="education-class-form">
+            <input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="update"><input type="hidden" name="name" value="{{ group.name }}">
+            <label>完整成员 UID 名单<textarea class="textbox" name="uids" rows="3">{{ group.uids|join(', ') }}</textarea></label>
+            <p class="help-text">保存会替换本班型成员，其他班型不变。已发布作业的应交名单不自动重算；作业访问范围会随当前班型变化。</p>
+            <button class="rounded button" type="submit">保存成员</button>
+          </form>
+        </details>
+      </div>
+    </section>
+  {% else %}<div class="section"><div class="section__body">还没有班型，请先创建班型并添加学生。</div></div>{% endfor %}
+  </div>
+</div></div>
+{% endblock %}

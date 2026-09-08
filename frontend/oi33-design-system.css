@@ -227,6 +227,55 @@ table {
   box-shadow: inset 0 0 0 3px rgba(91, 92, 226, .45);
 }
 
+.oi33-homework__row,
+.oi33-homework__empty {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.oi33-homework__row {
+  padding: 6px 2px;
+}
+
+.oi33-homework__icon {
+  display: inline-flex;
+  flex: 0 0 40px;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  color: var(--oi33-brand);
+  background: var(--oi33-brand-soft);
+  font-size: 19px;
+}
+
+.oi33-homework__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.oi33-homework .homework__title {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.oi33-homework .supplementary {
+  line-height: 1.8;
+}
+
+.oi33-homework__arrow {
+  color: var(--oi33-text-3);
+  font-size: 22px;
+}
+
+.oi33-homework__empty p {
+  margin: 0;
+}
+
 /* Product navigation */
 .oi33-nav {
   /* ui-default pins `.nav` with !important. Keep the new header in normal
@@ -297,6 +346,10 @@ table {
   margin: 0;
 }
 
+.oi33-nav__main {
+  flex: 0 0 auto;
+}
+
 .oi33-nav__main .nav__list-item,
 .oi33-nav__secondary .nav__list-item {
   display: flex;
@@ -316,6 +369,7 @@ table {
   font-size: 14px;
   font-weight: 620;
   line-height: 64px;
+  white-space: nowrap;
 }
 
 .oi33-nav .nav__item:hover {
@@ -341,7 +395,7 @@ table {
 .oi33-nav__search {
   position: relative;
   flex: 1 1 220px;
-  min-width: 0;
+  min-width: 140px;
   max-width: 240px;
   margin-left: auto;
 }
@@ -392,6 +446,13 @@ table {
 
 .oi33-nav__secondary {
   flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.oi33-nav__secondary > li > .nav__item > span:not(.icon) {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .oi33-nav__signup {
@@ -1071,6 +1132,18 @@ table {
 }
 
 @media (max-width: 850px) {
+  .oi33-brand__word {
+    display: none;
+  }
+
+  .oi33-nav__search {
+    display: none;
+  }
+
+  .oi33-nav__secondary > li > .nav__item > span:not(.icon) {
+    max-width: 70px;
+  }
+
   body {
     font-size: 16px;
   }
@@ -1103,6 +1176,109 @@ table {
   .oi33-auth__intro h1 {
     margin-top: 42px;
     font-size: 30px;
+  }
+}
+
+/* Match Hydro's 600px slideout breakpoint. The eight primary links stay in
+   their fixed order, and the existing hamburger/overlay owns opening it. */
+@media (max-width: 600px) {
+  .nav.slideout-menu.oi33-nav {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    z-index: 0;
+    display: none;
+    width: 200px;
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--oi33-surface);
+  }
+
+  .oi33-nav .row,
+  .oi33-nav .columns {
+    height: auto;
+  }
+
+  .oi33-nav .oi33-nav__inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 10px;
+  }
+
+  .oi33-brand__word {
+    display: inline;
+  }
+
+  .oi33-nav__main,
+  .oi33-nav__secondary {
+    display: block;
+    float: none;
+    height: auto;
+    margin: 0;
+  }
+
+  .oi33-nav__main .nav__list-item,
+  .oi33-nav__secondary .nav__list-item {
+    display: block;
+  }
+
+  .oi33-nav .nav__item,
+  .oi33-nav a.nav__item {
+    width: 100%;
+    min-height: 42px;
+    padding: 8px 12px;
+    border: 0;
+    font-size: 14px;
+    line-height: 26px;
+  }
+
+  .oi33-nav .nav__item.nav--active::after {
+    top: 8px;
+    right: auto;
+    bottom: 8px;
+    left: 0;
+    width: 3px;
+    height: auto;
+  }
+
+  .oi33-nav__search {
+    display: block;
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    margin: 0;
+  }
+
+  .oi33-nav__secondary {
+    padding-top: 8px;
+    border-top: 1px solid var(--oi33-line);
+  }
+
+  .oi33-nav .dropdown-target.menu {
+    min-width: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .oi33-nav .dropdown-target.menu .menu__link {
+    padding: 8px 12px;
+    font-size: 13px;
+    line-height: 24px;
+    white-space: normal;
+  }
+
+  .oi33-nav__signup {
+    margin: 0;
+  }
+
+  .oi33-homework__row,
+  .oi33-homework__empty {
+    gap: 12px;
   }
 }
 

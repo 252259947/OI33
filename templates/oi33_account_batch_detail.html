@@ -1,0 +1,30 @@
+{% set page_name = 'oi33_account_batch' %}
+{% extends 'layout/basic.html' %}
+{% block content %}
+<div class="row"><div class="columns"><section class="section">
+  <div class="section__header"><h1 class="section__title">批量建号 · {% if batch.status == 'preview' %}确认预览{% elif batch.status == 'completed' %}已完成{% elif batch.status == 'partial' %}部分完成{% else %}处理中{% endif %}</h1></div>
+  <div class="section__body typo">
+    <p>共 {{ batch.rows.length }} 人 · {% if batch.accountType == 'temporary' %}临时比赛账号{% else %}正式账号{% endif %} · 班型：{{ batch.groups|join('、') or '不分配班型' }}</p>
+    {% if batch.accountType == 'temporary' %}<p>有效期：{{ datetimeSpan(batch.validFrom)|safe }} 至 {{ datetimeSpan(batch.validUntil)|safe }}；允许比赛：{{ batch.contestIds|join('、') }}</p>{% endif %}
+    <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>用户名</th><th>姓名</th><th>学号</th><th>操作</th><th>结果</th></tr></thead><tbody>
+      {% for row in batch.rows %}<tr><td>{{ row.username }}</td><td>{{ row.realName }}</td><td>{{ row.studentId or '—' }}</td><td>{% if row.existingUid %}关联 UID {{ row.existingUid }}{% else %}新建账号{% endif %}</td><td>{% if row.state == 'done' %}完成 · UID {{ row.uid }}{% elif row.error %}{{ row.error }}{% else %}待处理{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if credentials.length %}
+      <h2>初始密码（仅显示本次新创建的账号）</h2>
+      <p>离开后无法再次查看此处密码，请立即安全保存并单独发给对应学生。失败行可能尚未启用；重复确认不会重建成功账号或更换其密码。若未保存，请使用管理员重置密码功能。</p>
+      <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>用户名</th><th>姓名</th><th>UID</th><th>初始密码</th></tr></thead><tbody>
+        {% for item in credentials %}<tr><td>{{ item.username }}</td><td>{{ item.realName }}</td><td>{{ item.uid }}</td><td><code>{{ item.password }}</code></td></tr>{% endfor %}
+      </tbody></table></div>
+    {% endif %}
+    {% if retryable %}<p>上次处理已中断或超时，可以重试尚未完成的行。已完成的账号不会重建；状态不确定的账号需要管理员核对。</p>{% endif %}
+    {% if batch.status == 'preview' or batch.status == 'partial' or retryable %}
+      <form method="post">
+        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
+        <label><input type="checkbox" name="confirmed" value="true" required> 已核验学生真实身份，并确认账号用途、班型和比赛有效期。</label>
+        <button class="primary button" type="submit">{% if batch.status == 'partial' or retryable %}重试未完成行{% else %}确认创建 / 关联{% endif %}</button>
+      </form>
+    {% endif %}
+    <a class="button" href="{{ url('oi33_account_batch') }}">返回批量建号</a>
+  </div>
+</section></div></div>
+{% endblock %}

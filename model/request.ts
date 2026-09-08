@@ -16,6 +16,9 @@ function buildRequestDoc(uid: number, kind: Oi33RequestKind, requester: number, 
 }
 
 export async function applyRequestPayload(uid: number, payload: Oi33RequestPayload) {
+    if (payload.realname_flag !== undefined || payload.realname_name !== undefined) {
+        throw new Error('实名资料请通过独立 enrollment 流程审核，旧资料申请不能修改身份或管理权限。');
+    }
     const $set: Record<string, any> = {};
     const $unset: Record<string, ''> = {};
     if (payload.birthday_date !== undefined) {
@@ -59,6 +62,7 @@ export async function applyRequestPayload(uid: number, payload: Oi33RequestPaylo
 }
 
 export async function submitRequest(uid: number, kind: Oi33RequestKind, requester: number, payload: Oi33RequestPayload) {
+    if (kind === 'realname') throw new Error('请通过 /oi33/enrollment 提交实名申请。');
     const stale = await requestColl.find({ uid, kind, status: 'pending' }).project({ _id: 1 }).toArray();
     if (stale.length) {
         const staleIds = stale.map((d) => d._id);

@@ -1,0 +1,12 @@
+{% extends "layout/basic.html" %}
+{% block content %}
+<div class="row"><div class="medium-12 columns"><section class="section">
+  <div class="section__header"><h1 class="section__title">作业已创建，应交名单需要确认</h1></div>
+  <div class="section__body">
+    <p>作业已经保存，但应交名单的保存未能确认。请勿刷新并重新提交发布表单，以免重复创建作业。</p>
+    <p>请打开完成情况页检查名单；若尚无名单，可以预览并确认建立。恢复操作不会删除作业或学生提交记录。</p>
+    <a class="primary rounded button" href="{{ url('oi33_education_homework', tid=tid) }}">检查并恢复应交名单</a>
+    <a class="rounded button" href="{{ url('homework_detail', tid=tid) }}">查看已创建的作业</a>
+  </div>
+</section></div></div>
+{% endblock %}

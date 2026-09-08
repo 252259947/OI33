@@ -1,0 +1,29 @@
+.oi33-education .section__header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.education-class-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.education-class-form { display:grid; gap:14px; max-width:820px; }
+.education-class-form label { display:grid; gap:7px; }
+.education-class-form .button { justify-self:start; margin:0; }
+.education-members { display:flex; flex-wrap:wrap; gap:8px; }
+.education-members span { background:#f4f4fb; border-radius:6px; padding:5px 9px; }
+.education-stats { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; }
+.education-stats div { display:grid; gap:7px; padding:16px; background:#f7f8ff; border-radius:12px; }
+.education-stats strong { font-size:27px; color:#5b51eb; }
+.education-stats span { color:#6a7590; }
+.education-notice { padding:15px; background:#f1efff; border-radius:10px; }
+.education-preview { outline:2px solid #8077ed; }
+.education-table-wrap { overflow-x:auto; }
+.education-progress-table { white-space:nowrap; }
+.education-progress-table th small { display:block; font-weight:400; font-size:12px; color:#77829c; margin-top:6px; }
+.education-progress-table td,.education-progress-table th { min-width:85px; }
+.education-complete { color:#078775; font-weight:600; }
+.education-exempt { opacity:.6; }
+.education-overdue { display:inline-block; color:#b95632; background:#fff0e9; font-size:12px; border-radius:5px; padding:3px 6px; margin-left:8px; }
+.education-task { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:23px; border-top:1px solid #e7e9f4; color:inherit; }
+.education-task:hover,.education-task:focus-visible { background:#f5f4ff; text-decoration:none; }
+.education-task h2 { margin:0 0 10px; font-size:19px; }
+.education-task p { margin:0; color:#73809c; }
+.education-class-picker { display:flex; flex-wrap:wrap; gap:10px; padding:10px 0; }
+.education-class-picker label { display:flex; align-items:center; gap:8px; padding:10px 14px; border:1px solid #dfe2f2; border-radius:10px; cursor:pointer; }
+.education-class-picker label:has(input:checked) { border-color:#6960ef; background:#f2f0ff; }
+.education-class-picker input { margin:0!important; }
+@media(max-width:700px) { .education-class-grid{grid-template-columns:1fr} .education-stats{grid-template-columns:repeat(3,minmax(0,1fr))} .education-task{align-items:flex-start} }

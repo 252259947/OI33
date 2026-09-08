@@ -22,6 +22,10 @@ import { apply as applyAuction } from './handler/auction';
 import { apply as applyContract } from './handler/contract';
 import { apply as applyContest } from './handler/contest';
 import { apply as applyTheme } from './handler/theme';
+import { apply as applyHomepage } from './handler/homepage';
+import { apply as applyEnrollment } from './handler/enrollment';
+import { apply as applyEducation } from './handler/education';
+import { apply as applyAccountBatch } from './handler/account-batch';
 import { backfillAllCatFood } from './model/user';
 import { ensureModerationIndexes } from './model/moderate';
 import { ensureArticleIndexes, ensureArticleNode } from './model/article';
@@ -70,6 +74,10 @@ async function maintainSchoolCatRewards() {
 export async function apply(ctx: Context) {
     applyPatches(ctx);
     applyTheme(ctx);
+    await applyEnrollment(ctx);
+    await applyEducation(ctx);
+    await applyAccountBatch(ctx);
+    applyHomepage(ctx);
     ctx.injectUI('UserDropdown', 'oi33_admin', {
         icon: 'crown',
         displayName: 'oi33_admin',
