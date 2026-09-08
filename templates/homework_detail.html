@@ -11,7 +11,8 @@
         <h1 class="section__title">{{ tdoc.title }}</h1>
       </div>
     </div>
-    <div class="section">
+    {% if tdoc.content|default('', true)|trim %}
+    <div class="section" data-homework-introduction>
       <div class="section__header">
         <h1 class="section__title">{{ _('Homework Introduction') }}</h1>
       </div>
@@ -19,11 +20,21 @@
         {{ tdoc['content']|markdown|safe }}
       </div>
     </div>
+    {% endif %}
     <div class="section">
       <div class="section__header">
         <h1 class="section__title">{{ _('Problem') }}</h1>
       </div>
-    {% if pdict %}
+    {% if not tdoc.pids|length %}
+      <div class="section__body oi33-homework-empty">
+        <span class="icon icon-book" aria-hidden="true"></span>
+        <h2>题目待补充</h2>
+        <p>这份作业暂未添加题目，添加后会显示在这里。</p>
+        {% if educationCanManage %}
+          <a class="primary rounded button" href="{{ url('homework_edit', tid=tdoc.docId) }}">添加题目</a>
+        {% endif %}
+      </div>
+    {% elif pdict %}
       <div class="section__body no-padding">
         <table class="data-table">
           <colgroup>

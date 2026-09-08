@@ -1,0 +1,69 @@
+/* Shared header, toolbar shell and empty states use training-contest.css. */
+.oi33-homework-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; }
+.oi33-homework-catalog .button {
+  box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+  gap: 6px; min-height: 42px; margin: 0; padding: 0 16px; border-radius: 11px; line-height: 1.3; white-space: nowrap;
+}
+.oi33-homework-search {
+  display: grid; flex: 1 1 640px; grid-template-columns: minmax(160px, 1fr) minmax(140px, 190px) auto;
+  align-items: end; gap: 10px; max-width: 730px; margin: 0; min-width: 0;
+}
+.oi33-homework-search > div { min-width: 0; }
+.oi33-homework-search label { display: block; margin-bottom: 5px; color: var(--oi33-text-2, #526078); font-size: 12px; }
+.oi33-homework-search input, .oi33-homework-search select {
+  box-sizing: border-box; width: 100%; height: 44px; margin: 0; padding: 0 12px; border-radius: 11px; box-shadow: none;
+  color: var(--oi33-text, #182033); background: var(--oi33-surface, #fff);
+}
+.oi33-homework-search .button { height: 44px; min-width: 80px; }
+.oi33-homework-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.oi33-homework-list > li { min-width: 0; }
+.oi33-homework-card {
+  position: relative; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; overflow: hidden; padding: 23px 24px; border: 1px solid var(--oi33-line, #e3e8f2);
+  border-radius: var(--oi33-radius, 16px); color: var(--oi33-text, #182033); background: var(--oi33-surface, #fff);
+  box-shadow: var(--oi33-shadow-sm, 0 8px 24px rgba(47, 55, 89, .05)); text-decoration: none;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.oi33-homework-card::before { position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--oi33-brand, #5b5ce2), #8485f1); content: ''; }
+.oi33-homework-card.is-done::before { background: var(--oi33-line-strong, #d5dcea); }
+.oi33-homework-card:hover, .oi33-homework-card:focus-visible {
+  border-color: var(--oi33-brand, #5b5ce2); box-shadow: 0 16px 38px rgba(46, 55, 94, .12);
+  color: var(--oi33-text, #182033); text-decoration: none; transform: translateY(-2px);
+}
+.oi33-homework-card:focus-visible { outline: 3px solid var(--oi33-brand, #5b5ce2); outline-offset: 3px; }
+.oi33-homework-card__body { min-width: 0; flex: 1 1 auto; }
+.oi33-homework-card__topline, .oi33-homework-card__groups, .oi33-homework-card__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.oi33-homework-card__topline { color: var(--oi33-text-3, #667085); font-size: 12px; }
+.oi33-homework-status { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 999px; font-weight: 750; }
+.oi33-homework-status.is-active { color: var(--oi33-accent, #17a673); background: var(--oi33-accent-soft, #e8f8f1); }
+.oi33-homework-status.is-upcoming { color: var(--oi33-brand, #5b5ce2); background: var(--oi33-brand-soft, #eeefff); }
+.oi33-homework-status.is-done { color: var(--oi33-text-3, #667085); background: var(--oi33-surface-2, #f9faff); }
+.oi33-homework-card h2 { margin: 12px 0 10px; font-size: 21px; font-weight: 750; line-height: 1.45; overflow-wrap: anywhere; }
+.oi33-homework-card:hover h2 { color: var(--oi33-brand, #5b5ce2); }
+.oi33-homework-card__groups { gap: 6px; margin-bottom: 13px; font-size: 12px; }
+.oi33-homework-card__label { color: var(--oi33-text-3, #667085); margin-right: 6px; }
+.oi33-homework-card__group { max-width: 100%; padding: 4px 8px; border-radius: 7px; color: var(--oi33-text-2, #526078); background: var(--oi33-surface-2, #f9faff); overflow-wrap: anywhere; }
+.oi33-homework-card__meta { color: var(--oi33-text-2, #526078); font-size: 12px; line-height: 1.7; }
+.oi33-homework-card__meta > span { overflow-wrap: anywhere; }
+.oi33-homework-card__meta time { white-space: normal; }
+.oi33-homework-card__action { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--oi33-line-strong, #d5dcea); border-radius: 10px; color: var(--oi33-text-2, #526078); font-size: 13px; font-weight: 700; }
+.oi33-homework-card:hover .oi33-homework-card__action { color: var(--oi33-brand, #5b5ce2); border-color: var(--oi33-brand, #5b5ce2); background: var(--oi33-brand-soft, #eeefff); }
+@media (max-width: 1060px) {
+  .oi33-homework-toolbar { flex-direction: column; align-items: stretch; gap: 14px; }
+  .oi33-homework-search { flex-basis: auto; max-width: none; }
+  .oi33-homework-catalog > .oi33-training-head { flex-wrap: wrap; }
+}
+@media (max-width: 600px) {
+  .oi33-homework-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); width: 100%; }
+  .oi33-homework-actions .button { padding: 0 10px; font-size: 13px; }
+  .oi33-homework-search { grid-template-columns: minmax(0, 1fr) auto; }
+  .oi33-homework-search__query { grid-column: 1 / -1; }
+  .oi33-homework-card { flex-direction: column; align-items: stretch; gap: 18px; padding: 20px 18px; }
+  .oi33-homework-card h2 { font-size: 19px; }
+  .oi33-homework-card__meta { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .oi33-homework-card__action { align-self: flex-end; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .oi33-homework-card { transition: none; }
+  .oi33-homework-card:hover, .oi33-homework-card:focus-visible { transform: none; }
+}

@@ -1,16 +1,19 @@
 {% extends "layout/basic.html" %}
 {% block content %}
-<div class="row"><div class="medium-9 columns oi33-education"><section class="section">
+<div class="row"><div class="medium-9 columns oi33-education oi33-homework-editor"><section class="section">
   <div class="section__header"><h1 class="section__title">{% if tdoc %}编辑作业{% else %}布置作业{% endif %}</h1></div>
   <div class="section__body"><form method="post">
     <input type="hidden" name="csrfToken" value="{{ csrfToken }}">
+    <input type="hidden" name="extensionDays" value="0">
+    <input type="hidden" name="penaltyRules" value="{}">
+    <input type="hidden" name="langs" value="">
+    <p class="oi33-homework-editor__hint">先确定标题和开放班型，题目与作业介绍可以稍后补充。</p>
     {{ form.form_text({columns:12,label:'Title',name:'title',value:tdoc.title|default(''),required:true}) }}
     <div class="row">
       {{ form.form_text({columns:3,label:'Begin Date',name:'beginAtDate',value:dateBeginText,date:true,row:false}) }}
-      {{ form.form_text({columns:2,label:'Begin Time',name:'beginAtTime',value:timeBeginText,time:true,row:false}) }}
+      {{ form.form_text({columns:3,label:'Begin Time',name:'beginAtTime',value:timeBeginText,time:true,row:false}) }}
       {{ form.form_text({columns:3,label:'End Date',name:'penaltySinceDate',value:datePenaltyText,date:true,row:false}) }}
-      {{ form.form_text({columns:2,label:'End Time',name:'penaltySinceTime',value:timePenaltyText,time:true,row:false}) }}
-      {{ form.form_text({columns:2,label:'Extension (days)',name:'extensionDays',value:extensionDays,row:false}) }}
+      {{ form.form_text({columns:3,label:'End Time',name:'penaltySinceTime',value:timePenaltyText,time:true,row:false}) }}
     </div>
     <fieldset><legend>开放班型（至少选择一项）</legend>
       <div class="education-class-picker">{% for group in educationGroups %}
@@ -19,12 +22,8 @@
       <p class="help-text">多个班型取并集，同一学生只计一次。发布时建立固定应交名单；编辑开放班型不会自动修改已发布名单，需要前往完成情况页预览同步。</p>
     </fieldset>
     {{ form.form_text({columns:12,label:'Homework Maintainer',name:'maintainer',value:tdoc.maintainer|default(''),help_text:'协作者也必须拥有教练身份和作业编辑权限。'}) }}
-    <div class="row"><div class="columns"><label>{{ _('Extension Score Penalty') }}
-      <textarea name="penaltyRules" class="monospace textbox" data-yaml>{% if tdoc %}{{ penaltyRules }}{% else %}{% include 'partials/homework_default_penalty_rules.yaml' %}{% endif %}</textarea>
-    </label></div></div>
-    {{ form.form_text({columns:12,label:'Problems',name:'pids',value:pids,required:true}) }}
-    {{ form.form_textarea({columns:12,label:'Content',name:'content',value:tdoc.content|default(''),markdown:true}) }}
-    {{ form.form_text({columns:12,label:'Submission language limit',name:'langs',value:tdoc.langs|default(''),placeholder:_("Seperated with ','")}) }}
+    {{ form.form_text({columns:12,label:'题目（选填）',name:'pids',value:pids,help_text:'可以先发布空题单，再通过编辑作业添加题目。'}) }}
+    {{ form.form_textarea({columns:12,label:'作业介绍（选填）',name:'content',value:tdoc.content|default(''),markdown:true,help_text:'留空时，作业详情页不显示介绍板块。'}) }}
     <div class="row"><div class="columns">
       <button name="operation" value="update" type="submit" class="primary rounded button">{% if tdoc %}保存作业{% else %}发布作业{% endif %}</button>
       {% if tdoc %}<button name="operation" value="update" type="submit" formaction="{{ url('homework_create') }}" class="rounded button">克隆为新作业</button>

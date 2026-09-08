@@ -94,6 +94,139 @@ async function checkHomepage(request, label, expectHomework = false) {
   check(`homework ${expectHomework ? 'content' : 'empty state'} renders ${label}`,
     html.includes(expectHomework ? 'QA homework' : '暂无可查看的作业'));
 }
+function attribute(tag, name) {
+  return tag.match(new RegExp(`\\b${name}="([^"]*)"`, 'i'))?.[1];
+}
+function inputTag(html, name) {
+  return (html.match(/<input\b[^>]*>/gi) || []).find((tag) => attribute(tag, 'name') === name) || '';
+}
+function dateText(value) {
+  return String(value).split('-').map((part) => part.padStart(2, '0')).join('-');
+}
+function dateInZone(timeZone) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date()).map(({ type, value }) => [type, value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+async function homeworkDefaults(request, label, timeZone) {
+  const before = dateInZone(timeZone);
+  const result = await request('/homework/create', null, { html: true });
+  const after = dateInZone(timeZone);
+  const html = result.body.raw || '';
+  check(`real create homework HTML renders for ${label}`, result.status === 200 && html.includes('<html'), `status ${result.status}`);
+  const fields = Object.fromEntries(['beginAtDate', 'beginAtTime', 'penaltySinceDate', 'penaltySinceTime']
+    .map((name) => [name, attribute(inputTag(html, name), 'value')]));
+  check(`homework defaults start today at midnight in ${timeZone}`,
+    [before, after].includes(dateText(fields.beginAtDate)) && /^0?0:00$/.test(fields.beginAtTime), JSON.stringify(fields));
+  check(`homework default deadline is 2100-01-01 midnight for ${label}`,
+    dateText(fields.penaltySinceDate) === '2100-01-01' && /^0?0:00$/.test(fields.penaltySinceTime), JSON.stringify(fields));
+  const controls = html.match(/<(?:input|select|textarea)\b[^>]*>/gi) || [];
+  check(`homework editor hides extension penalty and language controls for ${label}`,
+    !controls.some((tag) => ['extensionDays', 'penaltyRules', 'langs'].includes(attribute(tag, 'name'))
+      && attribute(tag, 'type') !== 'hidden'));
+  check(`homework editor permits an empty problem list for ${label}`,
+    !!inputTag(html, 'pids') && !/\srequired(?:\s|=|>)/i.test(inputTag(html, 'pids')));
+  return fields;
+}
+async function checkEmptyHomeworkLifecycle(db, coach, student, defaults, pid) {
+  const query = (tid) => ({ domainId: 'system', docType: 30, docId: new ObjectId(tid) });
+  const load = (tid) => db.collection('document').findOne(query(tid));
+  const rosterFor = (tid) => db.collection('oi33_education_roster').findOne({ domainId: 'system', tid: new ObjectId(tid) });
+  const assertEmpty = (label, doc) => check(label,
+    doc?.content === '' && Array.isArray(doc.pids) && doc.pids.length === 0);
+  const assertNormalized = (label, doc) => check(label,
+    !!doc && +doc.endAt === +doc.penaltySince && Object.keys(doc.penaltyRules || {}).length === 0
+      && !doc.langs?.length);
+  // Use the actual form defaults, not hand-written fallback dates. These are
+  // deliberate stale/forged advanced values which the simplified form ignores.
+  const form = { operation: 'update', ...defaults, rated: 'false', classNames: '基础班,提高班',
+    extensionDays: '9', penaltyRules: '1: 0.25', langs: 'fixture-language-that-does-not-exist' };
+  const ids = [];
+  for (const [label, optional] of [['empty strings', { content: '', pids: '' }], ['omitted fields', {}]]) {
+    const title = `QA empty homework ${label}`;
+    const result = await coach('/homework/create', { ...form, title, ...optional });
+    check(`coach creates homework with ${label} over real core route`, result.status < 400 && !!result.body.tid, JSON.stringify(result.body));
+    const tid = String(result.body.tid);
+    ids.push(tid);
+    const doc = await load(tid);
+    assertEmpty(`homework with ${label} persists exact empty content and problem array`, doc);
+    assertNormalized(`homework with ${label} persists no extension penalty or language restriction`, doc);
+    check(`homework with ${label} deadline respects coach timezone`,
+      doc.penaltySince.toISOString() === '2100-01-01T10:00:00.000Z', doc.penaltySince.toISOString());
+    const roster = await rosterFor(tid);
+    check(`empty homework with ${label} still snapshots all assigned students`,
+      roster?.entries.length === 3 && [4, 5, 6].every((uid) => roster.entries.some((entry) => entry.uid === uid)));
+    const progress = await coach(`/oi33/education/homework/${tid}`);
+    check(`empty homework with ${label} keeps all assigned students visible as not started`,
+      progress.status === 200 && progress.body.summary?.total === 3 && progress.body.summary?.notStarted === 3
+        && progress.body.summary?.complete === 0, JSON.stringify(progress.body.summary));
+    for (const [actor, role] of [[coach, 'coach'], [student, 'student']]) {
+      const detail = await actor(`/homework/${tid}`, null, { html: true });
+      const html = detail.body.raw || '';
+      check(`empty homework detail renders without introduction for ${role} (${label})`,
+        detail.status === 200 && !html.includes('data-homework-introduction'), `status ${detail.status}`);
+      check(`empty homework has friendly problem state for ${role} (${label})`,
+        html.includes('oi33-homework-empty') && html.includes('题目待补充'));
+      check(`homework sidebar has no extension row for ${role} (${label})`,
+        !/<dt>\s*(?:Can be Extended For|允许延期|可以延期)[^<]*<\/dt>/i.test(html));
+    }
+  }
+  const tid = ids[0];
+  const snapshot = JSON.stringify(await rosterFor(tid));
+  const edit = await coach(`/homework/${tid}/edit`, null, { html: true });
+  check('existing homework editor preserves dates instead of applying new-create defaults', edit.status === 200
+    && dateText(attribute(inputTag(edit.body.raw || '', 'beginAtDate'), 'value')) === dateText(defaults.beginAtDate)
+    && dateText(attribute(inputTag(edit.body.raw || '', 'penaltySinceDate'), 'value')) === dateText(defaults.penaltySinceDate));
+  let result = await coach(`/homework/${tid}/edit`, { ...form, title: 'QA empty homework now populated', content: 'QA added introduction', pids: String(pid) });
+  check('coach can add a problem and introduction to an empty homework', result.status < 400, JSON.stringify(result.body));
+  let doc = await load(tid);
+  check('editing empty homework persists its added problem and introduction',
+    doc.content === 'QA added introduction' && doc.pids.length === 1 && doc.pids[0] === pid);
+  assertNormalized('editing populated homework still ignores extension penalty and language restriction', doc);
+  check('adding a problem does not overwrite the published roster', JSON.stringify(await rosterFor(tid)) === snapshot);
+  const detail = await coach(`/homework/${tid}`, null, { html: true });
+  check('populated homework detail shows the added introduction and problem', detail.status === 200
+    && (detail.body.raw || '').includes('QA added introduction') && (detail.body.raw || '').includes('QA problem'));
+  for (const [label, optional] of [['empty strings', { content: '', pids: '' }], ['omitted fields', {}]]) {
+    result = await coach(`/homework/${tid}/edit`, { ...form, title: `QA cleared homework ${label}`, ...optional });
+    check(`coach can save an existing homework with ${label}`, result.status < 400, JSON.stringify(result.body));
+    doc = await load(tid);
+    assertEmpty(`editing with ${label} persists exact empty values`, doc);
+    check(`editing with ${label} does not overwrite the published roster`, JSON.stringify(await rosterFor(tid)) === snapshot);
+  }
+  const savedDoc = JSON.stringify(await load(tid));
+  const beforeCount = await db.collection('document').countDocuments({ domainId: 'system', docType: 30, rule: 'homework' });
+  for (const [label, data] of [['missing title', { title: '' }], ['missing classes', { title: 'QA invalid no class', classNames: '' }]]) {
+    result = await coach('/homework/create', { ...form, ...data });
+    check(`empty homework still rejects ${label}`, result.status >= 400 && result.status < 500, JSON.stringify(result.body));
+  }
+  check('invalid empty-homework creates leave no partial homework documents',
+    await db.collection('document').countDocuments({ domainId: 'system', docType: 30, rule: 'homework' }) === beforeCount);
+  for (const route of ['/homework/create', `/homework/${tid}/edit`]) {
+    result = await student(route, null, { html: true });
+    check(`student cannot open simplified editor ${route}`, result.status >= 400 && result.status < 500);
+    result = await student(route, { ...form, title: 'QA forbidden empty update', content: '', pids: '' });
+    check(`empty-field adapter preserves student write denial ${route}`, result.status >= 400 && result.status < 500, JSON.stringify(result.body));
+  }
+  check('denied student updates do not change homework or roster',
+    JSON.stringify(await load(tid)) === savedDoc && JSON.stringify(await rosterFor(tid)) === snapshot
+      && await db.collection('document').countDocuments({ domainId: 'system', docType: 30, rule: 'homework' }) === beforeCount);
+  for (const [actor, role] of [[coach, 'coach'], [student, 'student']]) {
+    const result = await actor('/homework', null, { html: true });
+    const html = result.body.raw || '';
+    check(`real homework list uses the card-list template for ${role}`, result.status === 200
+      && /<ol\b[^>]*class="[^"]*\boi33-homework-list\b/.test(html), `status ${result.status}`);
+    const cards = [...html.matchAll(/<a\b(?=[^>]*class="[^"]*\boi33-homework-card\b)[^>]*>[\s\S]*?<\/a>/g)]
+      .map(([card]) => card);
+    check(`real homework list has one whole-card link for each empty homework for ${role}`,
+      ids.every((id) => cards.filter((card) => attribute(card, 'href') === `/homework/${id}`).length === 1));
+    check(`homework cards contain titles and metadata without nested interactive links for ${role}`,
+      cards.length >= 3 && cards.every((card) => /<h2\b/.test(card) && card.includes('oi33-homework-card__meta')
+        && (card.match(/<a\b/g) || []).length === 1 && !/<button\b/.test(card)));
+  }
+  return ids;
+}
 async function probeMessageSubscription(credential) {
   secrets.push(credential);
   return new Promise((resolve) => {
@@ -168,6 +301,8 @@ exports.apply = async function(ctx) {
   }
   await DomainModel.addRole('system', 'coach', PERM.PERM_DEFAULT | PERM.PERM_CREATE_HOMEWORK | PERM.PERM_EDIT_HOMEWORK_SELF);
   await DomainModel.setUserRole('system', 3, 'coach', true);
+  await UserModel.setById(2, { timeZone: 'Pacific/Kiritimati' });
+  await UserModel.setById(3, { timeZone: 'Pacific/Honolulu' });
   for (const uid of [2,3,4,5]) await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: uid === 2 ? 3 : 1, realname_name: 'QA ' + uid });
   await UserModel.updateGroup('system', '基础班', [4]);
   await UserModel.updateGroup('system', '提高班', [4]);
@@ -229,6 +364,8 @@ exports.apply = async function(ctx) {
   check('enrollment persisted approved', doc?.status === 'approved' && doc.revision === 2);
   result = await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,6' });
   check('coach updates class membership over HTTP', result.status < 400, JSON.stringify(result.body));
+  await homeworkDefaults(admin, 'administrator', 'Pacific/Kiritimati');
+  const defaults = await homeworkDefaults(coach, 'coach', 'Pacific/Honolulu');
   const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   const homework = { operation: 'update', title: 'QA homework', content: 'Fixture homework', pids: String(fixtureData.pid),
@@ -241,6 +378,11 @@ exports.apply = async function(ctx) {
   const roster = await db.collection('oi33_education_roster').findOne({});
   check('homework snapshot includes class union once', roster?.entries.length === 2 && roster.entries.some((entry) => entry.uid === 4) && roster.entries.some((entry) => entry.uid === 6), JSON.stringify(roster));
   const homeworkId = String(roster.tid);
+  const originalEditor = await coach(`/homework/${homeworkId}/edit`, null, { html: true });
+  check('edit GET preserves existing custom start and deadline instead of resetting them', originalEditor.status === 200
+    && dateText(attribute(inputTag(originalEditor.body.raw || '', 'beginAtDate'), 'value')) === yesterday
+    && dateText(attribute(inputTag(originalEditor.body.raw || '', 'penaltySinceDate'), 'value')) === tomorrow
+    && attribute(inputTag(originalEditor.body.raw || '', 'penaltySinceTime'), 'value') === '23:59');
   await checkHomepage(student, 'matching student with homework', true);
   await checkHomepage(outsider, 'outside-class empty');
   result = await outsider(`/homework/${homeworkId}`);
@@ -259,6 +401,7 @@ exports.apply = async function(ctx) {
   await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6' });
   const unchanged = await db.collection('oi33_education_roster').findOne({ _id: roster._id });
   check('class change does not silently rewrite historical snapshot', unchanged.entries.length === 2);
+  await checkEmptyHomeworkLifecycle(db, coach, student, defaults, fixtureData.pid);
   const multiple = new URLSearchParams({ users: 'qa_regular,QA Regular,R01', accountType: 'regular' });
   multiple.append('groups', '基础班'); multiple.append('groups', '提高班');
   result = await admin('/oi33/accounts/batch', multiple);

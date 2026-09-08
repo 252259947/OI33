@@ -1,5 +1,5 @@
 import {
-    Context, ContestModel, ForbiddenError, Handler, ObjectId, param, PERM, PRIV,
+    Context, ContestModel, ForbiddenError, Handler, moment, ObjectId, param, PERM, PRIV,
     ProblemModel, STATUS, Types, UserModel, ValidationError,
 } from 'hydrooj';
 import { assertEducationCoach, isEducationAdmin, isEducationCoach } from '../model/education-auth';
@@ -13,6 +13,47 @@ import { enrollmentColl } from '../model/enrollment';
 
 function privatePage(h: any) {
     h.response.addHeader('Cache-Control', 'private, no-store');
+}
+
+export function homeworkDefaults(timeZone: string, now = new Date()) {
+    const beginAt = moment(now).tz(timeZone).startOf('day');
+    return {
+        dateBeginText: beginAt.format('YYYY-M-D'), timeBeginText: '0:00',
+        datePenaltyText: '2100-1-1', timePenaltyText: '0:00',
+    };
+}
+
+// Core Types.Content rejects even an empty string. Only this request-local
+// adapter relaxes those two fields; no global validator or core class changes.
+const OptionalHomeworkContent = [
+    (value: string) => value.trim(),
+    (value: unknown) => typeof value === 'string' && value.trim().length < 65536,
+] as const;
+
+class HomeworkUpdateAdapter extends Handler {
+    @param('tid', Types.ObjectId, true)
+    @param('beginAtDate', Types.Date)
+    @param('beginAtTime', Types.Time)
+    @param('penaltySinceDate', Types.Date)
+    @param('penaltySinceTime', Types.Time)
+    @param('title', Types.Title)
+    @param('content', OptionalHomeworkContent, true)
+    @param('pids', OptionalHomeworkContent, true)
+    @param('rated', Types.Boolean)
+    @param('maintainer', Types.NumericArray, true)
+    @param('assign', Types.CommaSeperatedArray, true)
+    async postUpdate(
+        domainId: string, tid: ObjectId, beginAtDate: string, beginAtTime: string,
+        penaltySinceDate: string, penaltySinceTime: string, title: string,
+        content = '', pids = '', rated = false, maintainer: number[] = [], assign: string[] = [],
+    ) {
+        // Hydro's decorated method explicitly supports validated positional
+        // calls. Reuse its authorization, problem checks, writes and recalc.
+        // Ignore client-supplied extension/penalty/language settings entirely.
+        return (this as any).oi33HomeworkNativeUpdate.call(this,
+            domainId, tid, beginAtDate, beginAtTime, penaltySinceDate, penaltySinceTime,
+            0, {}, title, content, pids, rated, maintainer, assign, []);
+    }
 }
 
 function parseUids(value: unknown): number[] {
@@ -160,6 +201,9 @@ export async function apply(ctx: Context) {
     });
     ctx.on('handler/after/HomeworkEdit#get', async (h: any) => {
         h.response.body.educationGroups = await listClassGroups(h.domain._id);
+        if (!h.args.tid) Object.assign(h.response.body, homeworkDefaults(h.user.timeZone));
+        h.response.body.extensionDays = 0;
+        h.response.body.penaltyRules = '{}';
     });
     ctx.on('handler/before/HomeworkEdit#post', async (h: any) => {
         privatePage(h);
@@ -173,6 +217,11 @@ export async function apply(ctx: Context) {
         h.args.assign = names.join(',');
         h.request.body.assign = h.args.assign;
         h.oi33EducationDraft = { names, uids, creating: !h.args.tid };
+        // Install on this handler instance after the native request lifecycle
+        // (including CSRF and coach checks), before operation dispatch. Keeping
+        // the native prototype untouched makes reloads and concurrent requests safe.
+        h.oi33HomeworkNativeUpdate = h.postUpdate;
+        h.postUpdate = HomeworkUpdateAdapter.prototype.postUpdate;
     });
     ctx.on('handler/after/HomeworkEdit#post', async (h: any) => {
         if (!h.oi33EducationDraft?.creating || !h.response.body?.tid) return;

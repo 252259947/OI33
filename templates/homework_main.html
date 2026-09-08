@@ -1,24 +1,65 @@
 {% extends "layout/basic.html" %}
 {% block content %}
-<div class="row"><div class="medium-12 columns oi33-education">
-  <section class="section"><div class="section__header"><h1 class="section__title">作业</h1>
-    <div class="section__tools">
-      {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}<a class="rounded button" href="{{ url('oi33_education_tasks') }}">我的作业</a>{% endif %}
-      {% if educationIsCoach %}<a class="rounded button" href="{{ url('oi33_education_classes') }}">班型管理</a>{% endif %}
-      {% if educationIsCoach and handler.user.hasPerm(perm.PERM_CREATE_HOMEWORK) %}<a class="primary rounded button" href="{{ url('homework_create') }}">布置作业</a>{% endif %}
-    </div></div>
-    <div class="section__body"><form method="get" class="filter-form">
-      <input class="inline compact textbox" name="q" value="{{ q }}" placeholder="搜索作业">
-      <select class="inline compact select" name="group"><option value="">全部班型</option>{% for g in groups %}<option value="{{ g }}"{% if group == g %} selected{% endif %}>{{ g }}</option>{% endfor %}</select>
-      <button type="submit" class="rounded button">搜索</button>
-    </form></div>
-    <div class="education-task-list">{% for tdoc in tdocs %}
-      <a class="education-task" href="{{ url('homework_detail', tid=tdoc.docId) }}"><div><h2>{{ tdoc.title }}</h2>
-        <p>{{ tdoc.assign|join(' · ') }} · 截止 {{ datetimeSpan(tdoc.penaltySince)|safe }} · {{ tdoc.pids|length }} 题</p></div>
-        <span>{{ _(model.contest.statusText(tdoc)) }} <span aria-hidden="true">›</span></span>
-      </a>
-    {% else %}<div class="section__body">暂无可访问的作业。</div>{% endfor %}</div>
-    {{ paginator.render(page, tpcount, add_qs=qs) }}
-  </section>
+<div class="row"><div class="columns oi33-homework-catalog">
+  <header class="oi33-training-head">
+    <div class="oi33-training-head__copy">
+      <p class="oi33-training-head__eyebrow">HOMEWORK</p><h1>作业</h1>
+      <p>找到当前的学习任务，按时完成练习，把每一步进步记录下来。</p>
+    </div>
+    <div class="oi33-homework-actions">
+      {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}<a class="button" href="{{ url('oi33_education_tasks') }}">我的作业</a>{% endif %}
+      {% if educationIsCoach %}<a class="button" href="{{ url('oi33_education_classes') }}">班型管理</a>{% endif %}
+      {% if educationIsCoach and handler.user.hasPerm(perm.PERM_CREATE_HOMEWORK) %}<a class="primary button" href="{{ url('homework_create') }}"><span class="icon icon-add" aria-hidden="true"></span> 布置作业</a>{% endif %}
+    </div>
+  </header>
+  <div class="oi33-training-catalog">
+    <section class="oi33-training-toolbar oi33-homework-toolbar" aria-label="筛选作业">
+      <div class="oi33-training-toolbar__copy">
+        <span class="oi33-training-toolbar__icon icon icon-calendar" aria-hidden="true"></span>
+        <span><strong>找到你的学习任务</strong><small>按标题或班型筛选作业</small></span>
+      </div>
+      <form method="get" action="{{ url('homework_main') }}" class="oi33-homework-search filter-form" name="filter-form" role="search">
+        <div class="oi33-homework-search__query"><label for="oi33-homework-query">搜索作业</label><input id="oi33-homework-query" class="textbox" type="search" name="q" value="{{ q }}" placeholder="输入作业标题"></div>
+        <div><label for="oi33-homework-group">班型</label><select id="oi33-homework-group" class="select" name="group"><option value="">全部班型</option>{% for g in groups %}<option value="{{ g }}"{% if group == g %} selected{% endif %}>{{ g }}</option>{% endfor %}</select></div>
+        <button type="submit" class="primary button">搜索</button>
+      </form>
+    </section>
+    {% if tdocs.length %}
+      <ol class="oi33-homework-list" aria-label="作业列表">
+      {% for tdoc in tdocs %}
+        {% set done = model.contest.isDone(tdoc) %}
+        {% set upcoming = model.contest.isNotStarted(tdoc) %}
+        <li><a class="oi33-homework-card{% if done %} is-done{% elif upcoming %} is-upcoming{% endif %}" href="{{ url('homework_detail', tid=tdoc.docId) }}" aria-labelledby="oi33-homework-name-{{ loop.index }}">
+          <div class="oi33-homework-card__body">
+            <div class="oi33-homework-card__topline">
+              <span class="oi33-homework-status{% if done %} is-done{% elif upcoming %} is-upcoming{% else %} is-active{% endif %}"><span class="icon icon-{% if done %}check{% else %}schedule{% endif %}" aria-hidden="true"></span>{% if done %}已结束{% elif upcoming %}未开始{% else %}进行中{% endif %}</span>
+              <span><span class="icon icon-book" aria-hidden="true"></span> {{ tdoc.pids|length }} 道题</span>
+            </div>
+            <h2 id="oi33-homework-name-{{ loop.index }}">{{ tdoc.title }}</h2>
+            <div class="oi33-homework-card__groups" aria-label="开放班型"><span class="oi33-homework-card__label">班型</span>{% for name in tdoc.assign %}<span class="oi33-homework-card__group">{{ name }}</span>{% else %}<span class="oi33-homework-card__group">不限班型</span>{% endfor %}</div>
+            <div class="oi33-homework-card__meta">
+              <span><span class="oi33-homework-card__label">开始</span>{{ datetimeSpan(tdoc.beginAt, false, 'YYYY-MM-DD HH:mm')|safe }}</span>
+              <span><span class="oi33-homework-card__label">截止</span>{{ datetimeSpan(tdoc.penaltySince or tdoc.endAt, false, 'YYYY-MM-DD HH:mm')|safe }}</span>
+              {% if tdoc.attend is number %}<span><span class="icon icon-user--multiple" aria-hidden="true"></span> {{ tdoc.attend }} 人已领取</span>{% endif %}
+            </div>
+          </div>
+          <span class="oi33-homework-card__action" aria-hidden="true">查看作业 <span>→</span></span>
+        </a></li>
+      {% endfor %}
+      </ol>
+      {% if tpcount > 1 %}<nav class="oi33-training-pagination" aria-label="作业分页">{{ paginator.render(page, tpcount, add_qs=utils.buildQueryString(q=q, group=group)) }}</nav>{% endif %}
+    {% else %}
+      <section class="oi33-learning-empty">
+        <span class="oi33-learning-empty__icon icon icon-calendar" aria-hidden="true"></span>
+        {% if q or group %}
+          <h2>没有找到匹配的作业</h2><p>试试其他关键词或班型，也可以清除筛选后查看全部作业。</p><a class="primary button" href="{{ url('homework_main') }}">清除筛选</a>
+        {% else %}
+          <h2>暂时没有可查看的作业</h2>
+          {% if educationIsCoach and handler.user.hasPerm(perm.PERM_CREATE_HOMEWORK) %}<p>布置第一份作业，为班级安排新的学习任务。</p><a class="primary button" href="{{ url('homework_create') }}">布置作业</a>
+          {% else %}<p>开放给你的作业会出现在这里，现在可以先从题库开始练习。</p><a class="primary button" href="{{ url('problem_main') }}">去题库练习</a>{% endif %}
+        {% endif %}
+      </section>
+    {% endif %}
+  </div>
 </div></div>
 {% endblock %}

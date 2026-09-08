@@ -87,7 +87,6 @@
       <dt>{{ _('Problem') }}</dt><dd>{{ tdoc['pids']|length }}</dd>
       <dt>{{ _('Open Since') }}</dt><dd>{{ homework.render_time(tdoc['beginAt']) }}</dd>
       <dt>{{ _('Deadline') }}</dt><dd>{{ homework.render_time(tdoc['penaltySince']) }}</dd>
-      <dt>{{ _('Can be Extended For') }}</dt><dd>{{ homework.render_extension(tdoc) }} {{ _('hour(s)') }}</dd>
     </dl>
   </div>
 </div>
