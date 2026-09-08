@@ -247,6 +247,13 @@ exports.apply = async function(ctx) {
   check('student outside all classes denied homework detail', result.status >= 400 && result.status < 500, JSON.stringify(result.body));
   result = await student(`/homework/${homeworkId}`);
   check('matching class can view homework', result.status < 400, JSON.stringify(result.body));
+  for (const [actor, role] of [[student, 'student'], [coach, 'coach']]) {
+    const detail = await actor(`/homework/${homeworkId}`, null, { html: true });
+    check(`real homework detail and sidebar HTML renders for ${role}`,
+      detail.status === 200 && (detail.body.raw || '').includes('QA homework')
+        && (detail.body.raw || '').includes('<html'),
+      `status ${detail.status}; ${detail.status === 200 ? '' : (detail.body.raw || '').slice(-5000)}`);
+  }
   result = await coach(`/oi33/education/homework/${homeworkId}`);
   check('coach progress includes never-started students', result.status < 400 && result.body.summary?.total === 2 && result.body.summary?.notStarted === 2, JSON.stringify(result.body));
   await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6' });
