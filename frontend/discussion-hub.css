@@ -838,6 +838,10 @@
   position: relative;
 }
 
+.oi33-article-toc--desktop.is_stuck {
+  z-index: 2;
+}
+
 .oi33-article-toc .section__body {
   max-height: calc(100vh - 158px);
   overflow: auto;
