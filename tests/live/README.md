@@ -31,6 +31,7 @@ NODE_PATH=/usr/local/share/.config/yarn/global/node_modules \
 
 - 实际登录及实名申请、审核、持久化状态。
 - 新增页面的真实 HTML 模板渲染及 `Cache-Control: private, no-store`。
+- 完整载入本仓库模板覆盖（首页 `main.html`、布局、共享组件及各个 partial），真实请求匿名/已核验空首页、匹配班型有作业首页、班外空首页；检查实际返回 200、作业板块只出现一次及正确空态/内容。
 - Hydro 对异站 Referer 的 POST 拒绝；原生多选框的重复班型字段正确转换。
 - 教练维护班型并通过 Hydro 原作业路由创建作业，普通学生无法创建。
 - 多班型并集去重快照、班外学生拒绝访问、未开始学生统计、班型变化不静默修改历史名单。

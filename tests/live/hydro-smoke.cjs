@@ -82,6 +82,18 @@ async function login(request, uname, pwd = password) {
   const result = await request('/login', { uname, password: pwd, rememberme: 'false' });
   check(`login ${uname}`, result.status < 400, JSON.stringify(result.body));
 }
+async function checkHomepage(request, label, expectHomework = false) {
+  const result = await request('/', null, { html: true });
+  const html = result.body.raw || '';
+  check(`real repository homepage HTML renders ${label}`, result.status === 200,
+    `status ${result.status}; ${result.status === 200 ? '' : html.slice(-5000)}`);
+  check(`repository main and navbar overrides are used ${label}`,
+    html.includes('oi33-home__hero') && html.includes('oi33-nav__main'));
+  check(`homework section appears exactly once ${label}`,
+    (html.match(/id="oi33-homework-title"/g) || []).length === 1);
+  check(`homework ${expectHomework ? 'content' : 'empty state'} renders ${label}`,
+    html.includes(expectHomework ? 'QA homework' : '暂无可查看的作业'));
+}
 async function probeMessageSubscription(credential) {
   secrets.push(credential);
   return new Promise((resolve) => {
@@ -139,9 +151,9 @@ async function main() {
   write(path.join(profile, 'config.json'), { host: '127.0.0.1', port: String(port), name: run.replaceAll('-', '_') });
   write(path.join(profile, 'addon.json'), [path.join(globalModules, '@hydrooj/ui-default'), path.join(fixture, 'addon')]);
   write(path.join(fixture, 'addon/package.json'), { name: 'oi33-qa-fixture', version: '1.0.0', main: 'index.js' });
-  for (const name of fs.readdirSync(path.join(root, 'templates'))) {
-    if (/^oi33_(enrollment|education|account_batch).*\.html$/.test(name)) fs.copyFileSync(path.join(root, 'templates', name), path.join(fixture, 'addon/templates', name));
-  }
+  // Test the real repository template overlay, including main, layouts, shared
+  // components and homepage partials, not just standalone teaching forms.
+  fs.cpSync(path.join(root, 'templates'), path.join(fixture, 'addon/templates'), { recursive: true });
   const ready = path.join(fixture, 'ready.json');
   const seed = `
 const fs = require('fs');
@@ -159,6 +171,7 @@ exports.apply = async function(ctx) {
   for (const uid of [2,3,4,5]) await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: uid === 2 ? 3 : 1, realname_name: 'QA ' + uid });
   await UserModel.updateGroup('system', '基础班', [4]);
   await UserModel.updateGroup('system', '提高班', [4]);
+  await SystemModel.set('hydrooj.homepage', ${JSON.stringify('- width: 9\n  contest: 5\n  training: 10\n- width: 3\n  ranking: 10\n')});
   const pid = await ProblemModel.add('system', 'QA1', 'QA problem', 'Synthetic fixture only', 2);
   const now = Date.now();
   const tid = await ContestModel.add('system', 'QA Allowed Contest', 'Synthetic fixture', 2, 'acm', new Date(now - 60000), new Date(now + 3600000), [pid], false);
@@ -189,9 +202,11 @@ exports.apply = async function(ctx) {
   await waitFor(() => fs.existsSync(ready), 'fixture addon seed', 55000);
   await waitFor(async () => (await fetch(`${base}/login`)).status < 500, 'Hydro HTTP', 30000);
   const fixtureData = JSON.parse(fs.readFileSync(ready, 'utf8'));
+  await checkHomepage(session(), 'anonymous empty');
   const admin = session(); const coach = session(); const student = session(); const outsider = session(); const applicant = session();
   await login(admin, 'qa_admin'); await login(coach, 'qa_coach'); await login(student, 'qa_student');
   await login(outsider, 'qa_outsider'); await login(applicant, 'qa_new');
+  await checkHomepage(student, 'verified empty');
   for (const [actor, route] of [[applicant, '/oi33/enrollment'], [admin, '/oi33/enrollment/review'],
     [admin, '/oi33/accounts/batch'], [admin, '/oi33/education/access'], [coach, '/oi33/education/classes']]) {
     const html = await actor(route, null, { html: true });
@@ -226,6 +241,8 @@ exports.apply = async function(ctx) {
   const roster = await db.collection('oi33_education_roster').findOne({});
   check('homework snapshot includes class union once', roster?.entries.length === 2 && roster.entries.some((entry) => entry.uid === 4) && roster.entries.some((entry) => entry.uid === 6), JSON.stringify(roster));
   const homeworkId = String(roster.tid);
+  await checkHomepage(student, 'matching student with homework', true);
+  await checkHomepage(outsider, 'outside-class empty');
   result = await outsider(`/homework/${homeworkId}`);
   check('student outside all classes denied homework detail', result.status >= 400 && result.status < 500, JSON.stringify(result.body));
   result = await student(`/homework/${homeworkId}`);

@@ -44,7 +44,7 @@
       </div>
     </div>
   {% endif %}
-  {% if handler.user.hasPerm(PERM.PERM_VIEW_HOMEWORK) %}
+  {% if handler.user.hasPerm(perm.PERM_VIEW_HOMEWORK) %}
     <ul class="pager pager-bottom"><li><a class="pager__item next link" href="{{ url('homework_main') }}">查看全部作业 ›</a></li></ul>
   {% endif %}
 </section>

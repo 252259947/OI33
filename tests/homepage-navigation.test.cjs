@@ -36,10 +36,12 @@ function context({ loggedIn = true, hidden = false, denied = [], canViewHomework
     handler: { user: {
       _id: 42, uname: 'student', avatar: '', oi33_profile_hidden: hidden,
       hasPriv: (priv) => loggedIn && priv === 'profile',
-      hasPerm: () => canViewHomework,
+      // Match Hydro's actual bigint contract: passing an undefined template
+      // global must fail here just as it fails in a real User.hasPerm call.
+      hasPerm: (permission) => ((canViewHomework ? 1n : 0n) & permission) === permission,
     } },
     PRIV: { PRIV_USER_PROFILE: 'profile' },
-    PERM: { PERM_VIEW_HOMEWORK: 'homework' },
+    perm: { PERM_VIEW_HOMEWORK: 1n },
     ui: { getNodes: (kind) => kind === 'Nav' ? navNodes : [] },
     model: {
       system: { get: () => true },
@@ -50,6 +52,7 @@ function context({ loggedIn = true, hidden = false, denied = [], canViewHomework
     typeof: (value) => typeof value,
     avatarUrl: () => '/avatar.png',
     datetimeSpan: (value) => String(value),
+    templateExists: (name) => fs.existsSync(path.join(root, 'templates', name)),
     url: (name, ...args) => {
       const keywords = args.find((arg) => arg && arg.__keywords) || {};
       const query = keywords.query || {};
@@ -172,6 +175,18 @@ test('homework section renders empty, denied, populated and escaped states', () 
   assert.match(populated, /href="\/homework_detail"/);
   assert.doesNotMatch(populated, /<script>/);
   assert.match(populated, /&lt;script&gt;/);
+});
+
+test('main includes empty homework using the real lowercase perm and bigint contract', () => {
+  for (const canViewHomework of [true, false]) {
+    const state = context({ canViewHomework });
+    assert.equal(state.PERM, undefined, 'Hydro exposes perm, not PERM, to Nunjucks');
+    state.contents = withHomeworkSection([], [[], {}]);
+    const html = env.render('main.html', state);
+    assert.equal((html.match(/id="oi33-homework-title"/g) || []).length, 1);
+    assert.match(html, /暂无可查看的作业/);
+    assert.equal(html.includes('查看全部作业'), canViewHomework);
+  }
 });
 
 // Optional real-browser geometry check. Supply Playwright through normal Node
