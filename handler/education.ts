@@ -160,6 +160,10 @@ class EducationHomeworkHandler extends Handler {
 class EducationTasksHandler extends Handler {
     async prepare() { privatePage(this); }
 
+    async redirectToHomework() {
+        this.response.redirect = this.url('homework_main');
+    }
+
     @param('page', Types.PositiveInt, true)
     async get(domainId: string, page = 1) {
         const query = { domainId, entries: { $elemMatch: { uid: this.user._id, exemptAt: { $exists: false } } } };
@@ -192,7 +196,8 @@ export async function apply(ctx: Context) {
     ctx.Route('oi33_education_homework', '/oi33/education/homework/:tid', EducationHomeworkHandler, PRIV.PRIV_USER_PROFILE);
     ctx.Route('oi33_education_tasks', '/oi33/education/tasks', EducationTasksHandler, PERM.PERM_VIEW_HOMEWORK, PRIV.PRIV_USER_PROFILE);
     ctx.injectUI('UserDropdown', 'oi33_education_classes', { icon: 'group', displayName: '班型管理' }, (h: any) => isEducationCoach(h.user));
-    ctx.injectUI('UserDropdown', 'oi33_education_tasks', { icon: 'homework', displayName: '我的作业' }, (h: any) => !!h.user._id);
+    // Keep old bookmarks working without a second, inconsistent student inbox.
+    ctx.on('handler/before/EducationTasks#get', (h: any) => { h.get = h.redirectToHomework; });
 
     ctx.on('handler/before/HomeworkEdit#get', async (h: any) => {
         privatePage(h);

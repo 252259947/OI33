@@ -6,11 +6,7 @@
     <div class="section__body">
       <h1>{{ tdoc['title'] }}</h1>
       <div class="contest-sidebar__status">
-      {% if tsdoc.attend %}
-        <span class="icon icon-check"></span> {{ _('Claimed') }}
-      {% else %}
-        <span class="icon icon-schedule"></span> {{ _('Not Claimed') }}
-      {% endif %}
+        <span class="icon icon-schedule" aria-hidden="true"></span> {{ _(model.contest.statusText(tdoc)) }}
       </div>
     </div>
   </a>
@@ -21,27 +17,6 @@
       <li class="menu__item"><a class="menu__link" href="{{ url('homework_detail', tid=tdoc.docId) }}">
         <span class="icon icon-homework"></span> {{ _('View Homework') }}
       </a></li>
-    {% endif %}
-    {% if not tsdoc.attend and not model.contest.isDone(tdoc) %}
-      <li class="menu__item">
-    {% if handler.user.hasPerm(perm.PERM_ATTEND_HOMEWORK) and handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-        <form action="{{ url('homework_detail', tid=tdoc.docId) }}" method="POST">
-          <input type="hidden" name="csrfToken" value="{{ csrfToken }}">
-          <input type="hidden" name="operation" value="attend">
-          <button class="menu__link" type="submit">
-            <span class="icon icon-add"></span> {{ _('Claim Homework') }}
-          </button>
-        </form>
-    {% elif not handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-        <a class="menu__link" href="javascript:showSignInDialog()">
-          <span class="icon icon-add"></span> {{ _('Login to Claim Homework') }}
-        </a>
-    {% else %}
-        <a class="menu__link disabled" href="javascript:;">
-          <span class="icon icon-add"></span> {{ _('No Permission to Claim Homework') }}
-        </a>
-    {% endif %}
-      </li>
     {% endif %}
     {% if model.contest.canShowScoreboard.call(handler, tdoc, false) %}
       <li class="menu__item"><a class="menu__link" href="{{ url('homework_scoreboard', tid=tdoc.docId) }}">

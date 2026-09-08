@@ -13,6 +13,7 @@ import {
 } from '../model/article';
 import type { Oi33ArticleVisibility } from '../model/types';
 import { checkUserFlag } from './utils';
+import { articleExcerpt } from './article-excerpt';
 
 type ArticlePreset = 'article' | 'paste';
 const ARTICLE_VISIBILITIES: Oi33ArticleVisibility[] = ['public', 'private', 'unlisted'];
@@ -508,6 +509,9 @@ async function rebuildDiscussionNode(handler: any) {
 }
 
 export async function apply(ctx: Context) {
+    ctx.on('handler/create', (handler: any) => {
+        handler.oi33ArticleExcerpt = articleExcerpt;
+    });
     patchHomepageDiscussion(ctx);
     ctx.Route(
         'oi33_article_create', '/article/new', DiscussionCreateHandler,

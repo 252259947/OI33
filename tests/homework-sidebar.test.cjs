@@ -69,3 +69,52 @@ test('built-in public homework scoreboard keeps its ordinary link', () => {
   assert.match(html, /href="\/homework_scoreboard"/);
   assert.doesNotMatch(html, /Scoreboard \(Hidden\)/);
 });
+
+test('assignment sidebar never exposes manual claim UI and preserves manager controls', () => {
+  for (const page_name of ['homework_detail', 'homework_scoreboard']) for (const attend of [false, true]) {
+    const state = context({ publicScoreboard: true, permissions: perm.PERM_ATTEND_HOMEWORK });
+    state.page_name = page_name; state.tsdoc = { attend };
+    state.model.contest.isDone = () => false;
+    state.handler.user.hasPriv = () => true;
+    const html = env.renderString(source, state);
+    assert.doesNotMatch(html, /Claimed|Claim Homework|Login to Claim|No Permission to Claim|value="attend"|领取/);
+    assert.match(html, /href="\/homework_scoreboard"/);
+    assert.doesNotMatch(html, /href="\/homework_edit"|href="\/homework_files"|全员完成情况/);
+    state.educationCanManage = true;
+    const manager = env.renderString(source, state);
+    assert.match(manager, /href="\/homework_edit"/);
+    assert.match(manager, /href="\/homework_files"/);
+    assert.match(manager, /全员完成情况/);
+  }
+});
+
+class DetailLoader extends nunjucks.FileSystemLoader {
+  getSource(name) {
+    if (name === 'layout/basic.html') return { src: '{% import "components/nothing.html" as nothing with context %}{% block content %}{% endblock %}', path: name };
+    if (name === 'components/record.html') return { src: '', path: name };
+    if (name === 'components/nothing.html') return { src: '{% macro render(text) %}<div class="nothing-placeholder">{{ text }}</div>{% endmacro %}', path: name };
+    if (name === 'components/problem.html') return { src: '{% macro render_problem_title(doc, tdoc=false) %}<a href="/p/{{ doc.docId }}" data-mode="{{ "homework" if tdoc else "preview" }}">{{ doc.title }}</a>{% endmacro %}', path: name };
+    return super.getSource(name);
+  }
+}
+const detailEnv = new nunjucks.Environment(new DetailLoader([path.join(root, 'templates'), coreTemplates]), { autoescape: true });
+detailEnv.addFilter('markdown', (content) => content);
+test('assigned homework problems render without a claim-status flag and unavailable problems have no claim hint', () => {
+  const state = context({ publicScoreboard: true });
+  Object.assign(state, { UiContext: {}, set: () => '', tsdoc: {}, pdict: { 1: { docId: 1, title: 'Assigned problem' } } });
+  state.tdoc.pids = [1]; state.tdoc.content = '';
+  state.model.contest.isDone = () => false;
+  state.model.contest.isNotStarted = () => false;
+  const html = detailEnv.render('homework_detail.html', state);
+  assert.match(html, /href="\/p\/1"/);
+  assert.match(html, /data-mode="homework"/);
+  assert.doesNotMatch(html, /claim|Claim|领取/);
+  state.educationIsCoach = true;
+  const coach = detailEnv.render('homework_detail.html', state);
+  assert.match(coach, /data-mode="preview"/);
+  assert.doesNotMatch(coach, /data-mode="homework"/);
+  state.pdict = null;
+  const unavailable = detailEnv.render('homework_detail.html', state);
+  assert.match(unavailable, /作业尚未开放/);
+  assert.doesNotMatch(unavailable, /claim|Claim|领取/);
+});

@@ -15,7 +15,7 @@ const encode = (value) => nunjucks.runtime.suppressValue(value, true);
 function state(options = {}) {
   const now = Date.now();
   const defaults = {
-    tdocs: [{ docId: 'one', title: '基础练习', pids: [1, 2], assign: ['基础班'], beginAt: now - 1000, penaltySince: now + 100000, endAt: now + 100000, attend: 3 },
+    tdocs: [{ docId: 'one', title: '基础练习', pids: [1, 2], assign: ['基础班'], beginAt: now - 1000, penaltySince: now + 100000, endAt: now + 100000, attend: 999, educationRosterCount: 3 },
       { docId: 'two', title: '下一次作业', pids: [], assign: [], beginAt: now + 100000, penaltySince: now + 200000, endAt: now + 200000 },
       { docId: 'three', title: '已结束作业', pids: [1], assign: ['提高班'], beginAt: now - 200000, penaltySince: now - 100000, endAt: now - 100000 }],
     q: '', group: '', groups: ['基础班', '提高班'], page: 1, tpcount: 1, educationIsCoach: false,
@@ -46,9 +46,15 @@ test('cards expose one complete native link per homework, metadata and states', 
     assert.match(card, /oi33-homework-card__meta/);
   }
   assert.match(html, /href="\/homework\/one"/);
-  for (const value of ['2 道题', '0 道题', '基础班', '不限班型', '开始', '截止', '3 人已领取', 'is-active', 'is-upcoming', 'is-done']) assert.ok(html.includes(value), value);
-  assert.doesNotMatch(html, /未领取|延期期限|oi33-homework-card__claimed/);
+  for (const value of ['2 道题', '0 道题', '基础班', '不限班型', '开始', '截止', '应完成 3 人', 'is-active', 'is-upcoming', 'is-done']) assert.ok(html.includes(value), value);
+  assert.doesNotMatch(html, /领取|999|延期期限|oi33-homework-card__claimed/);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'templates/homework_main.html'), 'utf8'), /\btsdict\b/);
+});
+test('only authoritative roster counts are shown, without attendance fallback', () => {
+  for (const count of [undefined, null, '3']) {
+    assert.doesNotMatch(render({ tdocs: [{ ...state().tdocs[0], educationRosterCount: count }] }), /应完成|领取/);
+  }
+  assert.match(render({ tdocs: [{ ...state().tdocs[0], educationRosterCount: 0 }] }), /应完成 0 人/);
 });
 test('coach creation requires both teaching identity and real bigint permission', () => {
   assert.doesNotMatch(render(), /href="\/homework_create"|href="\/oi33_education_classes"/);
@@ -59,6 +65,7 @@ test('coach creation requires both teaching identity and real bigint permission'
   assert.doesNotMatch(coach, /href="\/homework_create"/);
   assert.match(coach, /href="\/oi33_education_classes"/);
   const guest = state().handler; guest.user.hasPriv = () => false;
+  for (const educationIsCoach of [true, false]) assert.doesNotMatch(render({ educationIsCoach }), /我的作业|href="\/oi33_education_tasks"/);
   assert.doesNotMatch(render({ handler: guest }), /href="\/oi33_education_tasks"/);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'templates/homework_main.html'), 'utf8'), /\bPERM\./);
 });
@@ -85,24 +92,39 @@ test('stylesheet is eagerly imported with the shared training styles, independen
   assert.match(entry, /import '\.\/training-contest\.css'/);
   assert.match(entry, /import '\.\/homework-main\.css'/);
 });
-if (process.env.OI33_LAYOUT_TEST === '1') test('one-column cards, controls and full-card hit area fit desktop and narrow mobile widths', async () => {
+if (process.env.OI33_LAYOUT_TEST === '1') test('desktop toolbar stays compact on one row under real Hydro page CSS, with full-card links', async () => {
   const { chromium } = require('playwright');
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {
     const page = await browser.newPage();
-    const css = ['node_modules/@hydrooj/ui-default/public/theme-4.58.4.css', 'frontend/oi33-design-system.css', 'frontend/training-contest.css', 'frontend/homework-main.css']
+    const theme = fs.readFileSync(path.join(root, 'node_modules/@hydrooj/ui-default/public/theme-4.58.4.css'), 'utf8');
+    assert.match(theme, /\.page--homework_main \.filter-form\{display:inline-block\}/);
+    const custom = ['frontend/oi33-design-system.css', 'frontend/training-contest.css', 'frontend/homework-main.css']
       .map((name) => fs.readFileSync(path.join(root, name), 'utf8')).join('\n');
     const docs = state().tdocs; docs[0].title = '长标题与连续字符的换行验证' + 'VeryLongHomeworkTitle'.repeat(15); docs[0].assign = ['基础班', 'LongClassName'.repeat(15)];
-    for (const width of [1920, 1280, 1060, 900, 600, 390, 320]) {
+    for (const css of [theme + custom, custom + theme]) for (const width of [1024, 1280, 1440, 1920]) {
       await page.setViewportSize({ width, height: 1000 });
-      await page.setContent(`<html><head><style>${css}</style></head><body>${render({ tdocs: docs, educationIsCoach: true, tpcount: 3 })}</body></html>`);
+      await page.setContent(`<html class="page--homework_main"><head><style>${css}</style></head><body>${render({ tdocs: docs, educationIsCoach: true, tpcount: 3 })}</body></html>`);
       const bounds = await page.evaluate(() => {
         const box = (element) => Object.fromEntries(['x', 'y', 'width', 'height', 'right', 'bottom'].map((name) => [name, element.getBoundingClientRect()[name]]));
         return { viewport: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+          toolbar: box(document.querySelector('.oi33-homework-toolbar')),
+          formDisplay: getComputedStyle(document.querySelector('form.oi33-homework-search')).display,
+          search: [...document.querySelectorAll('.oi33-homework-search input, .oi33-homework-search select, .oi33-homework-search button')].map(box),
           cards: [...document.querySelectorAll('a.oi33-homework-card')].map(box),
           controls: [...document.querySelectorAll('.oi33-homework-search input, .oi33-homework-search select, .oi33-homework-search button, .oi33-homework-actions a')].map(box) };
       });
       assert.ok(bounds.scrollWidth <= width + 1, JSON.stringify({ width, bounds }));
+      assert.equal(bounds.formDisplay, 'grid');
+      assert.ok(bounds.toolbar.height <= 80, JSON.stringify({ width, bounds }));
+      assert.equal(bounds.search.length, 3);
+      assert.ok(bounds.search[0].width > bounds.search[1].width * 1.5);
+      assert.ok(Math.abs(bounds.search[1].width - 180) <= 1);
+      assert.ok(Math.abs(bounds.search[2].width - 80) <= 1);
+      for (const control of bounds.search) {
+        assert.ok(Math.abs(control.y - bounds.search[0].y) <= 1, 'Desktop filters must remain on the same row');
+        assert.ok(Math.abs(control.height - 44) <= 1);
+      }
       for (let i = 0; i < bounds.cards.length; i++) {
         const card = bounds.cards[i];
         assert.ok(card.x >= -1 && card.right <= width + 1);

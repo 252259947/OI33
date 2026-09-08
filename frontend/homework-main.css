@@ -4,17 +4,23 @@
   box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
   gap: 6px; min-height: 42px; margin: 0; padding: 0 16px; border-radius: 11px; line-height: 1.3; white-space: nowrap;
 }
-.oi33-homework-search {
-  display: grid; flex: 1 1 640px; grid-template-columns: minmax(160px, 1fr) minmax(140px, 190px) auto;
-  align-items: end; gap: 10px; max-width: 730px; margin: 0; min-width: 0;
+.oi33-homework-toolbar { padding: 14px 16px; }
+/* Hydro's .page--homework_main .filter-form is inline-block. Outrank that
+   page-specific rule, regardless of the order in which CSS bundles load. */
+.oi33-homework-catalog form.oi33-homework-search {
+  display: grid; flex: 1 1 auto; grid-template-columns: minmax(160px, 1fr) 180px 80px;
+  align-items: center; gap: 10px; width: 100%; max-width: none; margin: 0; min-width: 0;
 }
 .oi33-homework-search > div { min-width: 0; }
-.oi33-homework-search label { display: block; margin-bottom: 5px; color: var(--oi33-text-2, #526078); font-size: 12px; }
-.oi33-homework-search input, .oi33-homework-search select {
+.oi33-homework-search label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.oi33-homework-search__query { position: relative; }
+.oi33-homework-search__query > .icon { position: absolute; top: 50%; left: 14px; transform: translateY(-50%); color: var(--oi33-text-3, #667085); pointer-events: none; }
+.oi33-homework-search input.textbox, .oi33-homework-search select.select {
   box-sizing: border-box; width: 100%; height: 44px; margin: 0; padding: 0 12px; border-radius: 11px; box-shadow: none;
   color: var(--oi33-text, #182033); background: var(--oi33-surface, #fff);
 }
-.oi33-homework-search .button { height: 44px; min-width: 80px; }
+.oi33-homework-catalog .oi33-homework-search .button { height: 44px; min-width: 80px; margin: 0; padding: 0 16px; }
+.oi33-homework-search .oi33-homework-search__query input { padding-left: 39px; }
 .oi33-homework-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin: 0; padding: 0; list-style: none; }
 .oi33-homework-list > li { min-width: 0; }
 .oi33-homework-card {
@@ -56,7 +62,7 @@
 @media (max-width: 600px) {
   .oi33-homework-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); width: 100%; }
   .oi33-homework-actions .button { padding: 0 10px; font-size: 13px; }
-  .oi33-homework-search { grid-template-columns: minmax(0, 1fr) auto; }
+  .oi33-homework-catalog form.oi33-homework-search { grid-template-columns: minmax(0, 1fr) auto; }
   .oi33-homework-search__query { grid-column: 1 / -1; }
   .oi33-homework-card { flex-direction: column; align-items: stretch; gap: 18px; padding: 20px 18px; }
   .oi33-homework-card h2 { font-size: 19px; }

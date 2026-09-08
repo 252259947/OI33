@@ -63,6 +63,7 @@ function session() {
       headers: { Accept: options.html ? 'text/html' : 'application/json', Referer: options.referer || `${base}${route}`, Origin: base,
         Cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; '),
         ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+        ...(options.headers || {}),
       },
       body: form ? new URLSearchParams(form) : undefined,
     });
@@ -74,7 +75,7 @@ function session() {
     const text = await response.text();
     let body;
     try { body = JSON.parse(text); } catch { body = { raw: text }; }
-    return { status: response.status, body, location: response.headers.get('location'), cache: response.headers.get('cache-control') };
+    return { status: response.status, body, location: response.headers.get('location'), cache: response.headers.get('cache-control'), vary: response.headers.get('vary') };
   };
 }
 async function login(request, uname, pwd = password) {
@@ -227,6 +228,125 @@ async function checkEmptyHomeworkLifecycle(db, coach, student, defaults, pid) {
   }
   return ids;
 }
+async function checkHomeworkAccess(db, actors, fixtureData) {
+  const { coach, otherCoach, student, applicant, outsider, powerfulStudent } = actors;
+  const originalStart = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const originalEnd = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const form = { operation: 'update', title: 'QA access homework', content: '', pids: String(fixtureData.pid),
+    beginAtDate: originalStart, beginAtTime: '00:00', penaltySinceDate: originalEnd, penaltySinceTime: '23:59',
+    rated: 'false', classNames: '基础班,提高班' };
+  let result = await coach('/homework/create', form);
+  check('access fixture creates a real scoped homework', result.status < 400 && !!result.body.tid);
+  const tid = String(result.body.tid);
+  const status = (uid, id = tid) => db.collection('document.status').findOne({ domainId: 'system', docType: 30, docId: new ObjectId(id), uid });
+  const rosterFor = (id = tid) => db.collection('oi33_education_roster').findOne({ domainId: 'system', tid: new ObjectId(id) });
+  const originalRoster = JSON.stringify(await rosterFor());
+  const problemUrl = `/p/${fixtureData.pid}?tid=${tid}`;
+  const submitUrl = `/p/${fixtureData.pid}/submit?tid=${tid}`;
+  const submission = { lang: fixtureData.lang, code: 'int main() { return 0; }', pretest: 'false' };
+  result = await student('/homework');
+  check('student list exposes only their own class filter options', result.status === 200
+    && JSON.stringify([...result.body.groups].sort()) === JSON.stringify(['基础班', '提高班'].sort()), JSON.stringify(result.body.groups));
+  result = await student('/homework?group=' + encodeURIComponent('仅教师可见班'));
+  check('student cannot forge another class filter', result.status >= 400 && result.status < 500);
+  result = await student('/oi33/education/tasks', null, { html: true });
+  check('legacy my-homework entry leads to the same current-class list', result.status < 400 && !!result.location
+    && new URL(result.location, base).pathname === '/homework', `status ${result.status}; location ${result.location}`);
+  for (const actor of [powerfulStudent, outsider]) {
+    if (actor === outsider) await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,6' });
+    result = await actor('/homework');
+    check(`student without target classes cannot list homework (${actor === outsider ? 'ordinary' : 'legacy elevated permissions'})`,
+      result.status === 200 && !result.body.tdocs.some((doc) => String(doc.docId) === tid));
+    for (const route of [`/homework/${tid}`, problemUrl, submitUrl]) {
+      result = await actor(route);
+      check(`unassigned student cannot open ${route} (${actor === outsider ? 'ordinary' : 'elevated'})`, result.status >= 400 && result.status < 500);
+    }
+    result = await actor(submitUrl, submission);
+    check(`unassigned student cannot submit homework (${actor === outsider ? 'ordinary' : 'elevated'})`, result.status >= 400 && result.status < 500);
+  }
+  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6' });
+  result = await otherCoach('/homework');
+  check('coach without any class membership sees all homework and filters', result.status === 200
+    && result.body.tdocs.some((doc) => String(doc.docId) === tid) && result.body.groups.includes('仅教师可见班'));
+  for (const route of [`/homework/${tid}`, problemUrl]) {
+    result = await otherCoach(route);
+    check(`coach without class membership can preview ${route}`, result.status === 200, JSON.stringify(result.body.error));
+  }
+  result = await otherCoach(`/p/${fixtureData.pid}/file/qa-note.txt?tid=${tid}`);
+  check('teacher can read a homework statement attachment without claiming', result.status < 400, JSON.stringify(result.body.error));
+  result = await otherCoach(`/p/${fixtureData.pid}/file/qa-note.txt?tid=${tid}&type=testdata`);
+  check('teacher statement preview proxy does not grant testdata-reading permission', result.status === 403);
+  check('teacher previews do not create a student participation record', !await status(7));
+  result = await otherCoach(`/homework/${tid}/edit`);
+  check('teacher preview access does not grant editing another teacher homework', result.status >= 400 && result.status < 500);
+  result = await otherCoach(`/p/${fixtureData.pid}?tid=${fixtureData.otherTid}`);
+  check('homework access proxy does not bypass an unrelated contest class restriction', result.status >= 400 && result.status < 500);
+  result = await otherCoach(`/contest?tid=${tid}`);
+  check('forged homework tid on contest list cannot reveal a class-restricted contest', result.status === 200
+    && !result.body.tdocs.some((doc) => String(doc.docId) === fixtureData.otherTid));
+  check('direct problem test starts without any enrollment in this homework', !await status(6));
+  result = await applicant(problemUrl);
+  check('current class student opens a problem without visiting homework or claiming first', result.status === 200, JSON.stringify(result.body.error));
+  let participant = await status(6);
+  check('direct problem access persistently initializes attendance and startAt', participant?.attend === 1 && participant.startAt instanceof Date);
+  const automaticDetail = await applicant(`/homework/${tid}`, null, { html: true });
+  check('automatically assigned homework shows no manual claim control', automaticDetail.status === 200
+    && !/<input\b[^>]*name="operation"[^>]*value="attend"/.test(automaticDetail.body.raw || ''));
+  const firstStart = +participant.startAt;
+  const totalBeforeRepeat = (await db.collection('document').findOne({ domainId: 'system', docType: 30, docId: new ObjectId(tid) })).attend;
+  await Promise.all([applicant(problemUrl), applicant(problemUrl)]);
+  participant = await status(6);
+  check('repeat/concurrent access keeps startAt and participation count stable', +participant.startAt === firstStart
+    && (await db.collection('document').findOne({ domainId: 'system', docType: 30, docId: new ObjectId(tid) })).attend === totalBeforeRepeat);
+  check('direct submission test starts without claiming the homework', !await status(5));
+  result = await outsider(submitUrl, submission);
+  check('current class student can submit directly without claiming first', result.status < 400 && !!result.body.rid, JSON.stringify(result.body));
+  const record = await db.collection('record').findOne({ _id: new ObjectId(result.body.rid) });
+  check('direct submission remains bound to the actual homework and problem', record?.uid === 5
+    && String(record.contest) === tid && record.pid === fixtureData.pid && (await status(5))?.attend === 1);
+  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,6' });
+  for (const [route, data] of [[`/homework/${tid}`, null], [problemUrl, null], [submitUrl, submission]]) {
+    result = await outsider(route, data);
+    check(`transferred-out student loses access despite existing attendance ${route}`, result.status >= 400 && result.status < 500);
+  }
+  check('transfer-out preserves historical participation and submission', !!await status(5)
+    && !!await db.collection('record').findOne({ _id: record._id }));
+  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6,8' });
+  result = await powerfulStudent(problemUrl);
+  check('newly transferred-in student can immediately solve current class homework', result.status === 200 && (await status(8))?.attend === 1);
+  check('automatic participation and class transfer never silently rewrite the fixed roster', JSON.stringify(await rosterFor()) === originalRoster);
+  const unrelated = `/p/${fixtureData.otherPid}/submit?tid=${tid}`;
+  const recordsBefore = await db.collection('record').countDocuments();
+  result = await student(unrelated, submission);
+  check('homework submission rejects a problem not in its problem list', result.status >= 400 && result.status < 500);
+  result = await student(submitUrl, { ...submission, tid: fixtureData.otherTid });
+  check('conflicting query and body homework IDs are rejected', result.status >= 400 && result.status < 500);
+  result = await student(`/p/${fixtureData.otherPid}/submit`, { ...submission, tid });
+  check('body-only homework binding cannot submit an unrelated problem', result.status >= 400 && result.status < 500);
+  check('rejected problem and tid bindings create no submissions', await db.collection('record').countDocuments() === recordsBefore);
+  for (const [label, beginAtDate, penaltySinceDate] of [
+    ['future', '2099-01-01', '2099-01-02'], ['ended', '2001-01-01', '2001-01-02'],
+  ]) {
+    result = await coach('/homework/create', { ...form, title: `QA ${label} homework`, beginAtDate, penaltySinceDate });
+    check(`${label} homework fixture created`, result.status < 400 && !!result.body.tid);
+    const id = String(result.body.tid);
+    result = await student(`/p/${fixtureData.pid}/submit?tid=${id}`, submission);
+    check(`automatic participation does not bypass ${label} homework submission time bounds`, result.status >= 400 && result.status < 500);
+    if (label === 'future') {
+      result = await student(`/p/${fixtureData.pid}?tid=${id}`);
+      check('automatic participation does not reveal a future homework problem', result.status >= 400 && result.status < 500);
+    } else check('ended homework does not create a new attendance record', !await status(4, id));
+  }
+  const unassignedId = new ObjectId();
+  const source = await db.collection('document').findOne({ domainId: 'system', docType: 30, docId: new ObjectId(tid) });
+  await db.collection('document').insertOne({ ...source, _id: new ObjectId(), docId: unassignedId, assign: [], title: 'QA old no-class homework' });
+  result = await student('/homework');
+  check('old homework with no assigned classes is not public to students', result.status === 200
+    && !result.body.tdocs.some((doc) => String(doc.docId) === String(unassignedId)));
+  result = await student(`/homework/${unassignedId}`);
+  check('old no-class homework also denies student direct URLs', result.status >= 400 && result.status < 500);
+  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6' });
+}
 async function probeMessageSubscription(credential) {
   secrets.push(credential);
   return new Promise((resolve) => {
@@ -290,28 +410,42 @@ async function main() {
   const ready = path.join(fixture, 'ready.json');
   const seed = `
 const fs = require('fs');
-const { db, UserModel, DomainModel, ProblemModel, ContestModel, PRIV, PERM, SystemModel } = require('hydrooj');
+const { db, UserModel, DomainModel, ProblemModel, ContestModel, PRIV, PERM, SystemModel, SettingModel } = require('hydrooj');
 exports.apply = async function(ctx) {
   const base = ${JSON.stringify(root)};
-  for (const name of ['enrollment', 'education', 'account-batch', 'homepage']) await require(base + '/handler/' + name + '.ts').apply(ctx);
+  for (const name of ['mobile-access', 'theme', 'enrollment', 'education', 'homework-access', 'account-batch', 'homepage', 'article']) await require(base + '/handler/' + name + '.ts').apply(ctx);
   if (!await DomainModel.get('system')) await DomainModel.add('system', 2, 'Isolated QA', 'Synthetic fixture only');
   const users = {};
-  for (const [name, uid, priv] of [['nobody',0,PRIV.PRIV_DEFAULT],['qa_admin',2,PRIV.PRIV_ALL],['qa_coach',3,PRIV.PRIV_DEFAULT],['qa_student',4,PRIV.PRIV_DEFAULT],['qa_outsider',5,PRIV.PRIV_DEFAULT],['qa_new',6,PRIV.PRIV_DEFAULT]]) {
+  for (const [name, uid, priv] of [['nobody',0,PRIV.PRIV_DEFAULT],['qa_admin',2,PRIV.PRIV_ALL],['qa_coach',3,PRIV.PRIV_DEFAULT],['qa_student',4,PRIV.PRIV_DEFAULT],['qa_outsider',5,PRIV.PRIV_DEFAULT],['qa_new',6,PRIV.PRIV_DEFAULT],['qa_other_coach',7,PRIV.PRIV_DEFAULT],['qa_power_student',8,PRIV.PRIV_DEFAULT]]) {
     users[name] = await UserModel.create(name + '@fixture.invalid', name, ${JSON.stringify(password)}, uid, '127.0.0.1', priv);
   }
   await DomainModel.addRole('system', 'coach', PERM.PERM_DEFAULT | PERM.PERM_CREATE_HOMEWORK | PERM.PERM_EDIT_HOMEWORK_SELF);
   await DomainModel.setUserRole('system', 3, 'coach', true);
+  await DomainModel.setUserRole('system', 7, 'coach', true);
+  await DomainModel.addRole('system', 'qa_power_student', PERM.PERM_DEFAULT | PERM.PERM_VIEW_HIDDEN_HOMEWORK | PERM.PERM_VIEW_HIDDEN_CONTEST | PERM.PERM_VIEW_HOMEWORK_HIDDEN_SCOREBOARD);
+  await DomainModel.setUserRole('system', 8, 'qa_power_student', true);
   await UserModel.setById(2, { timeZone: 'Pacific/Kiritimati' });
   await UserModel.setById(3, { timeZone: 'Pacific/Honolulu' });
-  for (const uid of [2,3,4,5]) await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: uid === 2 ? 3 : 1, realname_name: 'QA ' + uid });
+  for (const uid of [2,3,4,5,7,8]) await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: uid === 2 ? 3 : 1, realname_name: 'QA ' + uid });
   await UserModel.updateGroup('system', '基础班', [4]);
   await UserModel.updateGroup('system', '提高班', [4]);
+  await UserModel.updateGroup('system', '仅教师可见班', []);
   await SystemModel.set('hydrooj.homepage', ${JSON.stringify('- width: 9\n  contest: 5\n  training: 10\n- width: 3\n  ranking: 10\n')});
   const pid = await ProblemModel.add('system', 'QA1', 'QA problem', 'Synthetic fixture only', 2);
+  const otherPid = await ProblemModel.add('system', 'QA2', 'QA unrelated problem', 'Synthetic fixture only', 2);
+  await ProblemModel.addAdditionalFile('system', pid, 'qa-note.txt', Buffer.from('QA fixture statement attachment'), 2);
+  const lang = Object.keys(SettingModel.langs).find((key) => key.startsWith('cc') && !SettingModel.langs[key].disabled);
+  if (!lang) throw new Error('Isolated runtime has no enabled C++ fixture language.');
   const now = Date.now();
   const tid = await ContestModel.add('system', 'QA Allowed Contest', 'Synthetic fixture', 2, 'acm', new Date(now - 60000), new Date(now + 3600000), [pid], false);
   const otherTid = await ContestModel.add('system', 'QA Other Contest', 'Synthetic fixture', 2, 'acm', new Date(now - 60000), new Date(now + 3600000), [pid], false);
-  fs.writeFileSync(${JSON.stringify(ready)}, JSON.stringify({users,pid,tid:String(tid),otherTid:String(otherTid)}));
+  await ContestModel.edit('system', otherTid, { assign: ['仅比赛班'] });
+  const articles = require(base + '/model/article.ts');
+  const binding = await articles.resolveArticleBinding('system', '', await UserModel.getById('system', 2));
+  const articleContent = ${JSON.stringify('QA excerpt $\\frac{1}{2}$ and $x^2$.')};
+  const articleId = await articles.addArticle({ domainId: 'system', owner: 2, title: 'QA formula article',
+    content: articleContent, visibility: 'public', binding, ip: '127.0.0.1' });
+  fs.writeFileSync(${JSON.stringify(ready)}, JSON.stringify({users,pid,otherPid,lang,articleId:String(articleId),articleContent,tid:String(tid),otherTid:String(otherTid)}));
 };
 `;
   write(path.join(fixture, 'addon/index.js'), seed);
@@ -330,6 +464,13 @@ exports.apply = async function(ctx) {
     { _id: 'server.url', value: base }, { _id: 'server.login', value: true },
     { _id: 'session.keys', value: ['SyntheticFixtureKey2026'] },
   ]);
+  // The safe non-primary instance deliberately skips Hydro's primary-worker
+  // index setup. Reproduce required native indexes only in this random DB:
+  // discussion uses an explicit hint, and attendance relies on unique status.
+  await db.collection('document').createIndex({ domainId: 1, docType: 1, docId: 1 }, { name: 'basic', unique: true });
+  await db.collection('document.status').createIndex({ domainId: 1, docType: 1, docId: 1, uid: 1 }, { name: 'basic', unique: true });
+  await db.collection('document').createIndex({ docType: 1, domainId: 1, hidden: 1, pin: -1, docId: -1 },
+    { name: 'discussionSort', partialFilterExpression: { docType: 21 } });
   hydroProcess = spawn(node, [path.join(globalModules, 'hydrooj/bin/hydrooj.js'), '--host', '127.0.0.1', '--port', '8899'], {
     cwd: fixture, env, stdio: ['pipe', fs.openSync(path.join(fixture, 'hydro.log'), 'a'), fs.openSync(path.join(fixture, 'hydro.log'), 'a')],
   });
@@ -339,8 +480,31 @@ exports.apply = async function(ctx) {
   const fixtureData = JSON.parse(fs.readFileSync(ready, 'utf8'));
   await checkHomepage(session(), 'anonymous empty');
   const admin = session(); const coach = session(); const student = session(); const outsider = session(); const applicant = session();
+  const otherCoach = session(); const powerfulStudent = session();
   await login(admin, 'qa_admin'); await login(coach, 'qa_coach'); await login(student, 'qa_student');
   await login(outsider, 'qa_outsider'); await login(applicant, 'qa_new');
+  await login(otherCoach, 'qa_other_coach'); await login(powerfulStudent, 'qa_power_student');
+  for (const route of ['/discuss', '/article/mine']) {
+    const article = await admin(route, null, { html: true });
+    const html = article.body.raw || '';
+    const excerpt = html.match(route === '/discuss'
+      ? /<p class="oi33-discuss__excerpt">([\s\S]*?)<\/p>/
+      : /<h2><a class="oi33-article-mine__primary-link"[\s\S]*?<\/h2>\s*<p>([\s\S]*?)<\/p>/)?.[1] || '';
+    check(`real article handler hook renders formula excerpt ${route}`, article.status === 200 && !!excerpt, `status ${article.status}`);
+    check(`formula excerpt keeps one TeX source and no rendered KaTeX duplication ${route}`,
+      (excerpt.match(/frac\{1\}\{2\}/g) || []).length === 1 && !excerpt.includes('<span') && !excerpt.includes('<math'));
+  }
+  const originalArticle = await db.collection('document').findOne({ domainId: 'system', docId: new ObjectId(fixtureData.articleId) });
+  check('article excerpt rendering never rewrites stored Markdown', originalArticle.content === fixtureData.articleContent);
+  const phoneHeaders = { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile Safari' };
+  const mobilePage = await student('/homework', null, { html: true, headers: phoneHeaders });
+  check('real mobile middleware rejects phone page before normal application rendering', mobilePage.status === 403
+    && (mobilePage.body.raw || '').includes('请使用电脑访问') && !(mobilePage.body.raw || '').includes('oi33-nav__main'));
+  const mobilePost = await coach('/homework/create', { operation: 'update', title: 'QA phone forbidden' }, { headers: phoneHeaders });
+  check('real mobile middleware rejects phone POST with structured denial', mobilePost.status === 403
+    && mobilePost.body.error?.code === 'PHONE_BROWSER_UNSUPPORTED');
+  check('mobile denial responses are private and vary by device headers', /no-store/.test(mobilePage.cache)
+    && /User-Agent/i.test(mobilePage.vary) && /Sec-CH-UA-Mobile/i.test(mobilePage.vary));
   await checkHomepage(student, 'verified empty');
   for (const [actor, route] of [[applicant, '/oi33/enrollment'], [admin, '/oi33/enrollment/review'],
     [admin, '/oi33/accounts/batch'], [admin, '/oi33/education/access'], [coach, '/oi33/education/classes']]) {
@@ -402,6 +566,7 @@ exports.apply = async function(ctx) {
   const unchanged = await db.collection('oi33_education_roster').findOne({ _id: roster._id });
   check('class change does not silently rewrite historical snapshot', unchanged.entries.length === 2);
   await checkEmptyHomeworkLifecycle(db, coach, student, defaults, fixtureData.pid);
+  await checkHomeworkAccess(db, { coach, otherCoach, student, applicant, outsider, powerfulStudent }, fixtureData);
   const multiple = new URLSearchParams({ users: 'qa_regular,QA Regular,R01', accountType: 'regular' });
   multiple.append('groups', '基础班'); multiple.append('groups', '提高班');
   result = await admin('/oi33/accounts/batch', multiple);

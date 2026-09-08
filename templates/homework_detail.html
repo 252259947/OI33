@@ -54,7 +54,7 @@
             </tr>
           </thead>
           <tbody>
-          {% set isAdmin = handler.user.own(tdoc) or handler.user.hasPerm(perm.PERM_VIEW_HOMEWORK_HIDDEN_SCOREBOARD) %}
+          {% set isAdmin = educationIsCoach or handler.user.own(tdoc) or handler.user.hasPerm(perm.PERM_VIEW_HOMEWORK_HIDDEN_SCOREBOARD) %}
           {% set ntdoc = model.contest.isDone(tdoc) or (tsdoc.attend and not model.contest.isNotStarted(tdoc)) %}
           {%- for pid in tdoc.pids -%}
             <tr>
@@ -84,10 +84,8 @@
           </tbody>
         </table>
       </div>
-    {% elif tsdoc.attend %}
-      {{ nothing.render('This homework is not open and you cannot view problems.') }}
     {% else %}
-      {{ nothing.render('Please claim the assignment to see the problems.') }}
+      {{ nothing.render('作业尚未开放，请在开始时间后查看题目。') }}
     {% endif %}
     </div>
   </div>

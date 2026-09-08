@@ -7,19 +7,14 @@
       <p>找到当前的学习任务，按时完成练习，把每一步进步记录下来。</p>
     </div>
     <div class="oi33-homework-actions">
-      {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}<a class="button" href="{{ url('oi33_education_tasks') }}">我的作业</a>{% endif %}
       {% if educationIsCoach %}<a class="button" href="{{ url('oi33_education_classes') }}">班型管理</a>{% endif %}
       {% if educationIsCoach and handler.user.hasPerm(perm.PERM_CREATE_HOMEWORK) %}<a class="primary button" href="{{ url('homework_create') }}"><span class="icon icon-add" aria-hidden="true"></span> 布置作业</a>{% endif %}
     </div>
   </header>
   <div class="oi33-training-catalog">
     <section class="oi33-training-toolbar oi33-homework-toolbar" aria-label="筛选作业">
-      <div class="oi33-training-toolbar__copy">
-        <span class="oi33-training-toolbar__icon icon icon-calendar" aria-hidden="true"></span>
-        <span><strong>找到你的学习任务</strong><small>按标题或班型筛选作业</small></span>
-      </div>
       <form method="get" action="{{ url('homework_main') }}" class="oi33-homework-search filter-form" name="filter-form" role="search">
-        <div class="oi33-homework-search__query"><label for="oi33-homework-query">搜索作业</label><input id="oi33-homework-query" class="textbox" type="search" name="q" value="{{ q }}" placeholder="输入作业标题"></div>
+        <div class="oi33-homework-search__query"><label for="oi33-homework-query">搜索作业</label><span class="icon icon-search" aria-hidden="true"></span><input id="oi33-homework-query" class="textbox" type="search" name="q" value="{{ q }}" placeholder="搜索作业标题"></div>
         <div><label for="oi33-homework-group">班型</label><select id="oi33-homework-group" class="select" name="group"><option value="">全部班型</option>{% for g in groups %}<option value="{{ g }}"{% if group == g %} selected{% endif %}>{{ g }}</option>{% endfor %}</select></div>
         <button type="submit" class="primary button">搜索</button>
       </form>
@@ -40,7 +35,7 @@
             <div class="oi33-homework-card__meta">
               <span><span class="oi33-homework-card__label">开始</span>{{ datetimeSpan(tdoc.beginAt, false, 'YYYY-MM-DD HH:mm')|safe }}</span>
               <span><span class="oi33-homework-card__label">截止</span>{{ datetimeSpan(tdoc.penaltySince or tdoc.endAt, false, 'YYYY-MM-DD HH:mm')|safe }}</span>
-              {% if tdoc.attend is number %}<span><span class="icon icon-user--multiple" aria-hidden="true"></span> {{ tdoc.attend }} 人已领取</span>{% endif %}
+              {% if tdoc.educationRosterCount is number %}<span><span class="icon icon-user--multiple" aria-hidden="true"></span> 应完成 {{ tdoc.educationRosterCount }} 人</span>{% endif %}
             </div>
           </div>
           <span class="oi33-homework-card__action" aria-hidden="true">查看作业 <span>→</span></span>

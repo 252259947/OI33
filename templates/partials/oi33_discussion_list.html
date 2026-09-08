@@ -27,7 +27,7 @@
             {% if ddoc.pin %}<span>置顶</span>{% endif %}
           </div>
           <h2 class="oi33-discuss__title"><a class="oi33-discuss__primary-link" href="{{ url('discussion_detail', did=ddoc._id, anchor=ddoc.updateAt.getTime()) }}" data-emoji-enabled>{{ ddoc.title }}</a></h2>
-          {% if ddoc.content %}<p class="oi33-discuss__excerpt">{{ ddoc.content|markdown|striptags|truncate(150) }}</p>{% endif %}
+          {% if ddoc.content %}<p class="oi33-discuss__excerpt">{{ handler.oi33ArticleExcerpt(ddoc.content|markdown)|truncate(150) }}</p>{% endif %}
           <ul class="oi33-discuss__meta">
             {% if parentDoc and not (ddoc.parentType == model.document.TYPE_DISCUSSION_NODE and ddoc.parentId == 'oi33-articles-internal' and not ddoc.oi33ProblemId) %}
             <li><a class="oi33-discuss__node" href="{% if ddoc.oi33Kind == 'article' and ddoc.oi33ProblemId %}{{ url('problem_detail', pid=ddoc.oi33ProblemId) }}{% else %}{{ url('discussion_node', type=model.discussion.typeDisplay[ddoc.parentType], name=ddoc.parentId) }}{% endif %}"><span class="icon icon-{% if ddoc.oi33ProblemId or ddoc.parentType == model.document.TYPE_PROBLEM %}tag{% elif ddoc.parentType == model.document.TYPE_CONTEST %}award{% else %}flag{% endif %}" aria-hidden="true"></span>{{ parentDoc.title|default(_('(missing)')) }}</a></li>
