@@ -1,7 +1,7 @@
 {% extends "layout/basic.html" %}
 {% import "components/comments_discussion.html" as comments with context %}
 {% block content %}
-<div class="row oi33-article-detail">
+<div class="row oi33-article-detail" data-content-toc data-content-toc-mode="sidebar" data-sticky-parent>
   <main class="medium-9 columns">
     <article class="section oi33-article-paper">
       <header class="oi33-article-paper__head">
@@ -24,25 +24,23 @@
         {% if articleAccessViaShare %}<p class="oi33-article-paper__share-note"><span class="icon icon-link"></span>你正在通过作者分享的专属链接查看这篇文章。</p>{% endif %}
       </header>
 
-      <div data-content-toc>
-        <div class="oi33-content-toc-controls" data-content-toc-controls hidden>
-          <label class="oi33-content-toc-toggle"><input type="checkbox" role="switch" data-content-toc-toggle> 显示目录</label>
-        </div>
-        <div class="oi33-content-layout" data-content-toc-layout>
-          <div class="typo richmedia oi33-content-main oi33-article-paper__content" data-content-toc-source data-emoji-enabled
-            data-raw-url="{{ url('discussion_raw', did=ddoc.docId) }}">
-            {{ ddoc.content|markdown|safe }}
-          </div>
-          <aside class="oi33-content-toc" data-content-toc-aside hidden aria-label="文章目录">
-            <div class="oi33-content-toc__title">目录</div>
+      <section class="section side oi33-article-toc oi33-article-toc--mobile" data-content-toc-aside hidden aria-labelledby="oi33-article-toc-mobile-title">
+        <div class="section__header"><h2 class="section__title" id="oi33-article-toc-mobile-title">文章目录</h2></div>
+        <div class="section__body">
+          <nav aria-label="文章目录">
             <ol class="oi33-content-toc__list" data-content-toc-list></ol>
-          </aside>
+          </nav>
         </div>
+      </section>
+
+      <div class="typo richmedia oi33-content-main oi33-article-paper__content" data-content-toc-source data-emoji-enabled
+        data-raw-url="{{ url('discussion_raw', did=ddoc.docId) }}">
+        {{ ddoc.content|markdown|safe }}
       </div>
 
       <footer class="oi33-article-paper__footer">
         <ul class="supplementary dot list">
-          {% if articleCanManage %}<li><a href="/article/{{ ddoc.docId }}/edit"><span class="icon icon-edit"></span> 编辑文章</a></li>{% endif %}
+          {% if articleIsOwner %}<li><a href="/article/{{ ddoc.docId }}/edit"><span class="icon icon-edit"></span> 编辑文章</a></li>{% endif %}
           {% if ddoc.edited %}<li data-discussion-history data-raw-url="{{ url('discussion_raw', did=ddoc.docId) }}">{{ _('Edited') }}</li>{% endif %}
           {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
           <li><form class="form--inline" method="post">
@@ -121,7 +119,7 @@
       </div>
     </section>
 
-    {% if articleCanManage %}
+    {% if articleIsOwner %}
     <section class="section side oi33-article-actions">
       <div class="section__header"><h2 class="section__title">文章管理</h2></div>
       <div class="section__body">
@@ -133,13 +131,22 @@
         <a class="expanded rounded button" href="/article/mine">返回我的文章</a>
       </div>
     </section>
-    {% endif %}
 
     <section class="section side oi33-article-info">
       <div class="section__header"><h2 class="section__title">可见范围</h2></div>
       <div class="section__body">
         <div class="oi33-article-info__visibility"><span class="oi33-visibility-dot is-{{ articleVisibility }}"></span><strong>{% if articleVisibility == 'private' %}仅自己可见{% elif articleVisibility == 'unlisted' %}获取链接可见{% else %}公开可见{% endif %}</strong></div>
         <p>{% if articleVisibility == 'private' %}这篇文章不会被其他用户访问或在列表中出现。{% elif articleVisibility == 'unlisted' %}这篇文章不在公屏展示，通过专属链接可以访问。{% elif vnode.type == model.document.TYPE_PROBLEM %}这篇文章会显示在文章广场和绑定题目的讨论区。{% else %}这篇文章会显示在文章广场。{% endif %}</p>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="section side oi33-article-toc oi33-article-toc--desktop" data-content-toc-aside data-sticky="large" hidden aria-labelledby="oi33-article-toc-title">
+      <div class="section__header"><h2 class="section__title" id="oi33-article-toc-title">文章目录</h2></div>
+      <div class="section__body">
+        <nav aria-label="文章目录">
+          <ol class="oi33-content-toc__list" data-content-toc-list></ol>
+        </nav>
       </div>
     </section>
   </aside>

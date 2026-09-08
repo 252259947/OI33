@@ -132,6 +132,13 @@
   background: rgba(63, 139, 88, .08);
 }
 
+.oi33-content-toc__link.is-active {
+  border-left-color: #3f8b58;
+  color: #267044;
+  background: rgba(63, 139, 88, .08);
+  font-weight: 700;
+}
+
 [data-content-toc-source] :is(h1, h2, h3, h4, h5, h6) { scroll-margin-top: 76px; }
 
 .theme--dark .oi33-content-toc-toggle,
@@ -144,7 +151,8 @@
 }
 
 .theme--dark .oi33-content-toc__title,
-.theme--dark .oi33-content-toc__link:hover { color: #83cf96; }
+.theme--dark .oi33-content-toc__link:hover,
+.theme--dark .oi33-content-toc__link.is-active { color: #83cf96; }
 
 @media (max-width: 900px) {
   .oi33-content-layout.is-toc-visible {

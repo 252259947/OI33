@@ -577,6 +577,7 @@ export async function apply(ctx: Context) {
         const ddoc = handler.oi33ArticleDoc;
         if (!ddoc) return;
         const canManage = !!handler.oi33ArticleCanManage;
+        const isOwner = !!handler.user?._id && ddoc.owner === handler.user._id;
         const { oi33ShareToken: _shareToken, ...safeDdoc } = ddoc;
         const { oi33ShareToken: _oldShareToken, ...currentDdoc } = handler.response.body?.ddoc || {};
         handler.response.template = 'oi33_article_detail.html';
@@ -588,9 +589,10 @@ export async function apply(ctx: Context) {
                 hidden: !!(safeDdoc.hidden || safeDdoc.oi33ModerationPending),
             },
             articleVisibility: ddoc.oi33Visibility,
-            articleShareUrl: canManage && ddoc.oi33Visibility === 'unlisted'
+            articleShareUrl: isOwner && ddoc.oi33Visibility === 'unlisted'
                 ? handler.url('oi33_article_share', { did: ddoc.docId, token: ddoc.oi33ShareToken }) : null,
             articleCanManage: canManage,
+            articleIsOwner: isOwner,
             articleAccessViaShare: !!handler.oi33ArticleAccessViaShare,
             page_name: 'oi33_article_detail',
         };
