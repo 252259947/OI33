@@ -12,7 +12,7 @@
         <div class="oi33-enrollment__notice">原有实名身份继续有效，无需重复申请。更正姓名或归属信息请联系管理员。</div>
       {% elif enrollment %}
         <div class="oi33-enrollment__status" role="status">
-          <strong>{% if not enrollment.enabled %}账号已停用{% elif enrollment.status == 'approved' %}身份已审核{% elif enrollment.status == 'rejected' %}需要补充资料{% else %}等待审核{% endif %}</strong>
+          <strong>{% if enrollment.status == 'approved' %}已完成实名认证{% elif enrollment.status == 'rejected' %}需要补充资料{% else %}等待实名审核{% endif %}</strong>
           <span>{% if enrollment.accountType == 'temporary' %}临时比赛账号{% else %}日常账号{% endif %}</span>
         </div>
         {% if enrollment.rejectionReason %}<div class="oi33-enrollment__notice">审核意见：{{ enrollment.rejectionReason }}</div>{% endif %}
@@ -33,7 +33,10 @@
           {% endif %}
         {% endif %}
       {% endif %}
-      {% if not legacyVerified and (not enrollment or (enrollment.enabled and enrollment.accountType == 'regular' and enrollment.status != 'approved')) %}
+      {% if isAdmin and not legacyVerified and not enrollment %}
+        <div class="oi33-enrollment__notice">你的管理员权限不等于实名认证。此账号尚无实名档案，请由另一位管理员核验并建立身份档案；不能自行审批自己的身份。</div>
+      {% endif %}
+      {% if not legacyVerified and not (isAdmin and not enrollment) and (not enrollment or (enrollment.enabled and enrollment.accountType == 'regular' and enrollment.status != 'approved')) %}
       <form method="post" class="oi33-enrollment__form">
         <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
         <input type="hidden" name="revision" value="{{ enrollment.revision or 0 }}">

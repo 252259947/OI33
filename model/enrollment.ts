@@ -82,14 +82,20 @@ export async function getEnrollment(uid: number): Promise<Enrollment | null> {
 
 // The enrollment document is authoritative. This flag is only for legacy UI/feature compatibility.
 // Do not copy names into public User data or downgrade pre-existing administrator flags.
-async function syncVerifiedFlag(uid: number, verified: boolean) {
-    await userColl.updateOne({ _id: uid, $or: [{ realname_flag: { $lt: 2 } }, { realname_flag: { $exists: false } }] },
-        { $set: { realname_flag: verified ? 1 : 0 } });
+async function syncVerifiedFlag(uid: number, verified: boolean, revision: number) {
+    const fields = { realname_flag: verified ? 1 : 0, realname_enrollment_revision: revision };
     const current = await userColl.findOne({ _id: uid });
     if (!current) {
-        try { await userColl.insertOne({ _id: uid, realname_flag: verified ? 1 : 0 } as any); }
+        try { await userColl.insertOne({ _id: uid, ...fields } as any); }
         catch (e: any) { if (e?.code !== 11000) throw e; }
     }
+    // Enrollment writes are revision-guarded, but their follow-up compatibility
+    // writes can complete out of order. Never let a delayed submit clear approval.
+    await userColl.updateOne({ _id: uid, $and: [
+        { $or: [{ realname_flag: { $lt: 2 } }, { realname_flag: { $exists: false } }] },
+        { $or: [{ realname_enrollment_revision: { $lte: revision } },
+            { realname_enrollment_revision: { $exists: false } }] },
+    ] }, { $set: fields });
 }
 
 async function audit(uid: number, operator: number, action: string, revision: number) {
@@ -123,7 +129,7 @@ export async function submitEnrollment(uid: number, domainId: string, input: Enr
             throw e;
         }
     }
-    await syncVerifiedFlag(uid, false);
+    await syncVerifiedFlag(uid, false, revision);
     await audit(uid, uid, 'submit', revision);
     return (await getEnrollment(uid))!;
 }
@@ -140,7 +146,7 @@ export async function reviewEnrollment(uid: number, expectedRevision: number, de
         $push: { history: { revision, action: decision, operator: operatorUid, at: now, reason: rejectionReason } },
     });
     if (!result.matchedCount) throw new Error('申请已更新或已被处理，请刷新后重新审核。');
-    await syncVerifiedFlag(uid, decision === 'approved');
+    await syncVerifiedFlag(uid, decision === 'approved', revision);
     await audit(uid, operatorUid, decision, revision);
     return (await getEnrollment(uid))!;
 }
@@ -171,10 +177,10 @@ export async function provisionEnrollment(input: ProvisionEnrollmentInput, opera
             && JSON.stringify(old.contestScopes) === JSON.stringify(candidate.contestScopes)
             && JSON.stringify(old.requestedGroups) === JSON.stringify(candidate.requestedGroups);
         if (!same) throw new Error('该账号已有身份档案，不能通过导入覆盖，请在账号管理中处理。');
-        await syncVerifiedFlag(input.uid, true);
+        await syncVerifiedFlag(input.uid, true, old.revision);
         return old;
     }
-    await syncVerifiedFlag(input.uid, true);
+    await syncVerifiedFlag(input.uid, true, candidate.revision);
     await audit(input.uid, operatorUid, 'provision', 1);
     return candidate;
 }

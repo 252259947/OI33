@@ -35,6 +35,7 @@ export interface Oi33User {
     badge_color?: string;
     badge_textColor?: string;
     realname_flag?: number;
+    realname_enrollment_revision?: number;
     realname_name?: string;
     checkin_time?: string;
     checkin_luck?: number;

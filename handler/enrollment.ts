@@ -187,8 +187,9 @@ export class Oi33EnrollmentHandler extends Handler {
     @param('revision', Types.UnsignedInt)
     async post(domainId: string, realName: string, school = '', studentId = '', requestedGroups = '', revision = 0) {
         const legacy = await userColl.findOne({ _id: this.user._id });
-        if (!await getEnrollment(this.user._id) && ((legacy?.realname_flag || 0) >= 1 || isEducationAdmin(this.user))) {
-            throw new ForbiddenError('原有已核验身份继续有效，如需更正请联系管理员。');
+        if (!await getEnrollment(this.user._id)) {
+            if ((legacy?.realname_flag || 0) >= 1) throw new ForbiddenError('原有已核验身份继续有效，如需更正请联系管理员。');
+            if (isEducationAdmin(this.user)) throw new ForbiddenError('管理员权限不等于实名认证，请由另一位管理员核验并建立身份档案；不能自行审批自己的身份。');
         }
         try {
             await submitEnrollment(this.user._id, domainOf(this), { realName, school, studentId,

@@ -44,10 +44,12 @@ function same(a, b) {
 function matches(doc, query) {
     return Object.entries(query).every(([key, value]) => {
         if (key === '$or') return value.some((q) => matches(doc, q));
+        if (key === '$and') return value.every((q) => matches(doc, q));
         if (value && typeof value === 'object' && !(value instanceof Date) && !(value instanceof FakeObjectId)) {
             return Object.entries(value).every(([op, arg]) => {
                 if (op === '$in') return arg.includes(doc[key]);
                 if (op === '$lt') return doc[key] < arg;
+                if (op === '$lte') return doc[key] <= arg;
                 if (op === '$exists') return (doc[key] !== undefined) === arg;
                 throw new Error(`Unsupported test query ${op}`);
             });
@@ -80,7 +82,12 @@ class MemoryCollection {
     find(query) {
         let found = this.docs.filter((d) => matches(d, query));
         const cursor = { sort: () => cursor, skip: (n) => { found = found.slice(n); return cursor; },
-            limit: (n) => { found = found.slice(0, n); return cursor; }, toArray: async () => copy(found) };
+            limit: (n) => { found = found.slice(0, n); return cursor; },
+            project: (fields) => {
+                found = found.map((doc) => Object.fromEntries(Object.keys(fields).filter((key) => fields[key] && key in doc)
+                    .map((key) => [key, doc[key]])));
+                return cursor;
+            }, toArray: async () => copy(found) };
         return cursor;
     }
 }
@@ -89,6 +96,10 @@ function harness() {
     const collection = (name) => collections[name] ||= new MemoryCollection();
     const logs = [];
     const userColl = collection('oi33_user');
+    const userModel = loadTs('model/user.ts', {
+        hydrooj: { db: { collection } }, './log': { addLog: async (entry) => logs.push(entry) },
+        './moderate': { bioHashMatches: (a, b) => a === b },
+    });
     const model = loadTs('model/enrollment.ts', {
         hydrooj: { db: { collection } }, './log': { addLog: async (entry) => logs.push(entry) },
         './user': { userColl }, './enrollment-policy': policy,
@@ -119,8 +130,124 @@ function harness() {
         await api.apply({ on: (name, fn) => { (hooks[name] ||= []).push(fn); }, Route: (...args) => routes.push(args) });
         return { hooks, routes, run: async (name, h) => { let result; for (const fn of hooks[name] || []) result = await fn(h); return result; } };
     }
-    return { model, api, collection, userColl, logs, handler, hookMap, ForbiddenError, ValidationError };
+    return { model, api, userModel, collection, userColl, logs, handler, hookMap, ForbiddenError, ValidationError };
 }
+
+test('approval immediately verifies profile and fortune reads without disclosing private identity fields', async () => {
+    const h = harness();
+    await h.model.submitEnrollment(10, 'system', { realName: 'Private name', school: 'Private school', studentId: 'S-private' }, 0);
+    const pending = (await h.userModel.getUserDataByUids([10]))[10];
+    const profile = { _id: 10, uname: 'public-nickname', avatar: 'public-avatar' };
+    h.userModel.mergeOi33Fields(profile, pending);
+    h.userModel.anonymizeOi33Identity(profile);
+    assert.equal(profile.oi33_profile_hidden, true);
+    assert.equal(profile.uname, 'UID 10');
+    await h.model.reviewEnrollment(10, 1, 'approved', 1);
+    const verified = (await h.userModel.getUserDataByUids([10]))[10];
+    const fortune = await h.userModel.getCheckinUser(10);
+    assert.equal(verified.realname_flag, 1);
+    assert.equal(fortune.realname_flag, 1);
+    h.userModel.mergeOi33Fields(profile, verified);
+    assert.equal(profile.oi33_profile_hidden, false);
+    assert.equal(profile.uname, 'public-nickname');
+    assert.equal(profile.avatar, 'public-avatar');
+    const serialized = JSON.stringify({ verified, fortune, profile });
+    for (const value of ['Private name', 'Private school', 'S-private']) assert.ok(!serialized.includes(value));
+    assert.equal(verified.realName, undefined);
+    assert.equal(verified.realname_name, undefined);
+});
+
+test('authoritative identity reads tolerate stale or missing compatibility data without writing on read', async () => {
+    const h = harness();
+    await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: 'Private name' }, 1);
+    await h.userColl.updateOne({ _id: 10 }, { $set: { realname_flag: 0, checkin_luck: 4 } });
+    const count = h.logs.length;
+    assert.equal((await h.userModel.getUserDataByUids([10]))[10].realname_flag, 1);
+    const fortune = await h.userModel.getCheckinUser(10);
+    assert.equal(fortune.realname_flag, 1);
+    assert.equal(fortune.checkin_luck, 4);
+    assert.equal((await h.userColl.findOne({ _id: 10 })).realname_flag, 0);
+    h.userColl.docs = [];
+    assert.deepEqual(await h.userModel.getCheckinUser(10), { _id: 10, realname_flag: 1 });
+    assert.equal(h.userColl.docs.length, 0);
+    assert.equal(h.logs.length, count);
+    assert.equal(await h.userModel.getCheckinUser(999), null);
+    assert.deepEqual(await h.userModel.getUserDataByUids([]), {});
+});
+
+test('identity projection does not confuse verification with enablement, expiry, initial password or administrator roles', async () => {
+    const h = harness();
+    await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: 'Temporary fixture', accountType: 'temporary',
+        contestScopes: temp().contestScopes, validUntil: new Date(1), requiresPasswordChange: true }, 1);
+    await h.model.manageEnrollment(10, 1, 'disable', 1);
+    assert.equal((await h.userModel.getCheckinUser(10)).realname_flag, 1, 'verified identity is not revoked by account limits');
+    assert.equal(policy.decideEnrollmentAccess(await h.model.getEnrollment(10), request()).allowed, false);
+    for (const [uid, status, oldFlag, expected] of [[11, 'pending', 1, 0], [12, 'rejected', 1, 0],
+        [13, 'pending', 2, 2], [14, 'rejected', 3, 3]]) {
+        await h.collection('oi33_enrollment').insertOne({ _id: uid, status });
+        await h.userColl.insertOne({ _id: uid, realname_flag: oldFlag });
+        assert.equal((await h.userModel.getUserDataByUids([uid]))[uid].realname_flag, expected);
+    }
+    await h.userColl.insertOne({ _id: 15, realname_flag: 1 });
+    assert.equal((await h.userModel.getCheckinUser(15)).realname_flag, 1, 'legacy verified users remain compatible');
+});
+
+test('delayed pending compatibility update cannot overwrite a later approval', async () => {
+    const h = harness();
+    let signal, resume;
+    const blocked = new Promise((resolve) => { signal = resolve; });
+    const released = new Promise((resolve) => { resume = resolve; });
+    const original = h.userColl.updateOne.bind(h.userColl);
+    h.userColl.updateOne = async (query, update, options) => {
+        if (update.$set?.realname_flag === 0) { signal(); await released; }
+        return original(query, update, options);
+    };
+    const submitted = h.model.submitEnrollment(10, 'system', { realName: 'Fixture' }, 0);
+    await blocked;
+    await h.model.reviewEnrollment(10, 1, 'approved', 1);
+    resume();
+    await submitted;
+    assert.equal((await h.model.getEnrollment(10)).status, 'approved');
+    const stored = await h.userColl.findOne({ _id: 10 });
+    assert.equal(stored.realname_flag, 1);
+    assert.equal(stored.realname_enrollment_revision, 2);
+    assert.equal((await h.userModel.getCheckinUser(10)).realname_flag, 1);
+});
+
+test('racing creation of a missing compatibility document preserves the newer review revision', async () => {
+    const h = harness();
+    let signal, resume;
+    const blocked = new Promise((resolve) => { signal = resolve; });
+    const released = new Promise((resolve) => { resume = resolve; });
+    const original = h.userColl.insertOne.bind(h.userColl);
+    h.userColl.insertOne = async (doc) => {
+        if (doc.realname_flag === 0) { signal(); await released; }
+        return original(doc);
+    };
+    const submitted = h.model.submitEnrollment(10, 'system', { realName: 'Fixture' }, 0);
+    await blocked;
+    await h.model.reviewEnrollment(10, 1, 'approved', 1);
+    resume();
+    await submitted;
+    assert.equal(h.userColl.docs.length, 1);
+    assert.equal((await h.userColl.findOne({ _id: 10 })).realname_enrollment_revision, 2);
+    assert.equal((await h.userColl.findOne({ _id: 10 })).realname_flag, 1);
+});
+
+test('a failed compatibility write cannot make an approved identity appear unverified', async () => {
+    const h = harness();
+    await h.model.submitEnrollment(10, 'system', { realName: 'Fixture' }, 0);
+    const original = h.userColl.updateOne.bind(h.userColl);
+    h.userColl.updateOne = async (query, update, options) => {
+        if (update.$set?.realname_flag === 1) throw new Error('Compatibility write interrupted');
+        return original(query, update, options);
+    };
+    await assert.rejects(h.model.reviewEnrollment(10, 1, 'approved', 1), /interrupted/);
+    assert.equal((await h.model.getEnrollment(10)).status, 'approved');
+    assert.equal((await h.userColl.findOne({ _id: 10 })).realname_flag, 0);
+    assert.equal((await h.userModel.getUserDataByUids([10]))[10].realname_flag, 1);
+    assert.equal((await h.userModel.getCheckinUser(10)).realname_flag, 1);
+});
 
 test('pending identity blocks core writes, API and all sockets while permitting public GET', () => {
     for (const doc of [null, { ...temp(), accountType: 'regular', status: 'pending' }, { ...temp(), accountType: 'regular', status: 'rejected' }]) {

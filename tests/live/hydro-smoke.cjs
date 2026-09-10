@@ -95,6 +95,64 @@ async function checkHomepage(request, label, expectHomework = false) {
   check(`homework ${expectHomework ? 'content' : 'empty state'} renders ${label}`,
     html.includes(expectHomework ? 'QA homework' : '暂无可查看的作业'));
 }
+async function checkHomepageFortune(request, label, verified) {
+  const result = await request('/', null, { html: true });
+  const html = result.body.raw || '';
+  check(`real checkin homepage section renders ${label}`, result.status === 200
+    && /Daily Fortune|今日运势/.test(html), `status ${result.status}`);
+  check(`real checkin homepage ${verified ? 'offers draw immediately' : 'requires approval'} ${label}`,
+    verified ? html.includes('action="/oi33/checkin"') && !/Verify realname to draw|完成实名认证后可抽取/.test(html)
+      : !html.includes('action="/oi33/checkin"') && /Verify realname to draw|完成实名认证后可抽取/.test(html));
+}
+async function checkPersonalFiles(db, actors) {
+  const { student, coach, admin, noFileCoach } = actors;
+  const beforeUsers = await db.collection('user').find({ _id: { $in: [2, 3, 4, 9] } })
+    .project({ _id: 1, _files: 1 }).sort({ _id: 1 }).toArray();
+  const beforeStorage = await db.collection('storage').countDocuments();
+  for (const [actor, label, allowed] of [[student, 'student', false], [coach, 'coach', true], [admin, 'administrator', true]]) {
+    const result = await actor('/file', null, { html: true });
+    const html = result.body.raw || '';
+    check(`real personal file page renders ${label}`, result.status === 200, `status ${result.status}`);
+    check(`real personal file page upload capability matches ${label}`, allowed
+      ? html.includes('name="upload_file"') && !html.includes('oi33-personal-upload-disabled')
+      : html.includes('oi33-personal-upload-disabled') && html.includes('title="没有权限"')
+        && /<button[^>]*\sdisabled\s[^>]*aria-disabled="true"/.test(html) && !html.includes('name="upload_file"'));
+    check(`personal file page is private no-store ${label}`, /no-store/.test(result.cache));
+  }
+  // No multipart payload or actual file is sent. For an authorized teacher,
+  // native ValidationError(file) proves the request reached core validation;
+  // students must be denied by our guard before that operation can run.
+  for (const operation of ['upload_file', 'uploadFile']) {
+    const result = await student('/file', { operation, filename: 'qa-not-uploaded.txt', role: 'coach', uid: '' });
+    check(`student cannot POST personal upload with operation ${operation}`, result.status === 403
+      && result.body.error?.name === 'ForbiddenError' && JSON.stringify(result.body.error).includes('没有权限'),
+    JSON.stringify(result.body.error));
+  }
+  for (const [actor, label] of [[coach, 'coach'], [admin, 'administrator']]) {
+    const result = await actor('/file', { operation: 'upload_file', filename: 'qa-not-uploaded.txt' });
+    check(`${label} upload reaches native missing-file validation without writing`, result.status === 403
+      && result.body.error?.name === 'ValidationError' && result.body.error.params?.length === 1
+      && result.body.error.params[0] === 'file',
+    JSON.stringify(result.body.error));
+  }
+  let result = await noFileCoach('/file', { operation: 'upload_file', filename: 'qa-not-uploaded.txt' });
+  check('teaching role does not grant missing native personal-upload privilege', result.status === 403
+    && result.body.error?.name === 'ForbiddenError', JSON.stringify(result.body.error));
+  // UID 4 really is a coach in the separate synthetic domain, but remains a
+  // student in system. A role loaded from a query/body domain cannot be borrowed.
+  for (const [route, form] of [
+    ['/file?domainId=qa_upload_other', { operation: 'upload_file', filename: 'qa-not-uploaded.txt' }],
+    ['/file', { operation: 'upload_file', filename: 'qa-not-uploaded.txt', domainId: 'qa_upload_other' }],
+  ]) {
+    result = await student(route, form);
+    check(`student cannot borrow another domain coach role through ${route.includes('?') ? 'query' : 'body'}`, result.status === 403
+      && result.body.error?.name === 'ForbiddenError', JSON.stringify(result.body.error));
+  }
+  const afterUsers = await db.collection('user').find({ _id: { $in: [2, 3, 4, 9] } })
+    .project({ _id: 1, _files: 1 }).sort({ _id: 1 }).toArray();
+  check('personal upload denial/native validation leave all fixture personal files unchanged',
+    JSON.stringify(beforeUsers) === JSON.stringify(afterUsers) && beforeStorage === await db.collection('storage').countDocuments());
+}
 function attribute(tag, name) {
   return tag.match(new RegExp(`\\b${name}="([^"]*)"`, 'i'))?.[1];
 }
@@ -413,24 +471,28 @@ const fs = require('fs');
 const { db, UserModel, DomainModel, ProblemModel, ContestModel, PRIV, PERM, SystemModel, SettingModel } = require('hydrooj');
 exports.apply = async function(ctx) {
   const base = ${JSON.stringify(root)};
-  for (const name of ['mobile-access', 'theme', 'enrollment', 'education', 'homework-access', 'account-batch', 'homepage', 'article']) await require(base + '/handler/' + name + '.ts').apply(ctx);
+  for (const name of ['mobile-access', 'theme', 'enrollment', 'education', 'homework-access', 'personal-files', 'account-batch', 'homepage', 'homepage-fortune', 'article']) await require(base + '/handler/' + name + '.ts').apply(ctx);
   if (!await DomainModel.get('system')) await DomainModel.add('system', 2, 'Isolated QA', 'Synthetic fixture only');
   const users = {};
-  for (const [name, uid, priv] of [['nobody',0,PRIV.PRIV_DEFAULT],['qa_admin',2,PRIV.PRIV_ALL],['qa_coach',3,PRIV.PRIV_DEFAULT],['qa_student',4,PRIV.PRIV_DEFAULT],['qa_outsider',5,PRIV.PRIV_DEFAULT],['qa_new',6,PRIV.PRIV_DEFAULT],['qa_other_coach',7,PRIV.PRIV_DEFAULT],['qa_power_student',8,PRIV.PRIV_DEFAULT]]) {
+  for (const [name, uid, priv] of [['nobody',0,PRIV.PRIV_DEFAULT],['qa_admin',2,PRIV.PRIV_ALL],['qa_coach',3,PRIV.PRIV_DEFAULT],['qa_student',4,PRIV.PRIV_DEFAULT],['qa_outsider',5,PRIV.PRIV_DEFAULT],['qa_new',6,PRIV.PRIV_DEFAULT],['qa_other_coach',7,PRIV.PRIV_DEFAULT],['qa_power_student',8,PRIV.PRIV_DEFAULT],['qa_coach_no_file',9,PRIV.PRIV_DEFAULT & ~PRIV.PRIV_CREATE_FILE]]) {
     users[name] = await UserModel.create(name + '@fixture.invalid', name, ${JSON.stringify(password)}, uid, '127.0.0.1', priv);
   }
   await DomainModel.addRole('system', 'coach', PERM.PERM_DEFAULT | PERM.PERM_CREATE_HOMEWORK | PERM.PERM_EDIT_HOMEWORK_SELF);
   await DomainModel.setUserRole('system', 3, 'coach', true);
   await DomainModel.setUserRole('system', 7, 'coach', true);
+  await DomainModel.setUserRole('system', 9, 'coach', true);
+  await DomainModel.add('qa_upload_other', 2, 'Isolated upload role QA', 'Synthetic cross-domain role fixture only');
+  await DomainModel.addRole('qa_upload_other', 'coach', PERM.PERM_DEFAULT);
+  await DomainModel.setUserRole('qa_upload_other', 4, 'coach', true);
   await DomainModel.addRole('system', 'qa_power_student', PERM.PERM_DEFAULT | PERM.PERM_VIEW_HIDDEN_HOMEWORK | PERM.PERM_VIEW_HIDDEN_CONTEST | PERM.PERM_VIEW_HOMEWORK_HIDDEN_SCOREBOARD);
   await DomainModel.setUserRole('system', 8, 'qa_power_student', true);
   await UserModel.setById(2, { timeZone: 'Pacific/Kiritimati' });
   await UserModel.setById(3, { timeZone: 'Pacific/Honolulu' });
-  for (const uid of [2,3,4,5,7,8]) await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: uid === 2 ? 3 : 1, realname_name: 'QA ' + uid });
+  for (const uid of [2,3,4,5,7,8,9]) await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: uid === 2 ? 3 : 1, realname_name: 'QA ' + uid });
   await UserModel.updateGroup('system', '基础班', [4]);
   await UserModel.updateGroup('system', '提高班', [4]);
   await UserModel.updateGroup('system', '仅教师可见班', []);
-  await SystemModel.set('hydrooj.homepage', ${JSON.stringify('- width: 9\n  contest: 5\n  training: 10\n- width: 3\n  ranking: 10\n')});
+  await SystemModel.set('hydrooj.homepage', ${JSON.stringify('- width: 9\n  contest: 5\n  training: 10\n- width: 3\n  checkin: true\n  ranking: 10\n')});
   const pid = await ProblemModel.add('system', 'QA1', 'QA problem', 'Synthetic fixture only', 2);
   const otherPid = await ProblemModel.add('system', 'QA2', 'QA unrelated problem', 'Synthetic fixture only', 2);
   await ProblemModel.addAdditionalFile('system', pid, 'qa-note.txt', Buffer.from('QA fixture statement attachment'), 2);
@@ -480,10 +542,13 @@ exports.apply = async function(ctx) {
   const fixtureData = JSON.parse(fs.readFileSync(ready, 'utf8'));
   await checkHomepage(session(), 'anonymous empty');
   const admin = session(); const coach = session(); const student = session(); const outsider = session(); const applicant = session();
-  const otherCoach = session(); const powerfulStudent = session();
+  const otherCoach = session(); const powerfulStudent = session(); const noFileCoach = session();
   await login(admin, 'qa_admin'); await login(coach, 'qa_coach'); await login(student, 'qa_student');
   await login(outsider, 'qa_outsider'); await login(applicant, 'qa_new');
   await login(otherCoach, 'qa_other_coach'); await login(powerfulStudent, 'qa_power_student');
+  await login(noFileCoach, 'qa_coach_no_file');
+  await checkPersonalFiles(db, { student, coach, admin, noFileCoach });
+  await checkHomepageFortune(student, 'legacy verified student', true);
   for (const route of ['/discuss', '/article/mine']) {
     const article = await admin(route, null, { html: true });
     const html = article.body.raw || '';
@@ -522,10 +587,12 @@ exports.apply = async function(ctx) {
   check('new applicant submits real enrollment over HTTP', result.status < 400, JSON.stringify(result.body));
   let doc = await db.collection('oi33_enrollment').findOne({ _id: 6 });
   check('enrollment persisted pending', doc?.status === 'pending' && doc.revision === 1);
+  await checkHomepageFortune(applicant, 'pending applicant', false);
   result = await admin('/oi33/enrollment/review', { uid: '6', revision: '1', action: 'approve' });
   check('administrator approves real application over HTTP', result.status < 400, JSON.stringify(result.body));
   doc = await db.collection('oi33_enrollment').findOne({ _id: 6 });
   check('enrollment persisted approved', doc?.status === 'approved' && doc.revision === 2);
+  await checkHomepageFortune(applicant, 'newly approved applicant in existing session', true);
   result = await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,6' });
   check('coach updates class membership over HTTP', result.status < 400, JSON.stringify(result.body));
   await homeworkDefaults(admin, 'administrator', 'Pacific/Kiritimati');

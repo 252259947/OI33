@@ -4,6 +4,9 @@ import { addLog } from './log';
 import { bioHashMatches } from './moderate';
 
 export const userColl = db.collection('oi33_user');
+// Read only the verification result, never private enrollment names or review notes.
+// Keep this collection reference local to avoid a circular import with enrollment.ts.
+const enrollmentIdentityColl = db.collection('oi33_enrollment');
 const catCanPoolCounterColl = db.collection('oi33_cat_can_pool');
 const catMapPlayerCleanupColl = db.collection('oi33_cat_map_player');
 
@@ -102,9 +105,21 @@ export async function backfillAllCatFood() {
 }
 
 export async function getUserDataByUids(uids: number[]): Promise<Record<number, Oi33User>> {
-    const docs = await userColl.find({ _id: { $in: uids } }).toArray();
+    if (!uids.length) return {};
+    const [docs, identities] = await Promise.all([
+        userColl.find({ _id: { $in: uids } }).toArray(),
+        enrollmentIdentityColl.find({ _id: { $in: uids } }).project({ _id: 1, status: 1 }).toArray(),
+    ]);
     const dict: Record<number, Oi33User> = {};
     for (const doc of docs) dict[doc._id] = doc;
+    for (const identity of identities) {
+        const current = dict[identity._id];
+        // A review verifies identity, not a teaching role. Existing manager flags
+        // remain independent; enabled/expiry/password/scope are enforced by enrollment.
+        if (Number(current?.realname_flag || 0) >= 2) continue;
+        dict[identity._id] = { ...current, _id: identity._id,
+            realname_flag: identity.status === 'approved' ? 1 : 0 };
+    }
     return dict;
 }
 
@@ -414,7 +429,7 @@ export async function doCheckin(userId: number, todayStr: string) {
 }
 
 export async function getCheckinUser(userId: number) {
-    return await userColl.findOne({ _id: userId });
+    return (await getUserDataByUids([userId]))[userId] || null;
 }
 
 // --- Combined users query ---

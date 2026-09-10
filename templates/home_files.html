@@ -1,0 +1,22 @@
+{% extends "layout/home_base.html" %}
+{% block home_content %}
+<div class="section">
+  <div class="section__header">
+    <h1 class="section__title">{{ _('Files') }}</h1>
+    <div class="section__tools">
+      {% if oi33CanUploadPersonalFiles %}
+      <button class="primary rounded button" type="button" name="upload_file">{{ _('Upload File') }}</button>
+      {% else %}
+      <span class="oi33-personal-upload-disabled" title="没有权限" tabindex="0" aria-label="上传文件：没有权限">
+        <button class="primary rounded button" type="button" disabled aria-disabled="true" aria-label="上传文件：没有权限">{{ _('Upload File') }}</button>
+      </span>
+      {% endif %}
+    </div>
+  </div>
+  {{ noscript_note.render() }}
+  {% include "partials/files.html" %}
+  <div class="section__body">
+    <button class="rounded button" name="remove_selected">{{ _('Remove Selected') }}</button>
+  </div>
+</div>
+{% endblock %}

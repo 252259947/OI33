@@ -1,10 +1,11 @@
-import { Context, UserModel, moment } from 'hydrooj';
+import { Context, UserModel } from 'hydrooj';
 import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { HomeHandler } from 'hydrooj/src/handler/home';
 import { RecordListHandler, RecordMainConnectionHandler } from 'hydrooj/src/handler/record';
 import { oi33Model } from '../model';
+import { apply as applyHomepageFortune } from './homepage-fortune';
 
 export function applyPatches(_ctx: Context) {
     // OI33 fields merged by mergeOi33Fields that should survive Hydro's JSON
@@ -159,24 +160,8 @@ export function applyPatches(_ctx: Context) {
         };
     }
 
-    // (c) HomeHandler.prototype.getCheckin — inject checkin data into homepage
-    HomeHandler.prototype.getCheckin = async function (domainId: string, payload: any) {
-        const today = moment().format('YYYY-MM-DD');
-        payload.luck_today = today;
-        if (this.user && this.user._id) {
-            const oi33User = await oi33Model.getCheckinUser(this.user._id);
-            payload.oi33_checkin_flag = oi33User ? (oi33User.realname_flag ?? 0) : 0;
-            if (oi33User && oi33User.checkin_time) {
-                payload.oi33_checkin = {
-                    time: oi33User.checkin_time,
-                    luck: oi33User.checkin_luck ?? 0,
-                    cnt_now: oi33User.checkin_cnt_now ?? 0,
-                    cnt_all: oi33User.checkin_cnt_all ?? 0,
-                };
-            }
-        }
-        return payload;
-    };
+    // (c) Request-owned homepage data, including boolean `checkin: true` settings.
+    applyHomepageFortune(_ctx);
 
     // (d) HomeHandler.prototype.getCountdown — inject countdown data into homepage
     HomeHandler.prototype.getCountdown = async function (domainId: string, payload: any) {
