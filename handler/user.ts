@@ -164,12 +164,6 @@ class CheckinHandler extends Handler {
             } catch (e) {
                 console.error('[oi33] checkin achievement evaluation failed:', e);
             }
-            const notification = result.cat_food_reward
-                ? this.translate('Check-in succeeded, cat food +{0}')
-                    .replace('{0}', oi33Model.formatCatFood(result.cat_food_reward))
-                : this.translate('Check-in succeeded');
-            this.response.redirect = this.url('homepage', { query: { notification } });
-            return;
         }
         this.response.redirect = this.url('homepage');
     }
