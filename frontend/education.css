@@ -33,4 +33,28 @@
 .oi33-homework-empty h2 { margin:0; font-size:18px; font-weight:600; color:var(--oi33-text,#182033); }
 .oi33-homework-empty p { margin:0; color:var(--oi33-text-2,#526078); line-height:1.7; }
 .oi33-homework-empty .button { margin:4px 0 0; }
+/* Keep the light palette, but pair dark text/surface tokens for teaching UI.
+   These small components otherwise inherit white text over fixed pale fills. */
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-members span,
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-stats div {
+  color:var(--oi33-text,#eef1f8); background:var(--oi33-surface-2,#202636);
+}
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-stats strong { color:var(--oi33-brand-strong,#b2b3ff); }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-stats span,
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-progress-table th small,
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-task p { color:var(--oi33-text-2,#b8c1d3); }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-progress-table td,
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-progress-table th { background:var(--oi33-surface,#1a1f2d); }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-notice,
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-class-picker label:has(input:checked) {
+  color:var(--oi33-text,#eef1f8); background:var(--oi33-brand-soft,#292b55);
+}
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-class-picker label { border-color:var(--oi33-line-strong,#444d65); }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-class-picker label:has(input:checked) { border-color:var(--oi33-brand,#8c8df4); }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-task { color:var(--oi33-text,#eef1f8); border-color:var(--oi33-line,#333b50); }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-task h2 { color:var(--oi33-text,#eef1f8); }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-task:hover,
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-task:focus-visible { background:var(--oi33-brand-soft,#292b55); }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-complete { color:var(--oi33-accent,#4fd0a1); }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-overdue { color:#ffd49b; background:#493321; }
 @media(max-width:700px) { .education-class-grid{grid-template-columns:1fr} .education-stats{grid-template-columns:repeat(3,minmax(0,1fr))} .education-task{align-items:flex-start} }

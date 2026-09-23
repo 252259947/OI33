@@ -47,6 +47,10 @@
 | 邮箱黑名单 | 屏蔽指定邮箱域名注册（含 OAuth 首次登录）与换绑邮箱，基于 Hydro 内核自带的黑名单检查 | `/oi33/admin/mail-blacklist` |
 | 未认证资产清理 | 一键销毁未认证用户的猫粮（记管理员扣除）、罐头回流储备池、小猫移出猫猫广场、清空大猫贡献（含历史投喂记录） | `/oi33/admin` |
 
+## 教学页面主题
+
+班型成员标签、完成情况统计、提示条和作业交互区域支持亮色及暗色主题。暗色主题同时兼容 Hydro 的 `theme--dark` 和 `data-mantine-color-scheme="dark"` 标记，使用成对的文字/背景颜色，避免白底白字；亮色配色保持不变。`tests/education-theme.test.cjs` 提供样式回归检查，设置 `OI33_LAYOUT_TEST=1` 并安装 Playwright/Chrome 后可验证实际渲染对比度和两种 CSS 加载顺序。
+
 ## 数据库
 
 新插件使用 `oi33_*` 前缀的集合，与 Hydro 核心的 `user` 集合解耦：
