@@ -51,6 +51,8 @@
 
 班型成员标签、完成情况统计、提示条和作业交互区域支持亮色及暗色主题。暗色主题同时兼容 Hydro 的 `theme--dark` 和 `data-mantine-color-scheme="dark"` 标记，使用成对的文字/背景颜色，避免白底白字；亮色配色保持不变。`tests/education-theme.test.cjs` 提供样式回归检查，设置 `OI33_LAYOUT_TEST=1` 并安装 Playwright/Chrome 后可验证实际渲染对比度和两种 CSS 加载顺序。
 
+“确认授权”页面的密码标签、密码圆点及两步验证码也使用成对主题配色，覆盖聚焦、失焦及浏览器自动填充状态；保留 Hydro 原生验证模板、密码遮蔽和验证时限。对应浏览器回归检查为 `tests/sudo-theme.test.cjs`，同样通过 `OI33_LAYOUT_TEST=1` 启用。
+
 ## 数据库
 
 新插件使用 `oi33_*` 前缀的集合，与 Hydro 核心的 `user` 集合解耦：

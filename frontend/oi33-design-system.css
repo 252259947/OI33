@@ -887,6 +887,36 @@ table {
 }
 
 /* Authentication */
+/* Sudo keeps Hydro's native immersive form and password/TFA controls. Its
+   inverse (white/yellow) text must not sit on our themed textbox surface. */
+.page--user_sudo label.textbox.material.inverse {
+  color: var(--oi33-text-2);
+  background: var(--oi33-surface);
+}
+
+.page--user_sudo label.textbox.material.inverse.focus,
+.page--user_sudo label.textbox.material.inverse:focus-within {
+  color: var(--oi33-brand-strong);
+}
+
+.page--user_sudo label.textbox.material.inverse input {
+  color: var(--oi33-text);
+  -webkit-text-fill-color: var(--oi33-text);
+  caret-color: var(--oi33-text);
+  background: transparent;
+  border-color: var(--oi33-line-strong);
+}
+
+.page--user_sudo label.textbox.material.inverse input:enabled:read-write:hover,
+.page--user_sudo label.textbox.material.inverse input:enabled:read-write:focus {
+  border-color: var(--oi33-brand);
+}
+
+.page--user_sudo label.textbox.material.inverse input:is(:autofill, :-webkit-autofill) {
+  -webkit-text-fill-color: var(--oi33-text);
+  box-shadow: 0 0 0 1000px var(--oi33-surface) inset;
+}
+
 .page--user_login body,
 .page--user_register body,
 .page--user_register_with_code body {
