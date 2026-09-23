@@ -8,7 +8,7 @@
         <h1>训练计划</h1>
         <p>按章节循序练习，把每一次完成都变成看得见的进步。</p>
       </div>
-      {% if handler.user.hasPerm(perm.PERM_CREATE_TRAINING) %}
+      {% if oi33CanCreateTraining %}
         <a href="{{ url('training_create') }}" class="primary button oi33-training-head__action">
           <span class="icon icon-add" aria-hidden="true"></span> {{ _('New Training Plan') }}
         </a>

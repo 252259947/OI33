@@ -7,7 +7,7 @@
       <a href="{{ url('training_main') }}" class="primary button">清除搜索</a>
     {% else %}
       <h2>这里还没有训练计划</h2>
-      {% if handler.user.hasPerm(perm.PERM_CREATE_TRAINING) %}
+      {% if oi33CanCreateTraining %}
         <p>创建第一个计划，把一组题组织成清晰的学习路径。</p>
         <a href="{{ url('training_create') }}" class="primary button">{{ _('New Training Plan') }}</a>
       {% else %}
