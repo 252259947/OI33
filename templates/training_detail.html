@@ -117,10 +117,10 @@
           </form>
           <ol class="enroll_user_menu oi33-training-member-list">
             {%- for uid, member in udict -%}
-              <li class="enroll_user_menu_item" data-uid="{{ uid }}" data-uname="{{ member.uname }}"{% if handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and member.displayName %} data-displayname="{{ member.displayName }}"{% endif %}>
+              <li class="enroll_user_menu_item" data-uid="{{ uid }}" data-uname="{{ member.uname }}"{% if oi33TrainingNames[uid] %} data-displayname="{{ oi33TrainingNames[uid] }}"{% elif handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and member.displayName %} data-displayname="{{ member.displayName }}"{% endif %}>
                 <a href="./{{ tdoc._id }}?uid={{ uid }}" class="{% if (handler.request.query.uid or handler.user._id) == uid %}active{% endif %}">
                   <img class="small user-profile-avatar v-center" loading="lazy" src="{{ avatarUrl(member.avatar|default('')) }}" width="24" height="24" alt="">
-                  <span>{% if handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and member.displayName and member.displayName != member.uname %}{{ member.displayName }} ({{ member.uname }}){% else %}{{ member.uname }}{% endif %}</span>
+                  <span>{% if oi33TrainingNames[uid] %}{{ oi33TrainingNames[uid] }}{% elif handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and member.displayName and member.displayName != member.uname %}{{ member.displayName }} ({{ member.uname }}){% else %}{{ member.uname }}{% endif %}</span>
                 </a>
               </li>
             {%- endfor -%}

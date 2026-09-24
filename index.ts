@@ -28,6 +28,7 @@ import { apply as applyEducation } from './handler/education';
 import { apply as applyHomeworkAccess } from './handler/homework-access';
 import { apply as applyPersonalFiles } from './handler/personal-files';
 import { apply as applyTrainingAccess } from './handler/training-access';
+import { apply as applyScoreboardIdentity } from './handler/scoreboard-identity';
 import { apply as applyMobileAccess } from './handler/mobile-access';
 import { apply as applyAccountBatch } from './handler/account-batch';
 import { backfillAllCatFood } from './model/user';
@@ -84,6 +85,7 @@ export async function apply(ctx: Context) {
     applyHomeworkAccess(ctx);
     applyPersonalFiles(ctx);
     applyTrainingAccess(ctx);
+    applyScoreboardIdentity(ctx);
     await applyAccountBatch(ctx);
     applyHomepage(ctx);
     ctx.injectUI('UserDropdown', 'oi33_admin', {

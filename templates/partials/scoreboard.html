@@ -7,7 +7,7 @@
   {% if canView %}</a>{% endif %}
 {% endmacro %}
 
-<div data-fragment-id="scoreboard">
+<div data-fragment-id="scoreboard" class="oi33-scoreboard">
   {% if model.contest.isLocked(tdoc) %}
   <div class="section__body no-padding">
     <blockquote class="note">
@@ -63,7 +63,7 @@
                   data-tooltip="{{ _('Star') }}"></span></span>
               <span class="starred--show"><span class="icon icon-star" data-tooltip="{{ _('Unstar') }}"></span></span>
             </button>
-            {{ user.render_inline(udict[column.raw], badge=false) }}
+            {{ user.render_inline(udict[column.raw], badge=false, display_name=column.oi33RealName) }}
 
             {%- elif column.type == 'record' and column.raw -%}
             {{ renderRecord(column, canView) }}
