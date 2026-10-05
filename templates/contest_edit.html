@@ -4,6 +4,13 @@
   <div class="medium-9 columns">
     <div class="section">
       <form method="post">
+        <input type="hidden" name="csrfToken" value="{{ csrfToken }}">
+        {% if oi33CopyFrom %}
+        <input type="hidden" name="copyFrom" value="{{ oi33CopyFrom }}">
+        <div class="section__body typo">
+          <p>已复制比赛配置，请确认并调整比赛时间后创建。参赛记录和成绩不会复制；比赛附件需重新上传，描述中的附件引用也请检查。</p>
+        </div>
+        {% endif %}
         <div class="section__header">
           <h2 class="section__title">{{ _('Basic Info') }}</h2>
         </div>
@@ -29,20 +36,20 @@
           </div>
           <div class="row">
             {{ form.form_text({
-              columns:3,
+              columns:2,
               label:'Begin Date',
               name:'beginAtDate',
               placeholder:'YYYY-mm-dd',
-              value:beginAt.format('YYYY-M-D'),
+              value:beginAt.format('YYYY-MM-DD'),
               date:true,
               row:false
             }) }}
             {{ form.form_text({
-              columns:3,
+              columns:2,
               label:'Begin Time',
               name:'beginAtTime',
               placeholder:'HH:MM',
-              value:beginAt.format('H:mm'),
+              value:beginAt.format('HH:mm'),
               time:true,
               row:false
             }) }}
@@ -54,12 +61,23 @@
               row:false
             }) }}
             {{ form.form_text({
-              columns:4,
+              columns:3,
+              label:'End Date',
+              name:'oi33EndAtDate',
+              placeholder:'YYYY-mm-dd',
+              value:oi33EndAtDate,
+              date:true,
+              required:true,
+              row:false
+            }) }}
+            {{ form.form_text({
+              columns:3,
               label:'End Time',
-              name:'endAt',
-              placeholder:'YYYY-mm-dd HH:MM',
-              value:beginAt.add(duration, 'hours').format('YYYY-M-D HH:mm'),
-              disabled:true,
+              name:'oi33EndAtTime',
+              placeholder:'HH:MM',
+              value:oi33EndAtTime,
+              time:true,
+              required:true,
               row:false
             }) }}
           </div>
@@ -216,9 +234,9 @@
                 <button name="operation" value="update" type="submit" class="rounded primary button">
                   {{ _('Update') }}
                 </button>
-                <button name="operation" value="update" type="submit" formaction="{{ url('contest_create') }}" class="rounded button">
-                  {{ _('Clone') }}
-                </button>
+                {% if handler.user.hasPerm(perm.PERM_CREATE_CONTEST) %}
+                <a href="{{ url('contest_create', query={copyFrom:tdoc.docId}) }}" class="rounded button">复制比赛</a>
+                {% endif %}
                 {% if handler.user.own(tdoc) or handler.user.hasPerm(perm.PERM_EDIT_CONTEST) %}
                   <button name="operation" value="delete" type="submit" class="rounded button">
                     {{ _('Delete') }}
@@ -239,7 +257,7 @@
     </div>
   </div>
   <div class="medium-3 columns">
-    {% if tdoc %}
+    {% if tdoc.docId and page_name == 'contest_edit' %}
     <div class="section side">
       <div class="section__header">
         <h1 class="section__title">{{ _('Files') }}</h1>

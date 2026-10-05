@@ -21,6 +21,7 @@ import { apply as applyAchievement } from './handler/achievement';
 import { apply as applyAuction } from './handler/auction';
 import { apply as applyContract } from './handler/contract';
 import { apply as applyContest } from './handler/contest';
+import { apply as applyContestEditor } from './handler/contest-editor';
 import { apply as applyTheme } from './handler/theme';
 import { apply as applyHomepage } from './handler/homepage';
 import { apply as applyEnrollment } from './handler/enrollment';
@@ -113,6 +114,7 @@ export async function apply(ctx: Context) {
     await applyAuction(ctx);
     await applyContract(ctx);
     await applyContest(ctx);
+    applyContestEditor(ctx);
     if (!process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === '0') {
         ctx.on('app/started', async () => {
             try {

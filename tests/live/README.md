@@ -54,3 +54,14 @@ NODE_PATH=/usr/local/share/.config/yarn/global/node_modules \
 - 真实匿名 `/websocket` 连接携带登录凭据订阅消息：正常已核验用户保留订阅能力，临时账号和停用账号被拒绝；测试不发送任何站内消息。
 
 此测试只向随机隔离数据库写入合成提交记录，不启用评测机、不证明真实程序评测可用；也不替代对完整 OI33 插件组合、升级迁移、生产权限配置、已订阅连接的出站事件拦截及其他 WebSocket 行为的验证。
+
+## 比赛复制与结束时间
+
+`contest-editor.cjs` 是较小的独立测试，沿用上述端口隔离规则，创建独立随机 profile 和合成数据。运行方式：
+
+```sh
+NODE_PATH=/usr/local/share/.config/yarn/global/node_modules \
+  /root/.nix-profile/bin/node tests/live/contest-editor.cjs
+```
+
+验证复制 GET 不写库、创建与源比赛编辑权限、域/作业/编号注入拒绝、复制后的新编号及主持人、权限和题目分值配置、并发复制隔离、原参赛状态及记录不变，以及可编辑结束时间的实际保存、无效时间拒绝、旧时长接口与原生作业兼容。附件不复制，复制表单提示重新上传并检查内容引用。不会撤销选手主动提前结束，也不修改 OC 既有的历史 `late` 标记机制。

@@ -90,6 +90,11 @@
       <li class="menu__item"><a class="menu__link" href="{{ url('contest_edit', tid=tdoc.docId) }}">
         <span class="icon icon-edit"></span> {{ _('Edit Contest') }}
       </a></li>
+      {% if handler.user.hasPerm(perm.PERM_CREATE_CONTEST) and ((handler.user.own(tdoc) and handler.user.hasPerm(perm.PERM_EDIT_CONTEST_SELF)) or (not handler.user.own(tdoc) and handler.user.hasPerm(perm.PERM_EDIT_CONTEST))) %}
+      <li class="menu__item"><a class="menu__link" href="{{ url('contest_create', query={copyFrom:tdoc.docId}) }}">
+        <span class="icon icon-copy"></span> 复制比赛
+      </a></li>
+      {% endif %}
       <li class="menu__item"><a class="menu__link" href="{{ url('contest_manage', tid=tdoc.docId) }}">
         <span class="icon icon-settings"></span> {{ _('Contest Management') }}
       </a></li>
