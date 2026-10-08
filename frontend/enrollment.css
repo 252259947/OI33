@@ -19,7 +19,9 @@
 .oi33-enrollment__status-filter { flex: 0 1 260px; min-width: 180px; }
 .oi33-enrollment__name-filter { display: flex; flex: 1 1 360px; min-width: 0; gap: 12px; align-items: flex-end; }
 .oi33-enrollment__name-filter label { flex: 1; min-width: 0; }
-.oi33-enrollment__name-filter .button { flex: 0 0 88px; min-height: 44px; }
+.oi33-enrollment .oi33-enrollment__review-filters :is(input.textbox, select.select) { color: var(--oi33-text, #182033); -webkit-text-fill-color: var(--oi33-text, #182033); background-color: var(--oi33-surface, #fff); }
+.oi33-enrollment .oi33-enrollment__name-filter > .button { display: inline-flex; flex: 0 0 88px; justify-content: center; align-items: center; min-height: 44px; height: auto; margin: 0; color: #fff; -webkit-text-fill-color: #fff; }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .oi33-enrollment .oi33-enrollment__name-filter > .button { color: #182033; -webkit-text-fill-color: #182033; }
 .oi33-enrollment__filter-count { flex: none; padding-bottom: 10px; }
 .oi33-enrollment__filter-hint { margin: 12px 0 0; }
 .oi33-enrollment__history { margin-top: 20px; font-size: 13px; line-height: 1.8; }

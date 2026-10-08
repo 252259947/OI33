@@ -161,3 +161,46 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('real Chrome GET forms: immediate
         assert.equal(await page.locator('img').count(), 0);
     } finally { await browser.close(); }
 });
+
+if (process.env.OI33_LAYOUT_TEST === '1') test('desktop review filters align and stay readable in both themes and core CSS load orders', async () => {
+    const { chromium } = require('playwright');
+    const theme = fs.readFileSync(path.join(root, 'node_modules/@hydrooj/ui-default/public/theme-4.58.4.css'), 'utf8');
+    const custom = ['frontend/oi33-design-system.css', 'frontend/enrollment.css']
+        .map((file) => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
+    const fixture = render({ filterStatus: 'approved', filterName: '测试学生', total: 100 });
+    const browser = await chromium.launch({ channel: 'chrome', headless: true });
+    try {
+        const page = await browser.newPage();
+        for (const [order, sheet] of [['core-first', theme + custom], ['core-last', custom + theme]]) {
+            for (const mode of ['', 'class="theme--dark"', 'data-mantine-color-scheme="dark"']) {
+                for (const width of [1024, 1440]) {
+                    await page.setViewportSize({ width, height: 980 });
+                    await page.setContent(`<!doctype html><html ${mode}><head><meta charset="utf-8"><style>${sheet}</style></head><body><main class="main">${fixture}</main></body></html>`);
+                    const result = await page.evaluate(() => {
+                        const luminance = (color) => color.match(/[\d.]+/g).slice(0, 3).map(Number).map((v) => v / 255)
+                            .map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4)
+                            .reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+                        const controls = ['form[data-enrollment-status-filter] select', 'form[data-enrollment-name-filter] input[name=name]',
+                            'form[data-enrollment-name-filter] button'].map((selector) => {
+                            const element = document.querySelector(selector), style = getComputedStyle(element);
+                            const rect = element.getBoundingClientRect();
+                            let parent = element;
+                            while (parent.parentElement && getComputedStyle(parent).backgroundColor === 'rgba(0, 0, 0, 0)') parent = parent.parentElement;
+                            const foreground = style.webkitTextFillColor || style.color, background = getComputedStyle(parent).backgroundColor;
+                            const [lo, hi] = [luminance(foreground), luminance(background)].sort((a, b) => a - b);
+                            return { x: rect.x, y: rect.y, right: rect.right, height: rect.height, contrast: (hi + .05) / (lo + .05) };
+                        });
+                        return { scrollWidth: document.documentElement.scrollWidth, controls };
+                    });
+                    const details = JSON.stringify({ order, mode, width, ...result });
+                    assert.ok(result.scrollWidth <= width + 1, `No horizontal overflow: ${details}`);
+                    for (const control of result.controls) {
+                        assert.ok(control.x >= 0 && control.right <= width && control.height >= 42, `Controls not clipped: ${details}`);
+                        assert.ok(Math.abs(control.y - result.controls[0].y) < 1, `Filters share one row: ${details}`);
+                        assert.ok(control.contrast >= 4.5, `Filter text contrast: ${details}`);
+                    }
+                }
+            }
+        }
+    } finally { await browser.close(); }
+});
