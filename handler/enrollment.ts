@@ -235,15 +235,28 @@ export class Oi33EnrollmentReviewHandler extends Handler {
     async get() {
         assertEducationAdmin(this.user);
         privateResponse(this);
-        const page = Math.max(1, Math.min(10000, Number.parseInt(this.args.page, 10) || 1));
+        const requestedPage = Math.max(1, Math.min(10000, Number.parseInt(this.args.page, 10) || 1));
+        const rawName = this.args.name ?? '';
+        if (typeof rawName !== 'string' || rawName.length > 160 || /[\u0000-\u001f\u007f]/.test(rawName)) {
+            throw new ValidationError('name', '请填写有效的学生姓名。');
+        }
+        const filterName = rawName.trim();
+        if (filterName.length > 80) throw new ValidationError('name', '姓名最多 80 字。');
+        // Merge the non-approved views only; never change the stored review
+        // decision or hide pending applications that still need a human.
+        const filterStatus = this.args.status === 'approved' ? 'approved'
+            : ['unapproved', 'pending', 'rejected'].includes(this.args.status) ? 'unapproved' : '';
         const filter: any = { domainId: domainOf(this) };
-        if (['pending', 'approved', 'rejected'].includes(this.args.status)) filter.status = this.args.status;
-        if (/^\d+$/.test(String(this.args.uid || ''))) filter._id = Number(this.args.uid);
+        if (filterStatus === 'approved') filter.status = 'approved';
+        else if (filterStatus === 'unapproved') filter.status = { $in: ['pending', 'rejected'] };
+        // Literal substring search, not user-supplied regex or a UID lookup.
+        if (filterName) filter.realName = new RegExp(filterName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
         const total = await enrollmentColl.countDocuments(filter);
-        const enrollments = await enrollmentColl.find(filter).sort({ updatedAt: -1 }).skip((page - 1) * 30).limit(30).toArray();
+        const pages = Math.max(1, Math.ceil(total / 30));
+        const page = Math.min(requestedPage, pages);
+        const enrollments = await enrollmentColl.find(filter).sort({ updatedAt: -1, _id: -1 }).skip((page - 1) * 30).limit(30).toArray();
         this.response.template = 'oi33_enrollment_review.html';
-        this.response.body = { enrollments, page, pages: Math.ceil(total / 30), total,
-            filterStatus: filter.status || '', filterUid: this.args.uid || '' };
+        this.response.body = { enrollments, page, pages, total, filterStatus, filterName };
     }
 
     @param('uid', Types.UnsignedInt)
@@ -269,7 +282,7 @@ export class Oi33EnrollmentReviewHandler extends Handler {
                     validUntil ? { validUntil: new Date(validUntil) } : {});
             } else throw new Error('操作无效。');
         } catch (e: any) { throw new ValidationError('enrollment', e.message); }
-        this.response.redirect = this.url('oi33_enrollment_review', { query: { uid } });
+        this.response.redirect = this.url('oi33_enrollment_review', { query: { name: target.realName } });
     }
 }
 

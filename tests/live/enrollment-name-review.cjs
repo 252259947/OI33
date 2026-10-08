@@ -251,6 +251,56 @@ async function verify(db, ids) {
   const auditLogs = JSON.stringify(await db.collection('oi33_log').find({}).toArray());
   check('public-style audit records exclude private enrollment fields', !auditLogs.includes(privateSchool)
     && !auditLogs.includes(privateStudentId) && !auditLogs.includes(privateGroup) && !auditLogs.includes('张明'));
+
+  // Exercise the new filters through the real admin route and Mongo driver.
+  result = await actors.admin('/oi33/enrollment/review', {
+    uid: String(ids.review), revision: String((await enrollment('review')).revision),
+    action: 'reject', reason: 'Synthetic filter regression',
+  });
+  check('manual review returns to a name search, not the removed UID filter', result.status < 400
+    && /name=/.test(result.location || result.body.url || '')
+    && !/[?&]uid=/.test(result.location || result.body.url || ''));
+  await db.collection('oi33_enrollment').insertMany([
+    { _id: 9001, domainId: 'system', realName: '张.*同学', status: 'pending', enabled: true, updatedAt: new Date() },
+    { _id: 9002, domainId: 'other-domain', realName: '张明', status: 'approved', enabled: true, updatedAt: new Date() },
+  ]);
+  const filterSnapshot = await db.collection('oi33_enrollment').find({}).sort({ _id: 1 }).toArray();
+  const inDomain = filterSnapshot.filter((entry) => entry.domainId === 'system');
+  const approvedCount = inDomain.filter((entry) => entry.status === 'approved').length;
+  result = await actors.admin('/oi33/enrollment/review');
+  check('default review queue lists all current-domain applications without cross-domain data', result.status === 200
+    && result.body.total === inDomain.length && result.body.filterStatus === ''
+    && result.body.enrollments.every((entry) => entry.domainId === 'system') && /no-store/.test(result.cache));
+  result = await actors.admin('/oi33/enrollment/review?status=approved');
+  check('approved filter selects only approved applications', result.status === 200
+    && result.body.total === approvedCount && result.body.enrollments.every((entry) => entry.status === 'approved'));
+  for (const status of ['unapproved', 'pending', 'rejected']) {
+    result = await actors.admin(`/oi33/enrollment/review?status=${status}`);
+    check(`non-approved view retains pending and rejected records for ${status}`, result.status === 200
+      && result.body.filterStatus === 'unapproved' && result.body.total === inDomain.length - approvedCount
+      && result.body.enrollments.some((entry) => entry.status === 'pending')
+      && result.body.enrollments.some((entry) => entry.status === 'rejected'));
+  }
+  result = await actors.admin(`/oi33/enrollment/review?name=${encodeURIComponent(' 张 ')}&uid=9999&page=9999`);
+  check('student name is a trimmed substring search and removed UID has no effect', result.status === 200
+    && result.body.filterName === '张' && result.body.total === 2 && result.body.page === 1
+    && result.body.enrollments.every((entry) => entry.realName.includes('张')));
+  result = await actors.admin('/oi33/enrollment/review?name=.*');
+  check('real Mongo name search treats regex metacharacters literally', result.status === 200
+    && result.body.total === 1 && result.body.enrollments[0]._id === 9001);
+  result = await actors.admin(`/oi33/enrollment/review?status=approved&name=${encodeURIComponent('张明')}`);
+  check('name search combines with status', result.status === 200 && result.body.total === 1
+    && result.body.enrollments[0]._id === ids.normal);
+  result = await actors.admin('/oi33/enrollment/review?name=%00');
+  check('malformed name filter is rejected', rejected(result));
+  result = await actors.admin('/oi33/enrollment/review?status=unapproved', null, true);
+  const filterHtml = result.body.raw || '';
+  check('actual review template has separate immediate status and text-name forms', result.status === 200
+    && filterHtml.includes('data-enrollment-status-filter') && filterHtml.includes('data-enrollment-name-filter')
+    && filterHtml.includes('type="text" name="name"') && !filterHtml.includes('type="number" name="uid"')
+    && !filterHtml.includes('<option value="pending"') && filterHtml.includes('审核未通过'));
+  check('review GET filters never change enrollment decisions or revisions',
+    same(filterSnapshot, await db.collection('oi33_enrollment').find({}).sort({ _id: 1 }).toArray()));
 }
 
 async function main() {

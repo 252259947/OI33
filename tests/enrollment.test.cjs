@@ -32,6 +32,7 @@ class FakeObjectId {
 }
 const copy = (v) => {
     if (v instanceof Date) return new Date(v);
+    if (v instanceof RegExp) return new RegExp(v.source, v.flags);
     if (v instanceof FakeObjectId) return new FakeObjectId(v.toString());
     if (Array.isArray(v)) return v.map(copy);
     if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, value]) => [k, copy(value)]));
@@ -45,6 +46,7 @@ function matches(doc, query) {
     return Object.entries(query).every(([key, value]) => {
         if (key === '$or') return value.some((q) => matches(doc, q));
         if (key === '$and') return value.every((q) => matches(doc, q));
+        if (value instanceof RegExp) return typeof doc[key] === 'string' && value.test(doc[key]);
         if (value && typeof value === 'object' && !(value instanceof Date) && !(value instanceof FakeObjectId)) {
             return Object.entries(value).every(([op, arg]) => {
                 if (op === '$in') return arg.includes(doc[key]);
@@ -867,6 +869,133 @@ test('review endpoint rejects ordinary students, cross-domain targets, self-mana
     req.user._id = 1;
     await h.collection('core_user').insertOne({ _id: 10, role: 'root' });
     await assert.rejects(h.api.Oi33EnrollmentReviewHandler.prototype.post.call(req, 'system', 10, 1, 'disable'), /撤销管理员/);
+});
+
+async function reviewList(h, args = {}, role = 'root') {
+    const req = h.handler('Oi33EnrollmentReview', 'get', args, 1);
+    req.user.role = role;
+    await h.api.Oi33EnrollmentReviewHandler.prototype.get.call(req);
+    return req;
+}
+
+async function seedReviewList(h) {
+    const items = [
+        { _id: 10, status: 'approved', realName: '张三' },
+        { _id: 11, status: 'pending', realName: '张小三' },
+        { _id: 12, status: 'rejected', realName: '李四' },
+        { _id: 13, status: 'approved', realName: 'Alice Smith', enabled: false },
+        { _id: 14, status: 'pending', realName: '张三', domainId: 'other' },
+    ];
+    for (const item of items) await h.collection('oi33_enrollment').insertOne({
+        domainId: 'system', enabled: true, accountType: 'regular', revision: 1, ...item,
+    });
+}
+
+test('review list defaults to all current-domain profiles, ignores old UID filters and remains private', async () => {
+    const h = harness();
+    await seedReviewList(h);
+    const before = copy(h.collection('oi33_enrollment').docs);
+    for (const args of [{}, { uid: 10 }, { uid: { $ne: null } }, { status: 'not-a-status' }, { status: ['approved'] }]) {
+        const req = await reviewList(h, args);
+        assert.equal(req.response.template, 'oi33_enrollment_review.html');
+        assert.equal(req.headers['Cache-Control'], 'private, no-store');
+        assert.equal(req.response.body.filterStatus, '');
+        assert.equal(req.response.body.filterName, '');
+        assert.equal(req.response.body.total, 4);
+        assert.deepEqual(req.response.body.enrollments.map((entry) => entry._id), [10, 11, 12, 13]);
+        assert.ok(!Object.hasOwn(req.response.body, 'filterUid'));
+    }
+    assert.deepEqual(h.collection('oi33_enrollment').docs, before, 'GET filters cannot change review decisions');
+    await assert.rejects(reviewList(h, {}, 'default'), /admin required/);
+});
+
+test('review status views distinguish approved from all unapproved and accept legacy bookmarked states', async () => {
+    const h = harness();
+    await seedReviewList(h);
+    const approved = (await reviewList(h, { status: 'approved' })).response.body;
+    assert.equal(approved.filterStatus, 'approved');
+    assert.deepEqual(approved.enrollments.map((entry) => entry._id), [10, 13]);
+    for (const status of ['unapproved', 'pending', 'rejected']) {
+        const result = (await reviewList(h, { status })).response.body;
+        assert.equal(result.filterStatus, 'unapproved');
+        assert.deepEqual(result.enrollments.map((entry) => entry._id), [11, 12]);
+        assert.deepEqual(result.enrollments.map((entry) => entry.status), ['pending', 'rejected']);
+    }
+});
+
+test('review name search uses normalized literal real-name substring, case-insensitively, intersected with status', async () => {
+    const h = harness();
+    await seedReviewList(h);
+    const query = (args) => reviewList(h, args).then((req) => req.response.body);
+    assert.deepEqual((await query({ name: ' 张 ' })).enrollments.map((entry) => entry._id), [10, 11]);
+    assert.equal((await query({ name: ' 张 ' })).filterName, '张');
+    assert.deepEqual((await query({ name: 'aLiCe' })).enrollments.map((entry) => entry._id), [13]);
+    assert.deepEqual((await query({ name: '张', status: 'approved' })).enrollments.map((entry) => entry._id), [10]);
+    assert.deepEqual((await query({ name: '张', status: 'unapproved' })).enrollments.map((entry) => entry._id), [11]);
+    assert.equal((await query({ name: '10' })).total, 0, 'names must not be interpreted as UIDs');
+    assert.equal((await query({ name: '   ' })).total, 4);
+    assert.equal((await query({ name: '不存在' })).total, 0);
+});
+
+test('review name regex metacharacters are escaped and cannot broaden searches or execute queries', async () => {
+    const h = harness();
+    await seedReviewList(h);
+    const literal = 'A.*+?^${}()|[]\\B';
+    await h.collection('oi33_enrollment').insertOne({ _id: 20, domainId: 'system', status: 'approved', realName: literal });
+    for (const name of ['.*', '+', '?', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\', literal]) {
+        const req = await reviewList(h, { name });
+        assert.deepEqual(req.response.body.enrollments.map((entry) => entry._id), [20], `Literal search: ${name}`);
+    }
+    for (const name of ['$ne', '<script>', '(a+)+$', '.*|张']) {
+        assert.equal((await reviewList(h, { name })).response.body.total, 0);
+    }
+});
+
+test('review name rejects non-string, control characters and oversized input before querying profiles', async () => {
+    const h = harness();
+    await seedReviewList(h);
+    const collection = h.collection('oi33_enrollment');
+    let queries = 0;
+    const countDocuments = collection.countDocuments.bind(collection);
+    collection.countDocuments = (...args) => { queries++; return countDocuments(...args); };
+    for (const name of [['张三'], { $regex: '.*' }, { $ne: '' }, 10, true, 'x'.repeat(81), ' '.repeat(161),
+        '张\u0000三', '张\n三', '张\r三', '张\t三', '张\u001f三', '张\u007f三']) {
+        await assert.rejects(reviewList(h, { name }), (error) => error instanceof h.ValidationError && error.field === 'name');
+    }
+    assert.equal(queries, 0);
+    const boundary = `${' '.repeat(40)}${'名'.repeat(80)}${' '.repeat(40)}`;
+    assert.equal((await reviewList(h, { name: boundary })).response.body.filterName, '名'.repeat(80));
+});
+
+test('review pagination is clamped to real results, 30 profiles per page, with a valid empty page', async () => {
+    const h = harness();
+    const empty = (await reviewList(h, { page: '99999' })).response.body;
+    assert.deepEqual([empty.page, empty.pages, empty.total, empty.enrollments.length], [1, 1, 0, 0]);
+    for (let uid = 100; uid < 165; uid++) {
+        await h.collection('oi33_enrollment').insertOne({ _id: uid, domainId: 'system', status: 'approved', realName: '学生' });
+    }
+    const first = (await reviewList(h, { status: 'approved', name: '学生' })).response.body;
+    assert.deepEqual([first.page, first.pages, first.total, first.enrollments.length], [1, 3, 65, 30]);
+    const second = (await reviewList(h, { status: 'approved', name: '学生', page: '2' })).response.body;
+    assert.deepEqual([second.page, second.pages, second.total, second.enrollments.length], [2, 3, 65, 30]);
+    assert.ok(second.enrollments.every((item) => !first.enrollments.some((entry) => entry._id === item._id)));
+    const last = (await reviewList(h, { page: '99999' })).response.body;
+    assert.deepEqual([last.page, last.pages, last.total, last.enrollments.length], [3, 3, 65, 5]);
+    for (const page of ['0', '-3', 'bad']) assert.equal((await reviewList(h, { page })).response.body.page, 1);
+    assert.equal((await reviewList(h, { name: '不存在', page: '2' })).response.body.page, 1);
+});
+
+test('review POST returns to the affected student by real name instead of the removed UID filter', async () => {
+    const h = harness();
+    await h.model.submitEnrollment(10, 'system', { realName: '张三' }, 0);
+    const req = h.handler('Oi33EnrollmentReview', 'post', {}, 1);
+    req.user.role = 'root';
+    const urls = [];
+    req.url = (...args) => { urls.push(args); return '/oi33/enrollment/review?name=student'; };
+    await h.api.Oi33EnrollmentReviewHandler.prototype.post.call(req, 'system', 10, 1, 'approve');
+    assert.deepEqual(urls, [['oi33_enrollment_review', { query: { name: '张三' } }]]);
+    assert.equal(req.response.redirect, '/oi33/enrollment/review?name=student');
+    assert.equal((await h.model.getEnrollment(10)).status, 'approved');
 });
 
 test('private profile uses no-store and legacy request model cannot modify realname fields', async () => {

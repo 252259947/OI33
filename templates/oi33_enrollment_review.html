@@ -6,18 +6,25 @@
     <div class="section__header"><h1 class="section__title">实名审核与账号管理</h1></div>
     <div class="section__body">
       <p class="oi33-enrollment__muted">新申请会由站内 DeepSeek 检查姓名合理性，正常姓名自动通过；不确定或服务异常时保留人工审核。自动通过不代表证件核验或身份真伪确认；人工审核请依据学生名册或老师确认。审核只开通普通使用资格，不授予教练、管理员或班型权限。本页仅显示当前域的档案。</p>
-      <form method="get" class="oi33-enrollment__filters">
-        <label>状态<select class="select" name="status"><option value="">全部</option><option value="pending" {% if filterStatus == 'pending' %}selected{% endif %}>待审核</option><option value="approved" {% if filterStatus == 'approved' %}selected{% endif %}>已审核</option><option value="rejected" {% if filterStatus == 'rejected' %}selected{% endif %}>待补充</option></select></label>
-        <label>UID<input class="textbox" type="number" name="uid" min="1" value="{{ filterUid }}" placeholder="全部学生"></label>
-        <button class="primary button" type="submit">筛选</button><span class="oi33-enrollment__muted">共 {{ total }} 人</span>
-      </form>
+      <div class="oi33-enrollment__review-filters">
+        <form method="get" action="{{ url('oi33_enrollment_review') }}" class="oi33-enrollment__status-filter" data-enrollment-status-filter>
+          <label>状态<select class="select" name="status"><option value="" {% if not filterStatus %}selected{% endif %}>全部</option><option value="approved" {% if filterStatus == 'approved' %}selected{% endif %}>已审核</option><option value="unapproved" {% if filterStatus == 'unapproved' %}selected{% endif %}>审核未通过</option></select></label>
+        </form>
+        <form method="get" action="{{ url('oi33_enrollment_review') }}" class="oi33-enrollment__name-filter" data-enrollment-name-filter>
+          <input type="hidden" name="status" value="{{ filterStatus }}">
+          <label>学生姓名<input class="textbox" type="text" name="name" maxlength="80" value="{{ filterName }}" placeholder="输入学生姓名查找"></label>
+          <button class="primary button" type="submit">筛选</button>
+        </form>
+        <span class="oi33-enrollment__muted oi33-enrollment__filter-count">共 {{ total }} 人</span>
+      </div>
+      <p class="oi33-enrollment__muted oi33-enrollment__filter-hint">切换状态会显示该状态的全部学生并清除姓名筛选；姓名查找需点击“筛选”。“审核未通过”包括自动审核未确认、待人工确认及已退回的申请。</p>
     </div>
   </section>
   {% for entry in enrollments %}
   <section class="section">
     <div class="section__header"><h2 class="section__title">{{ entry.realName }} <span class="oi33-enrollment__muted">UID {{ entry._id }}</span></h2></div>
     <div class="section__body">
-      <div class="oi33-enrollment__status"><strong>{% if not entry.enabled %}已停用{% elif entry.status == 'pending' %}待审核{% elif entry.status == 'approved' %}已审核{% else %}待补充{% endif %}</strong><span>{% if entry.accountType == 'temporary' %}临时比赛账号{% else %}日常账号{% endif %} · 版本 {{ entry.revision }}</span></div>
+      <div class="oi33-enrollment__status"><strong>{% if not entry.enabled %}已停用{% elif entry.status == 'pending' %}待人工确认{% elif entry.status == 'approved' %}已审核{% else %}审核未通过{% endif %}</strong><span>{% if entry.accountType == 'temporary' %}临时比赛账号{% else %}日常账号{% endif %} · 版本 {{ entry.revision }}</span></div>
       {% if entry.status == 'approved' and entry.reviewedBy == 0 and entry.autoReview.decision == 'pass' %}
         <div class="oi33-enrollment__notice">审核来源：DeepSeek 自动姓名审核通过（非证件核验）。</div>
       {% elif entry.reviewedBy and (entry.status == 'approved' or entry.status == 'rejected') %}
@@ -51,6 +58,6 @@
     </div>
   </section>
   {% else %}<section class="section"><div class="section__body"><p>暂无符合条件的身份档案。</p></div></section>{% endfor %}
-  <div class="oi33-enrollment__actions">{% if page > 1 %}<a class="button" href="{{ url('oi33_enrollment_review', query={page: page-1, status: filterStatus, uid: filterUid}) }}">上一页</a>{% endif %}<span>第 {{ page }} 页</span>{% if page < pages %}<a class="button" href="{{ url('oi33_enrollment_review', query={page: page+1, status: filterStatus, uid: filterUid}) }}">下一页</a>{% endif %}</div>
+  <div class="oi33-enrollment__actions">{% if page > 1 %}<a class="button" href="{{ url('oi33_enrollment_review', query={page: page-1, status: filterStatus, name: filterName}) }}">上一页</a>{% endif %}<span>第 {{ page }} 页</span>{% if page < pages %}<a class="button" href="{{ url('oi33_enrollment_review', query={page: page+1, status: filterStatus, name: filterName}) }}">下一页</a>{% endif %}</div>
 </div></div>
 {% endblock %}

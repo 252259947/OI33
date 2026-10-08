@@ -15,6 +15,13 @@
 .oi33-enrollment__form > .button { justify-self: start; }
 .oi33-enrollment__filters { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
 .oi33-enrollment__filters label { min-width: 160px; flex: 1 1 180px; }
+.oi33-enrollment__review-filters { display: flex; gap: 18px; align-items: flex-end; margin-top: 18px; }
+.oi33-enrollment__status-filter { flex: 0 1 260px; min-width: 180px; }
+.oi33-enrollment__name-filter { display: flex; flex: 1 1 360px; min-width: 0; gap: 12px; align-items: flex-end; }
+.oi33-enrollment__name-filter label { flex: 1; min-width: 0; }
+.oi33-enrollment__name-filter .button { flex: 0 0 88px; min-height: 44px; }
+.oi33-enrollment__filter-count { flex: none; padding-bottom: 10px; }
+.oi33-enrollment__filter-hint { margin: 12px 0 0; }
 .oi33-enrollment__history { margin-top: 20px; font-size: 13px; line-height: 1.8; }
 .oi33-enrollment__history summary { cursor: pointer; color: #64748b; }
 .theme--dark .oi33-enrollment__notice { background: #29283e; color: #dddafa; border-color: #4a466a; }
