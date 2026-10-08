@@ -584,6 +584,8 @@ export interface Oi33AiConfig {
     moderation_daily_budget?: number;
     // Per-user moderated posts per day; 0/empty = default (50).
     moderation_rate_limit?: number;
+    // Independent name plausibility review. Missing = enabled, '0' = manual review only.
+    enrollment_auto_review_enabled?: string;
 }
 
 export type Oi33ModerationKind = 'topic' | 'reply' | 'tailreply' | 'topic_edit' | 'reply_edit' | 'tailreply_edit' | 'bio';
@@ -730,6 +732,7 @@ export interface Oi33AiUsage {
     _id: ObjectId;
     uid: number; // 0 = system (e.g. summary generation)
     type: 'analysis' | 'summary' | 'moderation';
+    purpose?: 'enrollment_name';
     rid?: string;
     domainId?: string;
     pid?: number;

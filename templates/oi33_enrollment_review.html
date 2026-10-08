@@ -5,7 +5,7 @@
   <section class="section">
     <div class="section__header"><h1 class="section__title">实名审核与账号管理</h1></div>
     <div class="section__body">
-      <p class="oi33-enrollment__muted">请依据学生名册或老师确认审核。实名审核只开通普通使用资格，不授予教练或管理员权限。本页仅显示当前域的档案。</p>
+      <p class="oi33-enrollment__muted">新申请会由站内 DeepSeek 检查姓名合理性，正常姓名自动通过；不确定或服务异常时保留人工审核。自动通过不代表证件核验或身份真伪确认；人工审核请依据学生名册或老师确认。审核只开通普通使用资格，不授予教练、管理员或班型权限。本页仅显示当前域的档案。</p>
       <form method="get" class="oi33-enrollment__filters">
         <label>状态<select class="select" name="status"><option value="">全部</option><option value="pending" {% if filterStatus == 'pending' %}selected{% endif %}>待审核</option><option value="approved" {% if filterStatus == 'approved' %}selected{% endif %}>已审核</option><option value="rejected" {% if filterStatus == 'rejected' %}selected{% endif %}>待补充</option></select></label>
         <label>UID<input class="textbox" type="number" name="uid" min="1" value="{{ filterUid }}" placeholder="全部学生"></label>
@@ -18,6 +18,13 @@
     <div class="section__header"><h2 class="section__title">{{ entry.realName }} <span class="oi33-enrollment__muted">UID {{ entry._id }}</span></h2></div>
     <div class="section__body">
       <div class="oi33-enrollment__status"><strong>{% if not entry.enabled %}已停用{% elif entry.status == 'pending' %}待审核{% elif entry.status == 'approved' %}已审核{% else %}待补充{% endif %}</strong><span>{% if entry.accountType == 'temporary' %}临时比赛账号{% else %}日常账号{% endif %} · 版本 {{ entry.revision }}</span></div>
+      {% if entry.status == 'approved' and entry.reviewedBy == 0 and entry.autoReview.decision == 'pass' %}
+        <div class="oi33-enrollment__notice">审核来源：DeepSeek 自动姓名审核通过（非证件核验）。</div>
+      {% elif entry.reviewedBy and (entry.status == 'approved' or entry.status == 'rejected') %}
+        <div class="oi33-enrollment__notice">审核来源：人工处理 · 操作人 UID {{ entry.reviewedBy }}。</div>
+      {% elif entry.status == 'pending' and entry.autoReview.decision == 'review' %}
+        <div class="oi33-enrollment__notice">自动审核转人工：{% if entry.autoReview.reason == 'staff' %}管理员账号需他人核验。{% elif entry.autoReview.reason == 'name_format' or entry.autoReview.reason == 'needs_review' %}未能确认姓名，请结合学生名册核实。{% else %}服务或配置暂不可用，请人工审核。{% endif %}</div>
+      {% endif %}
       <dl class="oi33-enrollment__details"><dt>学校</dt><dd>{{ entry.school or '未填写' }}</dd><dt>学号 / 名册编号</dt><dd>{{ entry.studentId or '未填写' }}</dd><dt>申请班型</dt><dd>{{ (entry.requestedGroups or []) | join('、') or '未填写' }}（仅申请，分配请前往班型管理）</dd>
         {% if entry.validUntil %}<dt>到期时间</dt><dd>{{ datetimeSpan(entry.validUntil)|safe }}</dd>{% endif %}
         {% if entry.rejectionReason %}<dt>审核意见</dt><dd>{{ entry.rejectionReason }}</dd>{% endif %}
@@ -40,7 +47,7 @@
         <label>新的到期时间（含时区）<input class="textbox" type="text" name="validUntil" required placeholder="2026-10-01T18:00:00+08:00"></label><button class="button">延长有效期</button>
       </form>
       {% endif %}
-      <details class="oi33-enrollment__history"><summary>操作历史</summary><ul>{% for event in entry.history %}<li>{{ datetimeSpan(event.at)|safe }} · {{ event.action }} · 操作人 UID {{ event.operator }} · 版本 {{ event.revision }}{% if event.reason %} · {{ event.reason }}{% endif %}</li>{% endfor %}</ul></details>
+      <details class="oi33-enrollment__history"><summary>操作历史</summary><ul>{% for event in entry.history %}<li>{{ datetimeSpan(event.at)|safe }} · {% if event.action == 'auto_approved' %}自动姓名审核通过{% else %}{{ event.action }}{% endif %} · {% if event.operator == 0 %}系统{% else %}操作人 UID {{ event.operator }}{% endif %} · 版本 {{ event.revision }}{% if event.reason %} · {{ event.reason }}{% endif %}</li>{% endfor %}</ul></details>
     </div>
   </section>
   {% else %}<section class="section"><div class="section__body"><p>暂无符合条件的身份档案。</p></div></section>{% endfor %}

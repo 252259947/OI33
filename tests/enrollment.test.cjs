@@ -95,6 +95,7 @@ function harness() {
     const collections = {};
     const collection = (name) => collections[name] ||= new MemoryCollection();
     const logs = [];
+    const reviewControl = { calls: [], run: async () => ({ decision: 'review', reason: 'configuration' }) };
     const userColl = collection('oi33_user');
     const userModel = loadTs('model/user.ts', {
         hydrooj: { db: { collection } }, './log': { addLog: async (entry) => logs.push(entry) },
@@ -117,12 +118,17 @@ function harness() {
             UserModel: { getById: async (_, uid) => collection('core_user').findOne({ _id: uid }) } },
         '../model/education-auth': auth, '../model/user': { userColl }, '../model/enrollment': model,
         '../model/enrollment-policy': policy,
+        './enrollment-name-review': { reviewEnrollmentName: async (...args) => {
+            reviewControl.calls.push(copy(args));
+            return reviewControl.run(...args);
+        } },
     });
     function handler(name, method = 'post', args = {}, uid = 10) {
         const headers = {};
         return { constructor: { name: `${name}Handler` }, user: { _id: uid }, domain: { _id: 'system' },
             args: { domainId: 'system', ...args }, request: { method }, response: { body: {}, addHeader: (k, v) => { headers[k] = v; } },
             headers, context: { HydroContext: { user: { _id: uid }, domain: { _id: 'system' } } }, url: (name) => `/${name}`,
+            limitRate: async () => {},
             close(code) { this.closed = code; } };
     }
     async function hookMap() {
@@ -130,8 +136,265 @@ function harness() {
         await api.apply({ on: (name, fn) => { (hooks[name] ||= []).push(fn); }, Route: (...args) => routes.push(args) });
         return { hooks, routes, run: async (name, h) => { let result; for (const fn of hooks[name] || []) result = await fn(h); return result; } };
     }
-    return { model, api, userModel, collection, userColl, logs, handler, hookMap, ForbiddenError, ValidationError };
+    return { model, api, userModel, collection, userColl, logs, handler, hookMap, reviewControl, ForbiddenError, ValidationError };
 }
+
+function deferred() {
+    let resolve;
+    const promise = new Promise((done) => { resolve = done; });
+    return { promise, resolve };
+}
+
+async function applicant(h, extra = {}) {
+    await h.collection('core_user').insertOne({ _id: 10, role: 'default', ...extra });
+    return h.handler('Oi33Enrollment');
+}
+
+function submitRequest(h, req, revision = 0, realName = '张三') {
+    return h.api.Oi33EnrollmentHandler.prototype.post.call(req, 'system', realName,
+        'Private School', 'Private Student ID', '仅申请班型', revision);
+}
+
+test('automatic name approval reuses verified identity and preserves permissions, private data and class requests', async () => {
+    const h = harness();
+    const snapshot = await h.model.submitEnrollment(10, 'system', { realName: '张三', school: 'Private School',
+        studentId: 'Private Student ID', requestedGroups: ['仅申请班型'] }, 0);
+    assert.equal(await h.model.completeEnrollmentNameReview(snapshot, { decision: 'pass', reason: 'pass', model: 'deepseek-chat' }), true);
+    const doc = await h.model.getEnrollment(10);
+    assert.equal(doc.status, 'approved');
+    assert.equal(doc.revision, 2);
+    assert.equal(doc.reviewedBy, 0);
+    assert.equal(doc.accountType, 'regular');
+    assert.equal(doc.enabled, true);
+    assert.deepEqual(doc.requestedGroups, ['仅申请班型']);
+    assert.deepEqual(doc.contestScopes, []);
+    assert.equal(doc.autoReview.decision, 'pass');
+    assert.equal(doc.autoReview.revision, 1);
+    assert.equal(doc.history.at(-1).action, 'auto_approved');
+    assert.equal(doc.history.at(-1).operator, 0);
+    assert.equal((await h.userModel.getCheckinUser(10)).realname_flag, 1);
+    assert.equal((await h.userColl.findOne({ _id: 10 })).realname_flag, 1);
+    assert.equal((await h.userColl.findOne({ _id: 10 })).realname_enrollment_revision, 2);
+    assert.equal(h.collection('core_user').docs.length, 0, 'approval must not grant core roles or privileges');
+    assert.equal(h.collection('domain.user').docs.length, 0, 'class membership must not be assigned by name review');
+    const publicData = JSON.stringify({ logs: h.logs, identities: await h.userModel.getUserDataByUids([10]) });
+    for (const value of ['张三', 'Private School', 'Private Student ID', '仅申请班型']) assert.ok(!publicData.includes(value));
+    assert.equal(await h.model.completeEnrollmentNameReview(snapshot, { decision: 'pass', reason: 'pass', model: 'deepseek-chat' }), false);
+    assert.equal((await h.model.getEnrollment(10)).history.length, 2, 'repeated completion must not duplicate approval');
+});
+
+test('uncertain automatic review remains pending and keeps manual revision usable; resubmission clears its note', async () => {
+    const h = harness();
+    const snapshot = await h.model.submitEnrollment(10, 'system', { realName: '姓名待核实' }, 0);
+    assert.equal(await h.model.completeEnrollmentNameReview(snapshot, { decision: 'review', reason: 'needs_review' }), true);
+    const pending = await h.model.getEnrollment(10);
+    assert.equal(pending.status, 'pending');
+    assert.equal(pending.revision, snapshot.revision);
+    assert.equal(pending.reviewedBy, undefined);
+    assert.equal(pending.autoReview.decision, 'review');
+    assert.equal((await h.userModel.getCheckinUser(10)).realname_flag, 0);
+    await h.model.reviewEnrollment(10, snapshot.revision, 'rejected', 1, '请补充姓名');
+    const resubmitted = await h.model.submitEnrollment(10, 'system', { realName: '张三' }, 2);
+    assert.equal(resubmitted.revision, 3);
+    assert.equal(resubmitted.autoReview, undefined);
+    assert.equal(resubmitted.rejectionReason, undefined);
+});
+
+test('automatic approval requires explicit pass reason and a DeepSeek model; metadata never stores arbitrary reasons', async () => {
+    for (const result of [
+        { decision: 'pass', reason: 'pass' },
+        { decision: 'pass', reason: 'UPSTREAM RAW SECRET', model: 'deepseek-chat' },
+        { decision: 'pass', reason: 'pass', model: 'other-provider' },
+        { decision: 'pass', reason: 'pass', model: 'deepseek-<script>RAW</script>' },
+        { decision: 'pass', reason: 'pass', model: `deepseek-${'x'.repeat(121)}` },
+        { decision: 'approved', reason: 'pass', model: 'deepseek-chat' },
+        { decision: 'review', reason: 'needs_review', model: 'deepseek-chat' },
+    ]) {
+        const h = harness();
+        const snapshot = await h.model.submitEnrollment(10, 'system', { realName: '张三' }, 0);
+        assert.equal(await h.model.completeEnrollmentNameReview(snapshot, result), true);
+        const doc = await h.model.getEnrollment(10);
+        assert.equal(doc.status, 'pending');
+        assert.equal(doc.revision, 1);
+        assert.equal(doc.autoReview.decision, 'review');
+        assert.ok(!JSON.stringify({ doc, logs: h.logs }).includes('RAW'));
+    }
+});
+
+test('automatic completion rejects wrong uid, domain, name or revision and never changes disabled or temporary accounts', async () => {
+    for (const mutate of [
+        (snapshot) => { snapshot._id = 11; },
+        (snapshot) => { snapshot.domainId = 'other'; },
+        (snapshot) => { snapshot.realName = '李四'; },
+        (snapshot) => { snapshot.revision += 1; },
+    ]) {
+        const h = harness();
+        const snapshot = await h.model.submitEnrollment(10, 'system', { realName: '张三' }, 0);
+        mutate(snapshot);
+        const before = await h.model.getEnrollment(10);
+        assert.equal(await h.model.completeEnrollmentNameReview(snapshot, { decision: 'pass', reason: 'pass', model: 'deepseek-chat' }), false);
+        assert.deepEqual(await h.model.getEnrollment(10), before);
+    }
+    for (const fields of [{ enabled: false }, { accountType: 'temporary' }, { status: 'rejected' }, { status: 'approved' }]) {
+        const h = harness();
+        const snapshot = await h.model.submitEnrollment(10, 'system', { realName: '张三' }, 0);
+        await h.collection('oi33_enrollment').updateOne({ _id: 10 }, { $set: fields });
+        const before = await h.model.getEnrollment(10);
+        assert.equal(await h.model.completeEnrollmentNameReview(snapshot, { decision: 'pass', reason: 'pass', model: 'deepseek-chat' }), false);
+        assert.deepEqual(await h.model.getEnrollment(10), before);
+    }
+});
+
+test('AI and manual reviewers race on the same revision: exactly one approval wins', async () => {
+    const h = harness();
+    const snapshot = await h.model.submitEnrollment(10, 'system', { realName: '张三' }, 0);
+    const results = await Promise.allSettled([
+        h.model.completeEnrollmentNameReview(snapshot, { decision: 'pass', reason: 'pass', model: 'deepseek-chat' }),
+        h.model.reviewEnrollment(10, 1, 'approved', 1),
+    ]);
+    assert.equal(results.filter((result) => result.status === 'fulfilled' && result.value !== false).length, 1);
+    const doc = await h.model.getEnrollment(10);
+    assert.equal(doc.status, 'approved');
+    assert.equal(doc.revision, 2);
+    assert.equal(doc.history.length, 2);
+    assert.equal((await h.userModel.getCheckinUser(10)).realname_flag, 1);
+});
+
+test('self-submission sends only uid and normalized name to AI, then immediately opens ordinary access', async () => {
+    const h = harness();
+    const req = await applicant(h);
+    const limits = [];
+    req.limitRate = async (...args) => { limits.push(args); };
+    h.reviewControl.run = async () => ({ decision: 'pass', reason: 'pass', model: 'deepseek-chat' });
+    await submitRequest(h, req, 0, ' 张三 ');
+    assert.deepEqual(h.reviewControl.calls, [[10, '张三']]);
+    assert.deepEqual(limits.find((args) => args[0] === 'enrollment_submit'), ['enrollment_submit', 60, 3, '{{user}}'],
+        'students behind a shared school IP must not throttle each other');
+    assert.equal(req.response.redirect, '/oi33_enrollment');
+    const doc = await h.model.getEnrollment(10);
+    assert.equal(doc.status, 'approved');
+    assert.equal(policy.decideEnrollmentAccess(doc, request()).allowed, true);
+    assert.equal(doc.school, 'Private School');
+    assert.equal(doc.studentId, 'Private Student ID');
+    assert.deepEqual(doc.requestedGroups, ['仅申请班型']);
+    assert.equal((await h.collection('core_user').findOne({ _id: 10 })).role, 'default');
+});
+
+test('AI uncertainty and unavailable service keep the submitted identity in manual review', async () => {
+    for (const mode of ['review', 'error']) {
+        const h = harness();
+        const req = await applicant(h);
+        h.reviewControl.run = async () => {
+            if (mode === 'error') throw new Error('UPSTREAM SECRET raw response');
+            return { decision: 'review', reason: 'configuration' };
+        };
+        await submitRequest(h, req);
+        const doc = await h.model.getEnrollment(10);
+        assert.equal(doc.status, 'pending');
+        assert.equal(doc.revision, 1);
+        assert.equal(doc.autoReview.decision, 'review');
+        assert.ok(!JSON.stringify({ doc, logs: h.logs }).includes('UPSTREAM SECRET'));
+        assert.equal(policy.decideEnrollmentAccess(doc, request()).allowed, false);
+        await h.model.reviewEnrollment(10, 1, 'approved', 1);
+        assert.equal((await h.model.getEnrollment(10)).status, 'approved', 'manual fallback must remain operational');
+    }
+});
+
+test('submission throttle cannot trigger an AI call or silently approve a name', async () => {
+    const h = harness();
+    const req = await applicant(h);
+    req.limitRate = async () => { throw new Error('rate limit'); };
+    await assert.rejects(submitRequest(h, req));
+    assert.equal(h.reviewControl.calls.length, 0);
+    assert.equal(await h.model.getEnrollment(10), null);
+});
+
+test('daily per-user and site budget limits preserve a manual application without invoking AI', async () => {
+    for (const failedKey of ['enrollment_name_user_daily', 'enrollment_name_site_daily']) {
+        const h = harness();
+        const req = await applicant(h);
+        req.limitRate = async (key) => { if (key === failedKey) throw new Error('daily limit'); };
+        await submitRequest(h, req);
+        const doc = await h.model.getEnrollment(10);
+        assert.equal(doc.status, 'pending');
+        assert.equal(doc.revision, 1);
+        assert.equal(doc.autoReview.reason, 'rate_limit');
+        assert.equal(h.reviewControl.calls.length, 0);
+        await h.model.reviewEnrollment(10, 1, 'approved', 1);
+        assert.equal((await h.model.getEnrollment(10)).status, 'approved');
+    }
+});
+
+test('pre-existing pending administrators remain manual and GET/login do not batch-review older pending identities', async () => {
+    const h = harness();
+    const req = await applicant(h);
+    await h.model.submitEnrollment(10, 'system', { realName: '张三' }, 0);
+    await h.collection('core_user').updateOne({ _id: 10 }, { $set: { role: 'root' } });
+    await submitRequest(h, req, 1);
+    const doc = await h.model.getEnrollment(10);
+    assert.equal(doc.status, 'pending');
+    assert.equal(doc.autoReview.reason, 'staff');
+    assert.equal(h.reviewControl.calls.length, 0);
+    const view = h.handler('Oi33Enrollment', 'get');
+    await h.api.Oi33EnrollmentHandler.prototype.get.call(view);
+    const hooks = await h.hookMap();
+    const login = h.handler('UserLogin'); login.response.redirect = '/';
+    await hooks.run('handler/after/UserLogin', login);
+    assert.equal(h.reviewControl.calls.length, 0);
+    assert.deepEqual(await h.model.getEnrollment(10), doc);
+});
+
+test('delayed AI cannot overwrite a manual decision, newer submission, disabled identity, changed scope or elevated role', async () => {
+    const mutations = [
+        async (h) => h.model.reviewEnrollment(10, 1, 'approved', 1),
+        async (h) => h.model.reviewEnrollment(10, 1, 'rejected', 1, '人工退回'),
+        async (h) => h.model.submitEnrollment(10, 'system', { realName: '李四' }, 1),
+        async (h) => h.model.manageEnrollment(10, 1, 'disable', 1),
+        async (h) => h.collection('oi33_enrollment').updateOne({ _id: 10 }, { $set: { accountType: 'temporary' } }),
+        async (h) => h.collection('oi33_enrollment').updateOne({ _id: 10 }, { $set: { domainId: 'other' } }),
+    ];
+    for (const mutate of mutations) {
+        const h = harness();
+        const req = await applicant(h);
+        const entered = deferred(); const result = deferred();
+        h.reviewControl.run = async () => { entered.resolve(); return result.promise; };
+        const submission = submitRequest(h, req);
+        await entered.promise;
+        await mutate(h);
+        const before = await h.model.getEnrollment(10);
+        result.resolve({ decision: 'pass', reason: 'pass', model: 'deepseek-chat' });
+        await submission;
+        assert.deepEqual(await h.model.getEnrollment(10), before);
+    }
+    const h = harness();
+    const req = await applicant(h);
+    const entered = deferred(); const result = deferred();
+    h.reviewControl.run = async () => { entered.resolve(); return result.promise; };
+    const submission = submitRequest(h, req);
+    await entered.promise;
+    await h.collection('core_user').updateOne({ _id: 10 }, { $set: { role: 'root' } });
+    result.resolve({ decision: 'pass', reason: 'pass', model: 'deepseek-chat' });
+    await submission;
+    assert.equal((await h.model.getEnrollment(10)).status, 'pending');
+    assert.equal((await h.collection('core_user').findOne({ _id: 10 })).role, 'root');
+});
+
+test('existing administrators, legacy identities, approved batch and temporary accounts never enter name AI', async () => {
+    for (const setup of [
+        async (h, req) => { req.user.role = 'root'; await h.collection('core_user').updateOne({ _id: 10 }, { $set: { role: 'root' } }); },
+        async (h) => h.userColl.insertOne({ _id: 10, realname_flag: 1 }),
+        async (h) => h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '张三', requiresPasswordChange: true }, 1),
+        async (h) => h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '张三', accountType: 'temporary',
+            contestScopes: temp().contestScopes, validUntil: future() }, 1),
+    ]) {
+        const h = harness(); const req = await applicant(h);
+        await setup(h, req);
+        const before = await h.model.getEnrollment(10);
+        await assert.rejects(submitRequest(h, req, before?.revision || 0));
+        assert.equal(h.reviewControl.calls.length, 0);
+        assert.deepEqual(await h.model.getEnrollment(10), before);
+    }
+});
 
 test('approval immediately verifies profile and fortune reads without disclosing private identity fields', async () => {
     const h = harness();
@@ -632,6 +895,9 @@ test('templates render empty, pending, rejected, approved, temporary and review 
     assert.ok(empty.includes('name="csrfToken"'));
     assert.ok(empty.includes('name="realName" required'));
     assert.ok(!empty.includes('name="realname_flag"'));
+    assert.ok(empty.includes('DeepSeek'));
+    assert.ok(empty.includes('学校、学号和申请班型不会发送'));
+    assert.ok(empty.includes('不核验身份真伪'));
     for (const status of ['pending', 'rejected', 'approved']) {
         const enrollment = { ...temp(), accountType: 'regular', status, realName: '<script>bad</script>', requestedGroups: ['班型'], revision: 1 };
         const html = env.render('oi33_enrollment.html', { ...context, enrollment });
@@ -646,4 +912,30 @@ test('templates render empty, pending, rejected, approved, temporary and review 
     assert.ok(review.includes('转为日常账号'));
     assert.ok(review.includes('下一页'));
     assert.ok(review.includes('<span class="time relative"'));
+    const base = { _id: 10, accountType: 'regular', enabled: true, status: 'approved', realName: '张三',
+        reviewedBy: 0, revision: 2, history: [{ revision: 2, action: 'auto_approved', operator: 0, at: new Date() }],
+        autoReview: { decision: 'pass', reason: 'RAW-AI-PRIVATE-REASON', model: 'RAW-AI-MODEL', revision: 1 } };
+    const autoPage = env.render('oi33_enrollment.html', { ...context, enrollment: base });
+    assert.ok(autoPage.includes('已完成实名认证'));
+    assert.ok(autoPage.includes('自动姓名审核通过'));
+    assert.ok(autoPage.includes('不是证件核验'));
+    const autoAdmin = env.render('oi33_enrollment_review.html', { ...context, enrollments: [base], page: 1, pages: 1, total: 1 });
+    assert.ok(autoAdmin.includes('审核来源：DeepSeek 自动姓名审核通过'));
+    assert.ok(autoAdmin.includes('系统'));
+    assert.ok(!autoAdmin.includes('操作人 UID 0'));
+    for (const html of [autoPage, autoAdmin]) assert.ok(!html.includes('RAW-AI'));
+    const manual = { ...base, reviewedBy: 1 };
+    const manualAdmin = env.render('oi33_enrollment_review.html', { ...context, enrollments: [manual], page: 1, pages: 1, total: 1 });
+    assert.ok(manualAdmin.includes('审核来源：人工处理'));
+    assert.ok(!manualAdmin.includes('审核来源：DeepSeek'));
+    for (const reason of ['needs_review', 'name_format', 'configuration', 'disabled', 'unavailable', 'invalid_response', 'rate_limit', 'staff', 'RAW-AI-REASON']) {
+        const pending = { ...base, status: 'pending', reviewedBy: undefined, autoReview: { decision: 'review', reason, model: 'RAW-AI-MODEL' } };
+        const self = env.render('oi33_enrollment.html', { ...context, enrollment: pending });
+        const admin = env.render('oi33_enrollment_review.html', { ...context, enrollments: [pending], page: 1, pages: 1, total: 1 });
+        assert.ok(self.includes('人工审核'));
+        assert.ok(admin.includes('自动审核转人工'));
+        assert.ok(!self.includes('RAW-AI'));
+        assert.ok(!admin.includes('RAW-AI'));
+        assert.ok(!self.includes('已完成实名认证'));
+    }
 });

@@ -3,9 +3,10 @@ import { isEducationAdmin, assertEducationAdmin } from '../model/education-auth'
 import { userColl } from '../model/user';
 import {
     Enrollment, getEnrollment, enrollmentColl, ensureEnrollmentIndexes, submitEnrollment,
-    reviewEnrollment, manageEnrollment, completeEnrollmentPasswordChange,
+    reviewEnrollment, manageEnrollment, completeEnrollmentPasswordChange, completeEnrollmentNameReview,
 } from '../model/enrollment';
 import { decideEnrollmentAccess, enrollmentActivity, matchesContestScope } from '../model/enrollment-policy';
+import { reviewEnrollmentName, NameReviewResult } from './enrollment-name-review';
 
 interface EnrollmentPretest { _id: ObjectId; uid: number; domainId: string; contestId: string; createdAt: Date }
 declare module 'hydrooj' { interface Collections { oi33_enrollment_pretest: EnrollmentPretest } }
@@ -186,15 +187,46 @@ export class Oi33EnrollmentHandler extends Handler {
     @param('requestedGroups', Types.String, true)
     @param('revision', Types.UnsignedInt)
     async post(domainId: string, realName: string, school = '', studentId = '', requestedGroups = '', revision = 0) {
+        privateResponse(this);
+        await this.limitRate('enrollment_submit', 60, 3, '{{user}}');
         const legacy = await userColl.findOne({ _id: this.user._id });
         if (!await getEnrollment(this.user._id)) {
             if ((legacy?.realname_flag || 0) >= 1) throw new ForbiddenError('原有已核验身份继续有效，如需更正请联系管理员。');
             if (isEducationAdmin(this.user)) throw new ForbiddenError('管理员权限不等于实名认证，请由另一位管理员核验并建立身份档案；不能自行审批自己的身份。');
         }
+        let submitted: Enrollment;
         try {
-            await submitEnrollment(this.user._id, domainOf(this), { realName, school, studentId,
+            submitted = await submitEnrollment(this.user._id, domainOf(this), { realName, school, studentId,
                 requestedGroups: requestedGroups.split(/[,，\n]/).map((g) => g.trim()).filter(Boolean) }, revision);
         } catch (e: any) { throw new ValidationError('enrollment', e.message); }
+        // A delayed submit can read back a newer revision: never review it on
+        // behalf of the old request. No startup/login scans of historical users.
+        if (submitted.revision === revision + 1 && submitted.status === 'pending'
+            && submitted.realName === realName.trim() && submitted.domainId === domainOf(this)) {
+            let result: NameReviewResult = { decision: 'review', reason: 'unavailable' };
+            try {
+                const current = await UserModel.getById(domainOf(this), this.user._id);
+                if (!current) throw new Error('Missing applicant');
+                if (isEducationAdmin(current)) result = { decision: 'review', reason: 'staff' };
+                else {
+                    try {
+                        // Persistent Hydro counters bound cost even if students
+                        // repeatedly resubmit or the service is restarted.
+                        await this.limitRate('enrollment_name_user_daily', 86400, 6, '{{user}}');
+                        await this.limitRate('enrollment_name_site_daily', 86400, 300, 'all');
+                    } catch { result = { decision: 'review', reason: 'rate_limit' }; }
+                    if (result.reason !== 'rate_limit') result = await reviewEnrollmentName(this.user._id, submitted.realName);
+                }
+                const latest = await UserModel.getById(domainOf(this), this.user._id);
+                if (!latest) result = { decision: 'review', reason: 'unavailable' };
+                else if (isEducationAdmin(latest)) result = { decision: 'review', reason: 'staff' };
+            } catch { result = { decision: 'review', reason: 'unavailable' }; }
+            // Name-only verdicts/errors never expose raw model output or secrets.
+            // Database errors leave the authoritative pending record available
+            // to the existing manual review page (no automatic rejection).
+            try { await completeEnrollmentNameReview(submitted, result); }
+            catch { console.warn('[oi33] enrollment name review persistence incomplete; inspect private review queue'); }
+        }
         this.response.redirect = this.url('oi33_enrollment');
     }
 }

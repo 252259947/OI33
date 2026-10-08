@@ -16,6 +16,7 @@ export interface Enrollment extends EnrollmentAccess {
     submittedAt?: Date;
     reviewedAt?: Date;
     reviewedBy?: number;
+    autoReview?: { decision: 'pass' | 'review'; reason: string; model?: string; at: Date; revision: number };
     rejectionReason?: string;
     batchId?: string;
     rosterKey?: string;
@@ -117,7 +118,7 @@ export async function submitEnrollment(uid: number, domainId: string, input: Enr
     if (old) {
         const result = await enrollmentColl.updateOne({ _id: uid, revision: expectedRevision, enabled: true, status: { $in: ['pending', 'rejected'] } }, {
             $set: { ...clean, status: 'pending', updatedAt: now, submittedAt: now, revision },
-            $unset: { rejectionReason: '', reviewedAt: '', reviewedBy: '' }, $push: { history: event },
+            $unset: { rejectionReason: '', reviewedAt: '', reviewedBy: '', autoReview: '' }, $push: { history: event },
         });
         if (!result.matchedCount) throw new Error('申请已变更，请刷新页面。');
     } else {
@@ -149,6 +150,43 @@ export async function reviewEnrollment(uid: number, expectedRevision: number, de
     await syncVerifiedFlag(uid, decision === 'approved', revision);
     await audit(uid, operatorUid, decision, revision);
     return (await getEnrollment(uid))!;
+}
+
+/** Apply a result only to the exact self-submitted regular-account version.
+ * System approval has the same verification side effects as manual approval,
+ * but never grants roles, class membership or temporary-account conversion.
+ */
+export async function completeEnrollmentNameReview(
+    snapshot: Pick<Enrollment, '_id' | 'domainId' | 'realName' | 'revision'>,
+    result: { decision: 'pass' | 'review'; reason: string; model?: string },
+): Promise<boolean> {
+    requireEnrollmentRevision(snapshot.revision, snapshot.revision);
+    const reasons = ['pass', 'name_format', 'needs_review', 'unavailable', 'configuration',
+        'disabled', 'invalid_response', 'rate_limit', 'staff'];
+    const model = typeof result.model === 'string' && /^deepseek(?:[-/]|$)[a-z0-9._/-]*$/i.test(result.model)
+        && result.model.length <= 120 ? result.model : undefined;
+    // Only the server's explicit successful name-check result can approve.
+    const approved = result.decision === 'pass' && result.reason === 'pass' && !!model;
+    const now = new Date();
+    const revision = snapshot.revision + (approved ? 1 : 0);
+    const autoReview = { decision: approved ? 'pass' as const : 'review' as const,
+        reason: reasons.includes(result.reason) ? result.reason : 'invalid_response',
+        ...(model ? { model } : {}), at: now, revision: snapshot.revision };
+    const update: any = { $set: { autoReview } };
+    if (approved) {
+        Object.assign(update.$set, { status: 'approved', reviewedBy: 0, reviewedAt: now,
+            updatedAt: now, rejectionReason: '', revision });
+        update.$push = { history: { revision, action: 'auto_approved', operator: 0, at: now } };
+    }
+    const applied = await enrollmentColl.updateOne({ _id: snapshot._id, domainId: snapshot.domainId,
+        realName: snapshot.realName, revision: snapshot.revision, status: 'pending', enabled: true,
+        accountType: 'regular' }, update);
+    if (!applied.matchedCount) return false;
+    if (approved) {
+        await syncVerifiedFlag(snapshot._id, true, revision);
+        await audit(snapshot._id, 0, 'auto_approved', revision);
+    }
+    return true;
 }
 
 export async function provisionEnrollment(input: ProvisionEnrollmentInput, operatorUid: number): Promise<Enrollment> {

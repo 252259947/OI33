@@ -7,7 +7,7 @@
       {% if isAdmin %}<div class="section__tools"><a class="button" href="{{ url('oi33_enrollment_review') }}">审核与账号管理</a></div>{% endif %}
     </div>
     <div class="section__body">
-      <p class="oi33-enrollment__muted">真实姓名仅用于教练核验身份和教学管理，不会自动公开在文章、排名或个人主页中。</p>
+      <p class="oi33-enrollment__muted">真实姓名用于教学管理，作业、训练和比赛成绩表按现有访问权限展示姓名；文章作者名和个人主页不会因此改为实名。提交申请时，仅姓名会发送给站内已配置的 DeepSeek 检查是否像正常姓名；学校、学号和申请班型不会发送。</p>
       {% if legacyVerified %}
         <div class="oi33-enrollment__notice">原有实名身份继续有效，无需重复申请。更正姓名或归属信息请联系管理员。</div>
       {% elif enrollment %}
@@ -15,6 +15,15 @@
           <strong>{% if enrollment.status == 'approved' %}已完成实名认证{% elif enrollment.status == 'rejected' %}需要补充资料{% else %}等待实名审核{% endif %}</strong>
           <span>{% if enrollment.accountType == 'temporary' %}临时比赛账号{% else %}日常账号{% endif %}</span>
         </div>
+        {% if enrollment.status == 'approved' and enrollment.reviewedBy == 0 and enrollment.autoReview.decision == 'pass' %}
+          <div class="oi33-enrollment__notice">自动姓名审核通过，已开通日常账号使用资格。这是姓名合理性检查，不是证件核验，也不能证明身份真伪。</div>
+        {% elif enrollment.status == 'pending' and enrollment.autoReview.decision == 'review' %}
+          <div class="oi33-enrollment__notice">
+            {% if enrollment.autoReview.reason == 'staff' %}此账号需要由另一位管理员核验，请等待人工审核。
+            {% elif enrollment.autoReview.reason == 'name_format' or enrollment.autoReview.reason == 'needs_review' %}自动审核暂未确认姓名，申请已保留，等待人工审核；如有填写错误，可修改后重新提交。
+            {% else %}自动审核暂不可用，申请已保留，等待人工审核，无需重复提交。{% endif %}
+          </div>
+        {% endif %}
         {% if enrollment.rejectionReason %}<div class="oi33-enrollment__notice">审核意见：{{ enrollment.rejectionReason }}</div>{% endif %}
         {% if active and not active.allowed and enrollment.status == 'approved' %}<div class="oi33-enrollment__notice">{{ active.reason }}</div>{% endif %}
         {% if enrollment.requiresPasswordChange %}<div class="oi33-enrollment__notice">请先修改初始密码，再开始使用账号。<a href="{{ url('home_security') }}">前往安全设置</a></div>{% endif %}
@@ -46,7 +55,7 @@
           <label>学号 / 名册编号<input class="textbox" type="text" name="studentId" maxlength="80" value="{{ enrollment.studentId or '' }}"></label>
         </div>
         <label>申请班型（选填，多个用逗号分隔）<input class="textbox" type="text" name="requestedGroups" maxlength="2400" value="{{ (enrollment.requestedGroups or []) | join(', ') }}" placeholder="例如：CSP-J 提高班、周六班"></label>
-        <p class="oi33-enrollment__muted">班型由教练核实后分配，填写申请不会自动获得班型权限。身份审核通过前可以浏览公开内容，暂不能提交代码、报名或发布内容。</p>
+        <p class="oi33-enrollment__muted">正常姓名自动审核通过；无法确认或服务异常时保留申请，转人工审核，不会自动退回。自动审核仅检查姓名合理性，不核验身份真伪。班型仍由教练核实后分配，填写申请不会自动获得班型权限。审核通过前可以浏览公开内容，暂不能提交代码、报名或发布内容。</p>
         <button type="submit" class="primary button">{% if enrollment %}更新资料并提交审核{% else %}提交实名申请{% endif %}</button>
       </form>
       {% endif %}
