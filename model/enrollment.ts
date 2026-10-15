@@ -21,6 +21,14 @@ export interface Enrollment extends EnrollmentAccess {
     batchId?: string;
     rosterKey?: string;
     requiresPasswordChange?: boolean;
+    passwordReset?: {
+        id: string;
+        state: 'working' | 'ready' | 'failed';
+        startedAt: Date;
+        leaseUntil: Date;
+        operator: number;
+    };
+    passwordOperation?: { id: string; kind: 'reset' | 'change'; leaseUntil: Date };
     history: { revision: number; action: string; operator: number; at: Date; reason?: string }[];
 }
 export interface EnrollmentInput {
@@ -258,12 +266,16 @@ export async function ensureEnrollmentIndexes() {
         partialFilterExpression: { batchId: { $type: 'string' }, rosterKey: { $type: 'string' } } });
 }
 
-// Call only from Hydro's successful password-change after hook, never from request arguments.
-export async function completeEnrollmentPasswordChange(uid: number) {
+// Call only after Hydro successfully changes the password, never from request arguments.
+export async function completeEnrollmentPasswordChange(uid: number, expectedRevision?: number, expectedLockId?: string) {
+    // The caller must capture this version before the password write. Reading a
+    // fresh revision here lets an old request clear a newer administrator reset.
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision! < 1) return;
     const old = await getEnrollment(uid);
-    if (!old?.requiresPasswordChange) return;
+    if (!old?.requiresPasswordChange || old.revision !== expectedRevision || old.passwordReset?.state === 'working') return;
     const now = new Date();
-    const result = await enrollmentColl.updateOne({ _id: uid, revision: old.revision, requiresPasswordChange: true }, {
+    const result = await enrollmentColl.updateOne({ _id: uid, revision: expectedRevision, requiresPasswordChange: true,
+        'passwordReset.state': { $ne: 'working' }, ...(expectedLockId ? { 'passwordOperation.id': expectedLockId } : {}) }, {
         $set: { requiresPasswordChange: false, updatedAt: now }, $inc: { revision: 1 },
         $push: { history: { revision: old.revision + 1, action: 'password_changed', operator: uid, at: now } },
     });

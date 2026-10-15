@@ -4,7 +4,7 @@
 <div class="row oi33-enrollment"><div class="medium-9 medium-centered columns">
   <section class="section">
     <div class="section__header"><h1 class="section__title">实名与账号</h1>
-      {% if isAdmin %}<div class="section__tools"><a class="button" href="{{ url('oi33_enrollment_review') }}">审核与账号管理</a></div>{% endif %}
+      {% if canManageAccounts %}<div class="section__tools"><a class="button" href="{{ url('oi33_enrollment_review') }}">审核与账号管理</a></div>{% endif %}
     </div>
     <div class="section__body">
       <p class="oi33-enrollment__muted">真实姓名用于教学管理，作业、训练和比赛成绩表按现有访问权限展示姓名；文章作者名和个人主页不会因此改为实名。提交申请时，仅姓名会发送给站内已配置的 DeepSeek 检查是否像正常姓名；学校、学号和申请班型不会发送。</p>

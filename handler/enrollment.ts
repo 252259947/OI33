@@ -1,5 +1,5 @@
-import { Context, Handler, PRIV, Types, param, ForbiddenError, ValidationError, RecordModel, UserModel, TokenModel, ObjectId, db } from 'hydrooj';
-import { isEducationAdmin, assertEducationAdmin } from '../model/education-auth';
+import { Context, Handler, PRIV, Types, param, requireSudo, ForbiddenError, ValidationError, RecordModel, UserModel, TokenModel, ObjectId, db } from 'hydrooj';
+import { isEducationAdmin } from '../model/education-auth';
 import { userColl } from '../model/user';
 import {
     Enrollment, getEnrollment, enrollmentColl, ensureEnrollmentIndexes, submitEnrollment,
@@ -7,6 +7,7 @@ import {
 } from '../model/enrollment';
 import { decideEnrollmentAccess, enrollmentActivity, matchesContestScope } from '../model/enrollment-policy';
 import { reviewEnrollmentName, NameReviewResult } from './enrollment-name-review';
+import { isAccountAdmin, canResetStudentPassword, resetStudentPassword, acquirePasswordChange, releasePasswordChange, isOrdinaryStudentAccount } from '../model/account-password';
 
 interface EnrollmentPretest { _id: ObjectId; uid: number; domainId: string; contestId: string; createdAt: Date }
 declare module 'hydrooj' { interface Collections { oi33_enrollment_pretest: EnrollmentPretest } }
@@ -17,6 +18,35 @@ function nameOf(h: any): string { return h.constructor.name.replace(/Handler$/, 
 function truthy(value: unknown) { return value === true || value === 1 || value === '1' || value === 'true'; }
 function privateResponse(h: any) {
     h.response.addHeader('Cache-Control', 'private, no-store');
+}
+function assertAccountAdmin(user: any) {
+    if (!isAccountAdmin(user)) throw new ForbiddenError('仅 OJ 站点管理员可以进行实名审核与账号管理。');
+}
+
+// Wrap only this request's native password operation, retaining Hydro's current
+// password verification, sudo, password validation and session invalidation.
+export function installEnrollmentPasswordChange(h: any) {
+    if (h.args.operation !== 'change_password' || h.__oi33PasswordChangeWrapped) return;
+    const original = h.postChangePassword;
+    if (typeof original !== 'function') return;
+    h.__oi33PasswordChangeWrapped = true;
+    h.postChangePassword = async function (...args: any[]) {
+        let lock;
+        try { lock = await acquirePasswordChange(this.user._id); }
+        catch { throw new ValidationError('password', null, '密码正在更新或账号状态已改变，请稍后刷新重试。'); }
+        try {
+            if (lock?.requiresPasswordChange && (this.args.password === '123456' || this.args.password === this.args.current)) {
+                throw new ValidationError('password', null, '请设置不同于初始密码的新密码，不能继续使用 123456。');
+            }
+            const result = await original.apply(this, args);
+            if (lock && this.response.redirect === this.url('user_login')) {
+                await completeEnrollmentPasswordChange(this.user._id, lock.revision, lock.id);
+            }
+            return result;
+        } finally {
+            if (lock) await releasePasswordChange(this.user._id, lock.id);
+        }
+    };
 }
 
 async function recordAllowed(doc: Enrollment, h: any, rdoc: any): Promise<boolean> {
@@ -39,6 +69,20 @@ export async function enforceEnrollment(h: any, websocket = false): Promise<'cle
         throw new ForbiddenError('教学管理域与请求参数不一致，请使用该域的正式入口。');
     }
     const doc = await getEnrollment(uid);
+    if (doc?.requiresPasswordChange) {
+        const decision = decideEnrollmentAccess(doc, { uid, domainId: domainOf(h), handler,
+            method: websocket ? 'ws' : h.request.method, operation: h.args.operation });
+        if (!decision.allowed) {
+            privateResponse(h);
+            const accept = h.request.headers?.accept || '';
+            if (!websocket && ['get', 'head'].includes(h.request.method.toLowerCase())
+                && !h.request.json && !accept.includes('application/json') && !h.request.headers?.['x-requested-with']) {
+                h.response.redirect = h.url('home_security');
+                return 'cleanup';
+            }
+            throw new ForbiddenError(decision.reason || '请先修改初始密码。');
+        }
+    }
     const legacy = !doc ? await userColl.findOne({ _id: uid }, { projection: { realname_flag: 1 } }) : null;
     let recordInScope = false;
     if (doc?.accountType === 'temporary') {
@@ -178,7 +222,8 @@ export class Oi33EnrollmentHandler extends Handler {
         const legacy = !enrollment ? await userColl.findOne({ _id: this.user._id }) : null;
         this.response.template = 'oi33_enrollment.html';
         this.response.body = { enrollment, legacyVerified: (legacy?.realname_flag || 0) >= 1,
-            isAdmin: isEducationAdmin(this.user), active: enrollment ? enrollmentActivity(enrollment) : null };
+            isAdmin: isEducationAdmin(this.user), canManageAccounts: isAccountAdmin(this.user),
+            active: enrollment ? enrollmentActivity(enrollment) : null };
     }
 
     @param('realName', Types.String)
@@ -233,7 +278,7 @@ export class Oi33EnrollmentHandler extends Handler {
 
 export class Oi33EnrollmentReviewHandler extends Handler {
     async get() {
-        assertEducationAdmin(this.user);
+        assertAccountAdmin(this.user);
         privateResponse(this);
         const requestedPage = Math.max(1, Math.min(10000, Number.parseInt(this.args.page, 10) || 1));
         const rawName = this.args.name ?? '';
@@ -256,7 +301,23 @@ export class Oi33EnrollmentReviewHandler extends Handler {
         const page = Math.min(requestedPage, pages);
         const enrollments = await enrollmentColl.find(filter).sort({ updatedAt: -1, _id: -1 }).skip((page - 1) * 30).limit(30).toArray();
         this.response.template = 'oi33_enrollment_review.html';
-        this.response.body = { enrollments, page, pages, total, filterStatus, filterName };
+        const passwordResetAllowedUids = (await Promise.all(enrollments.map(async (entry) =>
+            await canResetStudentPassword(domainOf(this), entry._id, this.user) ? entry._id : null)))
+            .filter((uid) => uid !== null);
+        this.response.body = { enrollments, page, pages, total, filterStatus, filterName, passwordResetAllowedUids };
+    }
+
+    @requireSudo
+    async resetPassword(domainId: string, uid: number, revision: number) {
+        assertAccountAdmin(this.user);
+        await this.limitRate('oi33_reset_student_password', 3600, 60, '{{user}}');
+        try { await resetStudentPassword(domainId, uid, revision, this.user); }
+        catch (error) {
+            if (error instanceof ForbiddenError) throw error;
+            throw new ValidationError('password_reset', null, '密码重置未完成或账号状态已变化，请刷新页面后重试。');
+        }
+        const target = await getEnrollment(uid);
+        this.response.redirect = this.url('oi33_enrollment_review', { query: { name: target?.realName || '' } });
     }
 
     @param('uid', Types.UnsignedInt)
@@ -265,10 +326,12 @@ export class Oi33EnrollmentReviewHandler extends Handler {
     @param('reason', Types.String, true)
     @param('validUntil', Types.String, true)
     async post(domainId: string, uid: number, revision: number, action: string, reason = '', validUntil = '') {
-        assertEducationAdmin(this.user);
+        assertAccountAdmin(this.user);
+        privateResponse(this);
         const target = await getEnrollment(uid);
         if (!target || target.domainId !== domainOf(this)) throw new ForbiddenError('不能管理其他域的身份档案。');
         if (uid === this.user._id) throw new ForbiddenError('不能审核或变更自己的账号状态，请由另一位管理员操作。');
+        if (action === 'reset_password') return this.resetPassword(domainOf(this), uid, revision);
         if (action === 'disable' && isEducationAdmin(await UserModel.getById(domainOf(this), uid))) {
             throw new ForbiddenError('请先通过独立权限管理撤销管理员权限，再停用其账号，避免锁定管理入口。');
         }
@@ -303,10 +366,16 @@ export async function apply(ctx: Context) {
         await pretestColl.updateOne({ _id: rid }, { $setOnInsert: { uid: h.user._id, domainId: domainOf(h),
             contestId: String(h.args.tid), createdAt: new Date() } }, { upsert: true });
     });
-    events.on('handler/after/HomeSecurity#post', async (h: any) => {
-        if (h.args.operation === 'change_password' && h.response.redirect === h.url('user_login')) {
-            await completeEnrollmentPasswordChange(h.user._id);
-        }
+    events.on('handler/before/HomeSecurity#post', (h: any) => installEnrollmentPasswordChange(h));
+    events.on('oplog/log', (_type: string, h: any, args: any) => {
+        if (nameOf(h) === 'HomeSecurity' && h.args.operation === 'change_password') delete args.current;
+    });
+    events.on('handler/after/HomeSecurity#get', async (h: any) => {
+        if (h.response.template !== 'home_security.html' || h.response.redirect) return;
+        if (!(await getEnrollment(h.user._id))?.requiresPasswordChange) return;
+        privateResponse(h);
+        h.response.template = 'oi33_password_change.html';
+        h.response.body = { sudoUid: h.session?.sudoUid || null };
     });
     for (const name of ['UserRegisterWithCode', 'OauthCallback', 'UserLogin']) {
         events.on(`handler/after/${name}`, async (h: any) => {
@@ -314,7 +383,17 @@ export async function apply(ctx: Context) {
             if (!uid || !h.response.redirect) return;
             const doc = await getEnrollment(uid);
             const legacy = !doc ? await userColl.findOne({ _id: uid }, { projection: { realname_flag: 1 } }) : null;
-            if (doc?.requiresPasswordChange) h.response.redirect = h.url('home_security');
+            if (doc?.requiresPasswordChange) {
+                // A successful password login has just verified the same student
+                // credential (and configured MFA) that native sudo would ask for.
+                // Do not grant this freshness to OAuth, GETs or staff accounts.
+                if (name === 'UserLogin' && h.request.method.toLowerCase() === 'post'
+                    && typeof h.args.password === 'string' && await isOrdinaryStudentAccount(domainOf(h), uid)) {
+                    h.session.sudo = Date.now();
+                    h.session.sudoArgs = null;
+                }
+                h.response.redirect = h.url('home_security');
+            }
             else if (!doc && !(legacy?.realname_flag >= 1) && !isEducationAdmin(h.context.HydroContext.user)) h.response.redirect = h.url('oi33_enrollment');
             else if (doc && (!doc.enabled || doc.status !== 'approved' || doc.accountType === 'temporary')) h.response.redirect = h.url('oi33_enrollment');
         });

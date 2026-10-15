@@ -15,6 +15,7 @@ class Loader extends nunjucks.Loader {
 }
 const env = new nunjucks.Environment(new Loader(), { autoescape: true });
 env.addGlobal('url', (name, args = {}) => {
+    if (name === 'home_security') return '/home/security';
     assert.equal(name, 'oi33_enrollment_review');
     const query = new URLSearchParams(args.query || {}).toString();
     return route + (query ? `?${query}` : '');
@@ -79,6 +80,82 @@ test('review client registers only this admin page and does not auto-submit name
     assert.match(source, /form\.requestSubmit\(\)/);
     assert.match(source, /WeakSet/);
     assert.doesNotMatch(source, /addEventListener\('input'|request\.post|fetch\(/);
+});
+
+test('password reset controls require a server allowlist and use CSRF-protected POST with a revision', () => {
+    const entry = { _id: 45, realName: '<script>not-a-script</script>', revision: 9, status: 'approved',
+        accountType: 'regular', enabled: true, history: [] };
+    for (const passwordResetAllowedUids of [undefined, [], [46]]) {
+        assert.doesNotMatch(render({ enrollments: [entry], passwordResetAllowedUids }), /data-enrollment-password-reset/);
+    }
+    const html = render({ enrollments: [entry], passwordResetAllowedUids: [45] });
+    const reset = form(html, 'data-enrollment-password-reset');
+    assert.match(reset, /method="post"/);
+    assert.match(reset, /action="\/oi33\/enrollment\/review"/);
+    for (const [name, value] of [['csrfToken', 'csrf-test'], ['uid', '45'], ['revision', '9'], ['action', 'reset_password']]) {
+        assert.match(reset, new RegExp(`type="hidden" name="${name}" value="${value}"`));
+    }
+    assert.match(reset, />重置密码<\/button>/);
+    assert.doesNotMatch(reset, /name="(?:password|realName)"/);
+    assert.doesNotMatch(html, /<script>not-a-script<\/script>/);
+    assert.match(html, /&lt;script&gt;not-a-script&lt;\/script&gt;/);
+});
+
+test('mandatory password change page uses native secure POST fields without filling secrets', () => {
+    const html = env.render('oi33_password_change.html', { handler: { csrfToken: 'csrf-private' } });
+    const change = form(html, 'data-enrollment-password-change');
+    assert.match(change, /method="post"/);
+    assert.match(change, /action="\/home\/security"/);
+    assert.match(change, /type="hidden" name="csrfToken" value="csrf-private"/);
+    assert.match(change, /type="hidden" name="operation" value="change_password"/);
+    for (const name of ['current', 'password', 'verifyPassword']) {
+        const input = change.match(new RegExp(`<input[^>]*name="${name}"[^>]*>`))?.[0];
+        assert.ok(input, name);
+        assert.match(input, /type="password"/);
+        assert.match(input, /required/);
+        assert.match(input, /minlength="6"/);
+        assert.match(input, /maxlength="255"/);
+        assert.match(input, new RegExp(`autocomplete="${name === 'current' ? 'current-password' : 'new-password'}"`));
+        assert.doesNotMatch(input, /value=/);
+    }
+    assert.doesNotMatch(change, /name="uid"|name="revision"|name="requiresPasswordChange"/);
+    assert.match(html, /123456/);
+});
+
+if (process.env.OI33_LAYOUT_TEST === '1') test('real Chrome reset confirmation cancels safely and submits exactly one protected POST', async () => {
+    const { chromium } = require('playwright');
+    const bundle = buildSync({ entryPoints: [path.join(root, 'frontend/enrollment-review.page.ts')], bundle: true,
+        write: false, format: 'iife', globalName: 'ReviewFilters', external: ['@hydrooj/ui-default'] }).outputFiles[0].text;
+    const browser = await chromium.launch({ channel: 'chrome', headless: true });
+    const posted = [];
+    try {
+        const page = await browser.newPage();
+        await page.route('http://oi33-reset.test/**', async (request) => {
+            const req = request.request();
+            if (req.method() === 'POST') posted.push(new URLSearchParams(req.postData()));
+            const html = render({ enrollments: [{ _id: 45, realName: '测试学生', revision: 9, status: 'approved',
+                enabled: true, accountType: 'regular', history: [] }], passwordResetAllowedUids: [45] });
+            await request.fulfill({ contentType: 'text/html; charset=utf-8', body: '<!doctype html><html><head><meta charset="utf-8"></head><body>'
+                + html + '<script>window.pages=[];window.require=()=>({NamedPage:function(name,callback){this.name=name;this.callback=callback;},addPage:page=>window.pages.push(page)});</script>'
+                + `<script>${bundle}</script><script>window.pages.forEach(page=>page.callback());</script></body></html>` });
+        });
+        await page.goto(`http://oi33-reset.test${route}?uid=999&revision=999`);
+        const button = page.locator('form[data-enrollment-password-reset] button');
+        await page.evaluate(() => { window.confirmCalls = []; window.confirm = (message) => { window.confirmCalls.push(message); return false; }; });
+        await button.click();
+        assert.equal(posted.length, 0);
+        assert.equal(await page.evaluate(() => window.confirmCalls.length), 1);
+        assert.match(await page.evaluate(() => window.confirmCalls[0]), /123456/);
+        await page.evaluate(() => {
+            window.ReviewFilters.installEnrollmentReviewFilters(); window.ReviewFilters.installEnrollmentReviewFilters();
+            window.confirm = (message) => { window.confirmCalls.push(message); return true; };
+        });
+        await Promise.all([page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame()), button.click()]);
+        await page.waitForLoadState('load');
+        assert.equal(posted.length, 1);
+        assert.deepEqual(Object.fromEntries(posted[0]), { csrfToken: 'csrf-test', uid: '45', revision: '9', action: 'reset_password' });
+        assert.equal(new URL(page.url()).search, '', 'never submit forged query uid/revision');
+    } finally { await browser.close(); }
 });
 
 if (process.env.OI33_LAYOUT_TEST === '1') test('real Chrome GET forms: immediate status reset, explicit name submit, Enter and pagination', async () => {
@@ -200,6 +277,53 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('desktop review filters align and
                         assert.ok(control.contrast >= 4.5, `Filter text contrast: ${details}`);
                     }
                 }
+            }
+        }
+    } finally { await browser.close(); }
+});
+
+if (process.env.OI33_LAYOUT_TEST === '1') test('mandatory password inputs and labels stay legible in both themes and CSS orders', async () => {
+    const { chromium } = require('playwright');
+    const theme = fs.readFileSync(path.join(root, 'node_modules/@hydrooj/ui-default/public/theme-4.58.4.css'), 'utf8');
+    const custom = ['frontend/oi33-design-system.css', 'frontend/enrollment.css']
+        .map((file) => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
+    const fixture = env.render('oi33_password_change.html', { handler: { csrfToken: 'csrf-test' } });
+    const browser = await chromium.launch({ channel: 'chrome', headless: true });
+    try {
+        const page = await browser.newPage({ viewport: { width: 1440, height: 980 } });
+        for (const [order, sheet] of [['core-first', theme + custom], ['core-last', custom + theme]]) {
+            for (const mode of ['', 'class="theme--dark"', 'data-mantine-color-scheme="dark"']) {
+                await page.setContent(`<!doctype html><html ${mode}><head><meta charset="utf-8"><style>${sheet}</style></head><body><main class="main">${fixture}</main></body></html>`);
+                for (const name of ['current', 'password', 'verifyPassword']) await page.fill(`input[name="${name}"]`, 'qa-visible-password');
+                const results = await page.locator('.oi33-password-change').evaluate((container) => {
+                    const parse = (color) => color.match(/[\d.]+/g).map(Number);
+                    const backgroundOf = (element) => {
+                        const result = [0, 0, 0]; let remaining = 1;
+                        for (let node = element; node && remaining > 0; node = node.parentElement) {
+                            const color = parse(getComputedStyle(node).backgroundColor), alpha = color[3] ?? 1;
+                            for (let index = 0; index < 3; index++) result[index] += color[index] * alpha * remaining;
+                            remaining *= 1 - alpha;
+                        }
+                        return result.map((value) => value + 255 * remaining);
+                    };
+                    const luminance = (color) => color.slice(0, 3).map((v) => v / 255)
+                        .map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4)
+                        .reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+                    return [...container.querySelectorAll('label,input[type=password],button,.oi33-enrollment__muted,.oi33-enrollment__notice')].map((element) => {
+                        const style = getComputedStyle(element), rect = element.getBoundingClientRect();
+                        const foreground = parse(style.webkitTextFillColor || style.color), background = backgroundOf(element);
+                        const [lo, hi] = [luminance(foreground), luminance(background)].sort((a, b) => a - b);
+                        return { tag: element.tagName, name: element.getAttribute('name'), foreground, background,
+                            x: rect.x, right: rect.right, height: rect.height, contrast: (hi + .05) / (lo + .05) };
+                    });
+                });
+                for (const control of results) {
+                    const details = JSON.stringify({ order, mode, ...control });
+                    assert.ok(control.contrast >= 4.5, details);
+                    assert.ok(control.x >= 0 && control.right <= 1440 && control.height >= 20, details);
+                }
+                assert.equal(await page.locator('input[type=password]').count(), 3);
+                assert.equal(await page.locator('form').evaluate((form) => form.checkValidity()), true);
             }
         }
     } finally { await browser.close(); }

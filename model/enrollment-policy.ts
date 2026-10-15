@@ -60,6 +60,13 @@ export function decideEnrollmentAccess(doc: EnrollmentAccess | null, c: Enrollme
     const read = ['get', 'head'].includes(c.method.toLowerCase());
     const socket = c.method.toLowerCase() === 'ws';
     if (c.uid <= 0) return { allowed: true }; // Hydro continues to enforce anonymous privileges.
+    if (doc?.requiresPasswordChange) {
+        const authentication = ['UserLogin', 'UserLogout', 'UserSudo', 'UserTFA', 'UserWebauthn'].includes(c.handler);
+        const changePassword = c.handler === 'HomeSecurity' && (read
+            || (c.method.toLowerCase() === 'post' && c.operation === 'change_password'));
+        return !socket && (authentication || changePassword) ? { allowed: true }
+            : { allowed: false, reason: '请先修改初始密码，再继续使用 OJ。' };
+    }
     if (isAccountMaintenance(c)) return { allowed: true };
     if (!doc) {
         // Hydro judge workers are provisioned infrastructure principals, not public registrants.
@@ -71,7 +78,6 @@ export function decideEnrollmentAccess(doc: EnrollmentAccess | null, c: Enrollme
         if (c.isAdmin || c.legacyVerified || read) return { allowed: true };
         return { allowed: false, reason: '请先前往「实名与账号」提交实名申请，审核通过后即可使用。' };
     }
-    if (doc.requiresPasswordChange) return { allowed: false, reason: '请先在账号安全设置中修改初始密码。' };
     const active = enrollmentActivity(doc, c.now);
     if (!active.allowed) {
         // Unverified regular users may read public content, but cannot mutate it.

@@ -46,17 +46,20 @@ function matches(doc, query) {
     return Object.entries(query).every(([key, value]) => {
         if (key === '$or') return value.some((q) => matches(doc, q));
         if (key === '$and') return value.every((q) => matches(doc, q));
-        if (value instanceof RegExp) return typeof doc[key] === 'string' && value.test(doc[key]);
+        const actual = key.split('.').reduce((current, part) => current?.[part], doc);
+        if (value instanceof RegExp) return typeof actual === 'string' && value.test(actual);
         if (value && typeof value === 'object' && !(value instanceof Date) && !(value instanceof FakeObjectId)) {
             return Object.entries(value).every(([op, arg]) => {
-                if (op === '$in') return arg.includes(doc[key]);
-                if (op === '$lt') return doc[key] < arg;
-                if (op === '$lte') return doc[key] <= arg;
-                if (op === '$exists') return (doc[key] !== undefined) === arg;
+                if (op === '$in') return arg.includes(actual);
+                if (op === '$nin') return !arg.includes(actual);
+                if (op === '$ne') return actual !== arg;
+                if (op === '$lt') return actual < arg;
+                if (op === '$lte') return actual <= arg;
+                if (op === '$exists') return (actual !== undefined) === arg;
                 throw new Error(`Unsupported test query ${op}`);
             });
         }
-        return same(doc[key], value);
+        return same(actual, value);
     });
 }
 class MemoryCollection {
@@ -98,6 +101,7 @@ function harness() {
     const collection = (name) => collections[name] ||= new MemoryCollection();
     const logs = [];
     const reviewControl = { calls: [], run: async () => ({ decision: 'review', reason: 'configuration' }) };
+    const passwordControl = { allowed: [], checked: [], resets: [], leases: [], released: [], ordinary: true, studentChecks: [], run: async () => {} };
     const userColl = collection('oi33_user');
     const userModel = loadTs('model/user.ts', {
         hydrooj: { db: { collection } }, './log': { addLog: async (entry) => logs.push(entry) },
@@ -108,18 +112,61 @@ function harness() {
         './user': { userColl }, './enrollment-policy': policy,
     });
     class ForbiddenError extends Error {}
-    class ValidationError extends Error { constructor(field, message) { super(message); this.field = field; } }
+    class ValidationError extends Error { constructor(field, message, detail) { super(detail || message); this.field = field; } }
     class Handler {}
     const isAdmin = (user) => user?.role === 'root' || user?.privAll || user?.realname_flag >= 2;
-    const auth = { isEducationAdmin: isAdmin, assertEducationAdmin: (user) => { if (!isAdmin(user)) throw new ForbiddenError('admin required'); } };
+    const auth = { isEducationAdmin: isAdmin, isEducationCoach: (user) => isAdmin(user) || user?.role === 'coach',
+        assertEducationAdmin: (user) => { if (!isAdmin(user)) throw new ForbiddenError('admin required'); } };
+    const isAccountAdmin = (user) => !!user?._id && (!!user.privAll || user.realname_flag >= 2);
+    const passwordService = {
+        isAccountAdmin,
+        isOrdinaryStudentAccount: async (...args) => {
+            passwordControl.studentChecks.push(args);
+            return passwordControl.ordinary;
+        },
+        assertAccountAdmin: (user) => { if (!isAccountAdmin(user)) throw new ForbiddenError('account admin required'); },
+        canResetStudentPassword: async (...args) => {
+            passwordControl.checked.push(args);
+            return passwordControl.allowed.includes(args[1]);
+        },
+        resetStudentPassword: async (...args) => {
+            passwordControl.resets.push(args);
+            return passwordControl.run(...args);
+        },
+        acquirePasswordChange: async (uid) => {
+            const doc = await model.getEnrollment(uid);
+            if (!doc) return null;
+            const lease = { id: `lease-${uid}-${passwordControl.leases.length}`, revision: doc.revision,
+                requiresPasswordChange: !!doc.requiresPasswordChange };
+            passwordControl.leases.push(lease);
+            await collection('oi33_enrollment').updateOne({ _id: uid }, { $set: { passwordOperation: { id: lease.id } } });
+            return lease;
+        },
+        releasePasswordChange: async (uid, id) => {
+            passwordControl.released.push({ uid, id });
+            await collection('oi33_enrollment').updateOne({ _id: uid, 'passwordOperation.id': id }, { $unset: { passwordOperation: '' } });
+        },
+    };
+    const requireSudo = (_target, _key, descriptor) => {
+        const original = descriptor.value;
+        descriptor.value = async function (...args) {
+            if (!this.session?.sudo || Date.now() - this.session.sudo >= 3600000) {
+                this.response.redirect = this.url('user_sudo');
+                return 'cleanup';
+            }
+            return original.apply(this, args);
+        };
+        return descriptor;
+    };
     const api = loadTs('handler/enrollment.ts', {
-        hydrooj: { Handler, PRIV: { PRIV_USER_PROFILE: 1, PRIV_JUDGE: 2 }, Types: {}, param: () => (target, key, descriptor) => descriptor,
+        hydrooj: { Handler, PRIV: { PRIV_USER_PROFILE: 1, PRIV_JUDGE: 2, PRIV_ALL: 4 }, Types: {}, param: () => (target, key, descriptor) => descriptor, requireSudo,
             ForbiddenError, ValidationError, ObjectId: FakeObjectId, db: { collection },
             RecordModel: { get: async (domainId, rid) => collection('record').findOne({ _id: rid, domainId }) },
             TokenModel: { TYPE_SESSION: 0, get: async (id) => collection('session').findOne({ _id: id }) },
             UserModel: { getById: async (_, uid) => collection('core_user').findOne({ _id: uid }) } },
         '../model/education-auth': auth, '../model/user': { userColl }, '../model/enrollment': model,
         '../model/enrollment-policy': policy,
+        '../model/account-password': passwordService,
         './enrollment-name-review': { reviewEnrollmentName: async (...args) => {
             reviewControl.calls.push(copy(args));
             return reviewControl.run(...args);
@@ -127,8 +174,8 @@ function harness() {
     });
     function handler(name, method = 'post', args = {}, uid = 10) {
         const headers = {};
-        return { constructor: { name: `${name}Handler` }, user: { _id: uid }, domain: { _id: 'system' },
-            args: { domainId: 'system', ...args }, request: { method }, response: { body: {}, addHeader: (k, v) => { headers[k] = v; } },
+        return { constructor: { name: `${name}Handler` }, user: { _id: uid, hasPriv(priv) { return this.privAll === true && priv === 4; } }, domain: { _id: 'system' },
+            args: { domainId: 'system', ...args }, request: { method, headers: {} }, session: {}, response: { body: {}, addHeader: (k, v) => { headers[k] = v; } },
             headers, context: { HydroContext: { user: { _id: uid }, domain: { _id: 'system' } } }, url: (name) => `/${name}`,
             limitRate: async () => {},
             close(code) { this.closed = code; } };
@@ -138,7 +185,7 @@ function harness() {
         await api.apply({ on: (name, fn) => { (hooks[name] ||= []).push(fn); }, Route: (...args) => routes.push(args) });
         return { hooks, routes, run: async (name, h) => { let result; for (const fn of hooks[name] || []) result = await fn(h); return result; } };
     }
-    return { model, api, userModel, collection, userColl, logs, handler, hookMap, reviewControl, ForbiddenError, ValidationError };
+    return { model, api, userModel, collection, userColl, logs, handler, hookMap, reviewControl, passwordControl, ForbiddenError, ValidationError };
 }
 
 function deferred() {
@@ -594,7 +641,7 @@ test('expiry boundary, missing expiry, invalid date, disabled and mandatory pass
         assert.equal(policy.enrollmentActivity(temp(extra)).allowed, false);
     }
     assert.equal(policy.decideEnrollmentAccess(temp({ requiresPasswordChange: true }), request()).allowed, false);
-    assert.equal(policy.decideEnrollmentAccess(temp({ requiresPasswordChange: true }), request({ handler: 'HomeSecurity' })).allowed, true);
+    assert.equal(policy.decideEnrollmentAccess(temp({ requiresPasswordChange: true }), request({ handler: 'HomeSecurity', operation: 'change_password' })).allowed, true);
 });
 
 test('application validates names and cannot request a management role or self-assign classes', async () => {
@@ -735,17 +782,114 @@ test('WS gates prepare, arbitrary messages, direct updates and subscriptions aft
     assert.equal(updates, 1);
 });
 
-test('password requirement is removed only by successful core password-change after hook', async () => {
+test('password requirement clears only after the native password operation succeeds with its pre-change lease', async () => {
+    for (const outcome of ['sudo', 'wrong-current', 'verify-mismatch', 'success']) {
+        const h = harness(); const hooks = await h.hookMap();
+        await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '学生甲', requiresPasswordChange: true }, 1);
+        const security = h.handler('HomeSecurity', 'post', { operation: 'change_password', current: '123456', password: 'new-secret' });
+        let nativeCalls = 0;
+        security.postChangePassword = async (...args) => {
+            nativeCalls++;
+            assert.deepEqual(args, ['system', '123456', 'new-secret', 'new-secret']);
+            if (outcome === 'wrong-current' || outcome === 'verify-mismatch') throw new Error(outcome);
+            security.response.redirect = outcome === 'success' ? '/user_login' : '/user_sudo';
+        };
+        await hooks.run('handler/before/HomeSecurity#post', security);
+        await hooks.run('handler/before/HomeSecurity#post', security);
+        const operation = () => security.postChangePassword('system', '123456', 'new-secret', 'new-secret');
+        if (outcome === 'wrong-current' || outcome === 'verify-mismatch') await assert.rejects(operation(), new RegExp(outcome));
+        else await operation();
+        assert.equal(nativeCalls, 1);
+        const doc = await h.model.getEnrollment(10);
+        assert.equal(doc.requiresPasswordChange, outcome !== 'success');
+        assert.equal(doc.revision, outcome === 'success' ? 2 : 1);
+        assert.equal(doc.passwordOperation, undefined);
+        assert.equal(h.passwordControl.leases.length, 1);
+        assert.equal(h.passwordControl.released.length, 1);
+        assert.equal(hooks.hooks['handler/after/HomeSecurity#post'], undefined, 'no unfenced generic success hook');
+    }
+});
+
+test('mandatory password change rejects 123456 and the current password before invoking native writes', async () => {
+    for (const [current, password] of [['123456', '123456'], ['old-secret', '123456'], ['old-secret', 'old-secret']]) {
+        const h = harness();
+        await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '学生甲', requiresPasswordChange: true }, 1);
+        const security = h.handler('HomeSecurity', 'post', { operation: 'change_password', current, password });
+        let nativeCalls = 0;
+        security.postChangePassword = async () => { nativeCalls++; security.response.redirect = '/user_login'; };
+        h.api.installEnrollmentPasswordChange(security);
+        await assert.rejects(security.postChangePassword(), (error) => error instanceof h.ValidationError && error.field === 'password');
+        assert.equal(nativeCalls, 0);
+        assert.equal((await h.model.getEnrollment(10)).requiresPasswordChange, true);
+        assert.equal(h.passwordControl.released.length, 1);
+    }
+});
+
+test('an old password operation cannot clear a newer reset revision or release its replacement lock', async () => {
+    const h = harness();
+    await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '学生甲', requiresPasswordChange: true }, 1);
+    const security = h.handler('HomeSecurity', 'post', { operation: 'change_password', current: '123456', password: 'new-secret' });
+    security.postChangePassword = async () => {
+        await h.collection('oi33_enrollment').updateOne({ _id: 10 }, { $set: {
+            revision: 2, requiresPasswordChange: true, passwordOperation: { id: 'replacement-reset-lock' },
+        } });
+        security.response.redirect = '/user_login';
+    };
+    h.api.installEnrollmentPasswordChange(security);
+    await security.postChangePassword();
+    const doc = await h.model.getEnrollment(10);
+    assert.equal(doc.requiresPasswordChange, true);
+    assert.equal(doc.revision, 2);
+    assert.equal(doc.passwordOperation.id, 'replacement-reset-lock');
+});
+
+test('mandatory change gates HTML, JSON, mutations and sockets while leaving only password/login maintenance', async () => {
+    const h = harness();
+    await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '学生甲', requiresPasswordChange: true }, 1);
+    for (const name of ['Home', 'ProblemDetail', 'Oi33Enrollment', 'HomeSettings', 'Api']) {
+        const html = h.handler(name, 'get');
+        assert.equal(await h.api.enforceEnrollment(html), 'cleanup', name);
+        assert.equal(html.response.redirect, '/home_security');
+        assert.equal(html.headers['Cache-Control'], 'private, no-store');
+        const json = h.handler(name, 'get'); json.request.headers.accept = 'application/json';
+        await assert.rejects(h.api.enforceEnrollment(json), h.ForbiddenError);
+        await assert.rejects(h.api.enforceEnrollment(h.handler(name, 'post')), h.ForbiddenError);
+        await assert.rejects(h.api.enforceEnrollment(h.handler(name), true), h.ForbiddenError);
+    }
+    for (const operation of ['change_mail', 'link_account', 'delete_token', undefined]) {
+        await assert.rejects(h.api.enforceEnrollment(h.handler('HomeSecurity', 'post', { operation })), h.ForbiddenError);
+    }
+    await h.api.enforceEnrollment(h.handler('HomeSecurity', 'get'));
+    await h.api.enforceEnrollment(h.handler('HomeSecurity', 'post', { operation: 'change_password' }));
+    for (const name of ['UserLogin', 'UserLogout', 'UserSudo', 'UserTFA', 'UserWebauthn']) {
+        await h.api.enforceEnrollment(h.handler(name, 'get'));
+    }
+});
+
+test('forced security view contains only the change form and does not overwrite native sudo redirects', async () => {
     const h = harness(); const hooks = await h.hookMap();
     await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '学生甲', requiresPasswordChange: true }, 1);
-    const security = h.handler('HomeSecurity', 'post', { operation: 'change_password' });
-    security.response.redirect = '/user_sudo';
-    await hooks.run('handler/after/HomeSecurity#post', security);
-    assert.equal((await h.model.getEnrollment(10)).requiresPasswordChange, true);
-    security.response.redirect = '/user_login';
-    await hooks.run('handler/after/HomeSecurity#post', security);
-    assert.equal((await h.model.getEnrollment(10)).requiresPasswordChange, false);
-    assert.equal((await h.model.getEnrollment(10)).revision, 2);
+    const security = h.handler('HomeSecurity', 'get');
+    security.response.template = 'home_security.html'; security.response.body = { sessions: ['PRIVATE SESSION'], authenticators: ['PRIVATE KEY'] };
+    await hooks.run('handler/after/HomeSecurity#get', security);
+    assert.equal(security.response.template, 'oi33_password_change.html');
+    assert.deepEqual(security.response.body, { sudoUid: null });
+    assert.equal(security.headers['Cache-Control'], 'private, no-store');
+    const sudo = h.handler('HomeSecurity', 'get'); sudo.response.redirect = '/user_sudo'; sudo.response.template = 'home_security.html';
+    await hooks.run('handler/after/HomeSecurity#get', sudo);
+    assert.equal(sudo.response.template, 'home_security.html');
+    assert.equal(sudo.response.redirect, '/user_sudo');
+});
+
+test('password-change operation logs redact the current password without changing the native verification arguments', async () => {
+    const h = harness(); const hooks = await h.hookMap();
+    const req = h.handler('HomeSecurity', 'post', { operation: 'change_password', current: 'PRIVATE-CURRENT-PASSWORD' });
+    const logged = { operation: 'change_password', current: req.args.current, domainId: 'system' };
+    for (const callback of hooks.hooks['oplog/log'] || []) callback('user', req, logged);
+    assert.equal(logged.current, undefined);
+    assert.equal(req.args.current, 'PRIVATE-CURRENT-PASSWORD');
+    assert.equal(logged.operation, 'change_password');
+    assert.equal(logged.domainId, 'system');
 });
 
 test('anonymous gateway checks payload credentials instead of trusting its guest handshake identity', async () => {
@@ -849,8 +993,8 @@ test('review endpoint rejects ordinary students, cross-domain targets, self-mana
     await h.model.submitEnrollment(10, 'other', { realName: '学生甲' }, 0);
     const req = h.handler('Oi33EnrollmentReview');
     req.user._id = 1;
-    await assert.rejects(h.api.Oi33EnrollmentReviewHandler.prototype.post.call(req, 'system', 10, 1, 'approve'), /admin required/);
-    req.user.role = 'root';
+    await assert.rejects(h.api.Oi33EnrollmentReviewHandler.prototype.post.call(req, 'system', 10, 1, 'approve'), /管理员/);
+    req.user.privAll = true;
     const forged = h.handler('Oi33EnrollmentReview', 'get', { domainId: 'my-other-domain' });
     forged.user.role = 'root';
     await assert.rejects(h.api.enforceEnrollment(forged), /管理域与请求参数不一致/);
@@ -874,6 +1018,7 @@ test('review endpoint rejects ordinary students, cross-domain targets, self-mana
 async function reviewList(h, args = {}, role = 'root') {
     const req = h.handler('Oi33EnrollmentReview', 'get', args, 1);
     req.user.role = role;
+    req.user.privAll = role === 'root';
     await h.api.Oi33EnrollmentReviewHandler.prototype.get.call(req);
     return req;
 }
@@ -906,7 +1051,7 @@ test('review list defaults to all current-domain profiles, ignores old UID filte
         assert.ok(!Object.hasOwn(req.response.body, 'filterUid'));
     }
     assert.deepEqual(h.collection('oi33_enrollment').docs, before, 'GET filters cannot change review decisions');
-    await assert.rejects(reviewList(h, {}, 'default'), /admin required/);
+    await assert.rejects(reviewList(h, {}, 'default'), /管理员/);
 });
 
 test('review status views distinguish approved from all unapproved and accept legacy bookmarked states', async () => {
@@ -989,13 +1134,98 @@ test('review POST returns to the affected student by real name instead of the re
     const h = harness();
     await h.model.submitEnrollment(10, 'system', { realName: '张三' }, 0);
     const req = h.handler('Oi33EnrollmentReview', 'post', {}, 1);
-    req.user.role = 'root';
+    req.user.privAll = true;
     const urls = [];
     req.url = (...args) => { urls.push(args); return '/oi33/enrollment/review?name=student'; };
     await h.api.Oi33EnrollmentReviewHandler.prototype.post.call(req, 'system', 10, 1, 'approve');
     assert.deepEqual(urls, [['oi33_enrollment_review', { query: { name: '张三' } }]]);
     assert.equal(req.response.redirect, '/oi33/enrollment/review?name=student');
     assert.equal((await h.model.getEnrollment(10)).status, 'approved');
+});
+
+test('review GET and every management POST require OJ administrator authority, not coach or domain ownership', async () => {
+    const h = harness();
+    await h.model.submitEnrollment(10, 'system', { realName: '学生甲' }, 0);
+    for (const role of ['default', 'coach', 'root']) {
+        const req = h.handler('Oi33EnrollmentReview', 'get', {}, 1); req.user.role = role;
+        await assert.rejects(h.api.Oi33EnrollmentReviewHandler.prototype.get.call(req), h.ForbiddenError);
+        for (const action of ['approve', 'reject', 'disable', 'enable', 'extend', 'convert', 'reset_password']) {
+            await assert.rejects(h.api.Oi33EnrollmentReviewHandler.prototype.post.call(req, 'system', 10, 1, action), h.ForbiddenError);
+        }
+        const self = h.handler('Oi33Enrollment', 'get'); self.user.role = role;
+        await h.api.Oi33EnrollmentHandler.prototype.get.call(self);
+        assert.equal(self.response.body.canManageAccounts, false);
+    }
+    assert.equal(h.passwordControl.checked.length, 0);
+    assert.equal(h.passwordControl.resets.length, 0);
+    assert.equal((await h.model.getEnrollment(10)).revision, 1);
+    for (const user of [{ privAll: true }, { realname_flag: 2 }, { realname_flag: 3 }]) {
+        const req = h.handler('Oi33EnrollmentReview', 'get', {}, 1); Object.assign(req.user, user);
+        await h.api.Oi33EnrollmentReviewHandler.prototype.get.call(req);
+        assert.equal(req.response.body.enrollments.length, 1);
+    }
+});
+
+test('review GET builds reset controls from current-page service checks, never from client-supplied permissions', async () => {
+    const h = harness(); await seedReviewList(h); h.passwordControl.allowed = [10, 12];
+    const req = await reviewList(h, { passwordResetAllowedUids: [11, 13], resetAllowed: true });
+    assert.deepEqual(req.response.body.passwordResetAllowedUids, [10, 12]);
+    assert.deepEqual(h.passwordControl.checked.map((args) => args.slice(0, 2)), [['system', 10], ['system', 11], ['system', 12], ['system', 13]]);
+    assert.ok(h.passwordControl.checked.every((args) => args[2] === req.user));
+    assert.equal(h.passwordControl.resets.length, 0);
+});
+
+test('review password reset requires fresh administrator sudo and passes only server domain, UID and revision to service', async () => {
+    const h = harness(); await h.model.submitEnrollment(10, 'system', { realName: '学生甲' }, 0);
+    const req = h.handler('Oi33EnrollmentReview', 'post', { password: 'attacker-chosen', domainId: 'system' }, 1);
+    req.user.privAll = true;
+    req.resetPassword = h.api.Oi33EnrollmentReviewHandler.prototype.resetPassword;
+    const limits = []; req.limitRate = async (...args) => limits.push(args);
+    assert.equal(await h.api.Oi33EnrollmentReviewHandler.prototype.post.call(req, 'system', 10, 1, 'reset_password'), 'cleanup');
+    assert.equal(req.response.redirect, '/user_sudo');
+    assert.equal(h.passwordControl.resets.length, 0);
+    req.session.sudo = Date.now() - 3600001;
+    await h.api.Oi33EnrollmentReviewHandler.prototype.post.call(req, 'system', 10, 1, 'reset_password');
+    assert.equal(h.passwordControl.resets.length, 0);
+    req.session.sudo = Date.now();
+    await h.api.Oi33EnrollmentReviewHandler.prototype.post.call(req, 'system', 10, 1, 'reset_password');
+    assert.equal(h.passwordControl.resets.length, 1);
+    assert.deepEqual(h.passwordControl.resets[0], ['system', 10, 1, req.user]);
+    assert.deepEqual(limits, [['oi33_reset_student_password', 3600, 60, '{{user}}']]);
+    assert.equal(req.response.redirect, '/oi33_enrollment_review');
+    assert.equal(req.headers['Cache-Control'], 'private, no-store');
+    assert.equal((await h.model.getEnrollment(10)).revision, 1, 'controller delegates resets instead of silently changing identity');
+});
+
+test('successful password login redirects forced students directly to change form but grants no sudo to OAuth, GET or staff', async () => {
+    for (const [name, method, args, role, expectSudo] of [
+        ['UserLogin', 'post', { password: '123456' }, 'default', true],
+        ['UserLogin', 'get', { password: '123456' }, 'default', false],
+        ['UserLogin', 'post', {}, 'default', false],
+        ['OauthCallback', 'post', {}, 'default', false],
+        ['UserLogin', 'post', { password: '123456' }, 'coach', false],
+    ]) {
+        const h = harness(); const hooks = await h.hookMap();
+        await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '学生甲', requiresPasswordChange: true }, 1);
+        const req = h.handler(name, method, args); req.response.redirect = '/';
+        req.context.HydroContext.user.role = role;
+        h.passwordControl.ordinary = role === 'default';
+        await hooks.run(`handler/after/${name}`, req);
+        assert.equal(req.response.redirect, '/home_security');
+        assert.equal(!!req.session.sudo, expectSudo, `${name}/${method}/${role}`);
+    }
+});
+
+test('fresh-login sudo requires the authoritative ordinary-student check even when the current domain role looks normal', async () => {
+    const h = harness(); const hooks = await h.hookMap();
+    await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '学生甲', requiresPasswordChange: true }, 1);
+    const req = h.handler('UserLogin', 'post', { password: '123456' });
+    req.response.redirect = '/'; req.context.HydroContext.user.role = 'default';
+    h.passwordControl.ordinary = false; // Service rejects extra global privileges and staff memberships in any domain.
+    await hooks.run('handler/after/UserLogin', req);
+    assert.equal(req.response.redirect, '/home_security');
+    assert.equal(req.session.sudo, undefined);
+    assert.deepEqual(h.passwordControl.studentChecks, [['system', 10]]);
 });
 
 test('private profile uses no-store and legacy request model cannot modify realname fields', async () => {

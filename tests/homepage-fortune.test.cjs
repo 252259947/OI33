@@ -106,8 +106,14 @@ test('approved means completed realname, independently of disabled usage status'
   assert.doesNotMatch(html, /name="realName"/);
 });
 test('an unverified administrator does not receive a misleading form that always rejects submission', () => {
-  const html = enrollmentEnv.render('oi33_enrollment.html', { isAdmin: true, legacyVerified: false, handler: {} });
+  const html = enrollmentEnv.render('oi33_enrollment.html', { isAdmin: true, canManageAccounts: true, legacyVerified: false, handler: {} });
   assert.match(html, /管理员权限不等于实名认证/);
   assert.doesNotMatch(html, /name="realName"/);
   assert.match(html, /审核与账号管理/);
+});
+test('domain-root teaching authority alone does not expose the global account-management entry', () => {
+  const html = enrollmentEnv.render('oi33_enrollment.html', { isAdmin: true, canManageAccounts: false, legacyVerified: false, handler: {} });
+  assert.match(html, /管理员权限不等于实名认证/);
+  assert.doesNotMatch(html, /name="realName"/);
+  assert.doesNotMatch(html, /审核与账号管理|oi33_enrollment_review/);
 });

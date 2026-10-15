@@ -26,7 +26,14 @@
 .oi33-enrollment__filter-hint { margin: 12px 0 0; }
 .oi33-enrollment__history { margin-top: 20px; font-size: 13px; line-height: 1.8; }
 .oi33-enrollment__history summary { cursor: pointer; color: #64748b; }
-.theme--dark .oi33-enrollment__notice { background: #29283e; color: #dddafa; border-color: #4a466a; }
+.oi33-enrollment__password-reset { padding-top: 16px; border-top: 1px solid var(--oi33-border, #e2e8f0); }
+.oi33-password-change { max-width: 720px; margin-right: auto; margin-left: auto; }
+.oi33-password-change .section { background: var(--oi33-surface, #fff); }
+.oi33-enrollment.oi33-password-change label, .oi33-password-change .oi33-enrollment__muted { color: var(--oi33-text-2, #526078); -webkit-text-fill-color: var(--oi33-text-2, #526078); }
+.oi33-password-change .textbox { color: var(--oi33-text, #182033); -webkit-text-fill-color: var(--oi33-text, #182033); background-color: var(--oi33-surface, #fff); }
+.oi33-password-change .primary.button { color: #fff; -webkit-text-fill-color: #fff; }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .oi33-password-change .primary.button { color: #182033; -webkit-text-fill-color: #182033; }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .oi33-enrollment__notice { background: #29283e; color: #dddafa; border-color: #4a466a; }
 @media (max-width: 600px) {
   .oi33-enrollment .section__body { padding: 18px; }
   .oi33-enrollment__grid { grid-template-columns: minmax(0, 1fr); }

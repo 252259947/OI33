@@ -59,12 +59,13 @@ async function waitFor(predicate, label, ms = 55000) {
 }
 function session() {
   const cookies = new Map();
-  return async (route, form, html = false) => {
+  return async (route, form, html = false, extraHeaders = {}) => {
     const response = await fetch(`${base}${route}`, {
       method: form ? 'POST' : 'GET', redirect: 'manual',
       headers: { Accept: html ? 'text/html' : 'application/json', Referer: `${base}${route}`, Origin: base,
         Cookie: [...cookies].map(([key, value]) => `${key}=${value}`).join('; '),
         ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+        ...extraHeaders,
       },
       body: form ? new URLSearchParams(form) : undefined,
     });
@@ -301,6 +302,96 @@ async function verify(db, ids) {
     && !filterHtml.includes('<option value="pending"') && filterHtml.includes('审核未通过'));
   check('review GET filters never change enrollment decisions or revisions',
     same(filterSnapshot, await db.collection('oi33_enrollment').find({}).sort({ _id: 1 }).toArray()));
+
+  const resetForm = { action: 'reset_password', uid: String(ids.normal), revision: String((await enrollment('normal')).revision) };
+  const credentialsBefore = await db.collection('user').findOne({ _id: ids.normal }, { projection: { hash: 1, salt: 1 } });
+  for (const name of ['domainroot', 'coach']) {
+    check(`${name} cannot read global account management`, rejected(await actors[name]('/oi33/enrollment/review')));
+    check(`${name} cannot forge student password reset`, rejected(await actors[name]('/oi33/enrollment/review', resetForm)));
+  }
+  result = await actors.admin('/oi33/enrollment/review', resetForm, false, {
+    Origin: 'https://foreign.invalid', Referer: 'https://foreign.invalid/reset',
+  });
+  check('foreign-origin reset is rejected without changing credentials', rejected(result)
+    && same(credentialsBefore, await db.collection('user').findOne({ _id: ids.normal }, { projection: { hash: 1, salt: 1 } })));
+  result = await actors.admin('/oi33/enrollment/review', resetForm);
+  check('administrator reset requires recent native authorization before changing credentials', result.status < 400
+    && /sudo/.test(result.location || result.body.url || '')
+    && same(credentialsBefore, await db.collection('user').findOne({ _id: ids.normal }, { projection: { hash: 1, salt: 1 } })));
+  const sudoUrl = result.location || result.body.url;
+  await actors.admin(sudoUrl);
+  result = await actors.admin(sudoUrl, { password });
+  check('administrator completes native sudo with current credential', result.status < 400);
+  for (const name of ['oi33_token', 'oi33_oauth_token', 'oi33_oauth_refresh']) {
+    await db.collection(name).insertOne({ _id: 'reset-synthetic-token', uid: ids.normal, isActive: true });
+  }
+  await db.collection('oi33_oauth_code').insertOne({ _id: 'reset-synthetic-code', uid: ids.normal, consumed: false });
+  const identityBeforeReset = await enrollment('normal');
+  result = await actors.admin('/oi33/enrollment/review', resetForm);
+  doc = await enrollment('normal');
+  check('admin reset marks force-change and saves safe history while retaining verification and identity', result.status < 400
+    && doc.requiresPasswordChange && doc.passwordReset.state === 'ready' && !doc.passwordOperation
+    && doc.revision === identityBeforeReset.revision + 1 && doc.status === 'approved'
+    && doc.realName === identityBeforeReset.realName && doc.enabled === identityBeforeReset.enabled
+    && same(doc.requestedGroups, identityBeforeReset.requestedGroups)
+    && doc.history.at(-1).action === 'password_reset');
+  check('reset revokes core sessions and private API/OAuth credentials', await db.collection('token').countDocuments({ uid: ids.normal }) === 0
+    && await db.collection('oi33_token').countDocuments({ uid: ids.normal, isActive: true }) === 0
+    && await db.collection('oi33_oauth_token').countDocuments({ uid: ids.normal, isActive: true }) === 0
+    && await db.collection('oi33_oauth_refresh').countDocuments({ uid: ids.normal, isActive: true }) === 0
+    && await db.collection('oi33_oauth_code').countDocuments({ uid: ids.normal, consumed: false }) === 0);
+  result = await actors.normal('/oi33/enrollment');
+  check('previous student login is no longer authenticated after reset', result.status >= 400
+    || /login/.test(result.location || result.body.url || '')
+    || (result.status === 200 && result.body.enrollment === null && !result.body.legacyVerified && !result.body.canManageAccounts),
+    JSON.stringify({ status: result.status, enrollmentUid: result.body.enrollment?._id, location: result.location, url: result.body.url }));
+  const student = session();
+  await student('/login');
+  result = await student('/login', { uname: 'qa_normal', password });
+  check('old password no longer authenticates after reset', rejected(result));
+  result = await student('/login', { uname: 'qa_normal', password: '123456' });
+  const changeUrl = result.location || result.body.url;
+  check('temporary password authenticates and redirects immediately to native password page', result.status < 400
+    && changeUrl === '/home/security');
+  result = await student(changeUrl, null, true);
+  check('fresh password login directly displays change form without another sudo prompt', result.status === 200
+    && (result.body.raw || '').includes('name="current"') && (result.body.raw || '').includes('name="verifyPassword"')
+    && (result.body.raw || '').includes('请先修改密码') && /no-store/.test(result.cache));
+  result = await student('/', null, true);
+  check('forced student cannot navigate away to normal HTML pages', (result.location || result.body.url) === changeUrl);
+  result = await student('/oi33/enrollment');
+  check('forced student cannot use unrelated JSON APIs', rejected(result));
+  result = await student('/home/security', { operation: 'change_mail', mail: 'unauthorized@fixture.invalid', password: '123456' });
+  check('forced student cannot switch to another account-security operation', rejected(result));
+  result = await student('/home/security', { operation: 'change_password', current: '123456', password: '123456', verifyPassword: '123456' });
+  check('unchanged default password cannot unlock the account', rejected(result) && (await enrollment('normal')).requiresPasswordChange);
+  result = await student('/home/security', { operation: 'change_password', current: 'WrongFixturePassword', password, verifyPassword: password });
+  check('wrong current password retains force-change and releases operation lock', rejected(result)
+    && (await enrollment('normal')).requiresPasswordChange && !(await enrollment('normal')).passwordOperation);
+  result = await student('/home/security', { operation: 'change_password', current: '123456', password, verifyPassword: password });
+  check('successful native password change clears the matching requirement and logs out', result.status < 400
+    && (result.location || result.body.url) === '/login' && !(await enrollment('normal')).requiresPasswordChange
+    && !(await enrollment('normal')).passwordOperation);
+  const finalStudent = session();
+  await finalStudent('/login');
+  result = await finalStudent('/login', { uname: 'qa_normal', password: '123456' });
+  check('temporary password stops working after student changes it', rejected(result));
+  result = await finalStudent('/login', { uname: 'qa_normal', password });
+  check('new password permits normal login again', result.status < 400 && (result.location || result.body.url) !== '/home/security');
+  result = await finalStudent('/oi33/enrollment');
+  check('student regains ordinary access without losing verification', result.status === 200 && result.body.enrollment.status === 'approved');
+  result = await finalStudent('/oi33/enrollment/review', { ...resetForm, uid: String(ids.invalid) });
+  check('student cannot forge an administrator password reset', rejected(result));
+  result = await actors.admin('/oi33/enrollment/review', resetForm);
+  check('replaying stale administrator reset fails without changing the new password', rejected(result)
+    && !(await enrollment('normal')).requiresPasswordChange);
+  check('reset and password changes never alter class membership, roles or privileges',
+    same(groupsBefore, await db.collection('user.group').find({}).sort({ _id: 1 }).toArray())
+    && same(rolesBefore, await db.collection('domain.user').find({}).project({ _id: 0, domainId: 1, uid: 1, role: 1 }).sort({ uid: 1 }).toArray())
+    && same(privilegesBefore, await db.collection('user').find({}).project({ _id: 1, priv: 1 }).sort({ _id: 1 }).toArray()));
+  const privateLogs = JSON.stringify(await db.collection('oplog').find({}).toArray());
+  check('operation logs never contain current or new credential values', !privateLogs.includes(password)
+    && !privateLogs.includes('WrongFixturePassword') && !privateLogs.includes('"current":'));
 }
 
 async function main() {
@@ -316,7 +407,7 @@ async function main() {
   write(path.join(profile, 'config.json'), { host: '127.0.0.1', port: String(mongoPort), name: run.replaceAll('-', '_') });
   write(path.join(profile, 'addon.json'), [path.join(globalModules, '@hydrooj/ui-default'), path.join(fixture, 'addon')]);
   write(path.join(fixture, 'addon/package.json'), { name: 'oi33-enrollment-name-qa', version: '1.0.0', main: 'index.js' });
-  for (const name of ['oi33_enrollment.html', 'oi33_enrollment_review.html']) {
+  for (const name of ['oi33_enrollment.html', 'oi33_enrollment_review.html', 'oi33_password_change.html']) {
     fs.copyFileSync(path.join(root, 'templates', name), path.join(fixture, 'addon/templates', name));
   }
   const ready = path.join(fixture, 'ready.json');
@@ -328,13 +419,16 @@ exports.apply = async function(ctx) {
   const { submitEnrollment, provisionEnrollment } = require(${JSON.stringify(path.join(root, 'model/enrollment.ts'))});
   if (!await DomainModel.get('system')) await DomainModel.add('system', 2, 'Isolated name review QA', 'Synthetic fixture only');
   const ids = { admin: 2, normal: 3, invalid: 4, review: 5, malformed: 6, error: 7,
-    manual: 8, disabled: 9, revision: 10, history: 11, batch: 12, temporary: 13, featureoff: 14, unconfigured: 15 };
+    manual: 8, disabled: 9, revision: 10, history: 11, batch: 12, temporary: 13, featureoff: 14, unconfigured: 15,
+    domainroot: 16, coach: 17 };
   await UserModel.create('nobody@fixture.invalid', 'nobody', ${JSON.stringify(password)}, 0, '127.0.0.1', PRIV.PRIV_DEFAULT);
   for (const [name, uid] of Object.entries(ids)) {
     await UserModel.create('qa_' + name + '@fixture.invalid', 'qa_' + name, ${JSON.stringify(password)}, uid, '127.0.0.1', name === 'admin' ? PRIV.PRIV_ALL : PRIV.PRIV_DEFAULT);
     await UserModel.setById(uid, { timeZone: 'Asia/Shanghai' });
     if (name !== 'admin') await DomainModel.setUserRole('system', uid, 'default', true);
   }
+  await DomainModel.setUserRole('system', ids.domainroot, 'root', true);
+  await DomainModel.setUserRole('system', ids.coach, 'coach', true);
   await UserModel.updateGroup('system', ${JSON.stringify(privateGroup)}, []);
   await submitEnrollment(ids.history, 'system', { realName: '旧待审' }, 0);
   await provisionEnrollment({ uid: ids.batch, domainId: 'system', realName: '批量学生', batchId: 'synthetic-batch', rosterKey: 'row-one' }, ids.admin);

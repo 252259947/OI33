@@ -25,6 +25,7 @@
     <div class="section__header"><h2 class="section__title">{{ entry.realName }} <span class="oi33-enrollment__muted">UID {{ entry._id }}</span></h2></div>
     <div class="section__body">
       <div class="oi33-enrollment__status"><strong>{% if not entry.enabled %}已停用{% elif entry.status == 'pending' %}待人工确认{% elif entry.status == 'approved' %}已审核{% else %}审核未通过{% endif %}</strong><span>{% if entry.accountType == 'temporary' %}临时比赛账号{% else %}日常账号{% endif %} · 版本 {{ entry.revision }}</span></div>
+      {% if entry.requiresPasswordChange %}<div class="oi33-enrollment__notice" role="status">此账号需要修改密码；学生登录后须先设置新密码，才能继续使用 OJ。</div>{% endif %}
       {% if entry.status == 'approved' and entry.reviewedBy == 0 and entry.autoReview.decision == 'pass' %}
         <div class="oi33-enrollment__notice">审核来源：DeepSeek 自动姓名审核通过（非证件核验）。</div>
       {% elif entry.reviewedBy and (entry.status == 'approved' or entry.status == 'rejected') %}
@@ -48,13 +49,19 @@
         {% if entry.enabled %}<button class="button" name="action" value="disable">停用账号</button>{% else %}<button class="button" name="action" value="enable">恢复启用</button>{% endif %}
         {% if entry.accountType == 'temporary' and entry.status == 'approved' %}<button class="button" name="action" value="convert">转为日常账号（保留 UID）</button>{% endif %}
       </form>
+      {% if entry._id in (passwordResetAllowedUids or []) %}
+      <form method="post" action="{{ url('oi33_enrollment_review') }}" class="oi33-enrollment__actions oi33-enrollment__password-reset" data-enrollment-password-reset>
+        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}"><input type="hidden" name="action" value="reset_password">
+        <button class="button" type="submit">重置密码</button><span class="oi33-enrollment__muted">重置为 123456，下次登录必须修改。</span>
+      </form>
+      {% endif %}
       {% if entry.accountType == 'temporary' and entry.status == 'approved' %}
       <form method="post" class="oi33-enrollment__filters">
         <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}"><input type="hidden" name="action" value="extend">
         <label>新的到期时间（含时区）<input class="textbox" type="text" name="validUntil" required placeholder="2026-10-01T18:00:00+08:00"></label><button class="button">延长有效期</button>
       </form>
       {% endif %}
-      <details class="oi33-enrollment__history"><summary>操作历史</summary><ul>{% for event in entry.history %}<li>{{ datetimeSpan(event.at)|safe }} · {% if event.action == 'auto_approved' %}自动姓名审核通过{% else %}{{ event.action }}{% endif %} · {% if event.operator == 0 %}系统{% else %}操作人 UID {{ event.operator }}{% endif %} · 版本 {{ event.revision }}{% if event.reason %} · {{ event.reason }}{% endif %}</li>{% endfor %}</ul></details>
+      <details class="oi33-enrollment__history"><summary>操作历史</summary><ul>{% for event in entry.history %}<li>{{ datetimeSpan(event.at)|safe }} · {% if event.action == 'auto_approved' %}自动姓名审核通过{% elif event.action == 'password_reset' or event.action == 'reset_password' %}管理员重置密码{% elif event.action == 'password_reset_failed' %}密码重置未完成{% elif event.action == 'password_changed' %}已修改密码{% else %}{{ event.action }}{% endif %} · {% if event.operator == 0 %}系统{% else %}操作人 UID {{ event.operator }}{% endif %} · 版本 {{ event.revision }}{% if event.reason %} · {{ event.reason }}{% endif %}</li>{% endfor %}</ul></details>
     </div>
   </section>
   {% else %}<section class="section"><div class="section__body"><p>暂无符合条件的身份档案。</p></div></section>{% endfor %}
