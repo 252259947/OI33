@@ -101,6 +101,40 @@ test('password reset controls require a server allowlist and use CSRF-protected 
     assert.match(html, /&lt;script&gt;not-a-script&lt;\/script&gt;/);
 });
 
+test('account action row keeps independent protected forms and moves reset guidance into the button tooltip', () => {
+    const hint = '重置为 123456，下次登录必须修改。';
+    for (const variant of [
+        { status: 'approved', enabled: true, accountType: 'regular', reset: true, action: 'disable' },
+        { status: 'pending', enabled: true, accountType: 'regular', reset: true, action: 'disable' },
+        { status: 'approved', enabled: false, accountType: 'regular', reset: false, action: 'enable' },
+        { status: 'approved', enabled: true, accountType: 'temporary', reset: false, action: 'disable' },
+    ]) {
+        const html = render({ enrollments: [{ _id: 45, realName: '测试学生', revision: 9, history: [], ...variant }],
+            passwordResetAllowedUids: variant.reset ? [45] : [] });
+        const row = html.match(/<div class="oi33-enrollment__account-actions">([\s\S]*?)<\/div>/)?.[1];
+        assert.ok(row, JSON.stringify(variant));
+        const forms = [...row.matchAll(/<form\b[^>]*>[\s\S]*?<\/form>/g)].map((match) => match[0]);
+        assert.equal(forms.length, variant.reset ? 2 : 1);
+        for (const renderedForm of forms) {
+            assert.equal((renderedForm.match(/<form\b/g) || []).length, 1, 'No nested forms');
+            assert.match(renderedForm, /method="post"/);
+            for (const [name, value] of [['csrfToken', 'csrf-test'], ['uid', '45'], ['revision', '9']]) {
+                assert.match(renderedForm, new RegExp(`type="hidden" name="${name}" value="${value}"`));
+            }
+        }
+        assert.match(forms[0], new RegExp(`name="action" value="${variant.action}"`));
+        assert.doesNotMatch(forms[0], /data-enrollment-password-reset|reset_password/);
+        assert.equal(/value="convert"/.test(forms[0]), variant.accountType === 'temporary');
+        if (variant.reset) {
+            assert.match(forms[1], /data-enrollment-password-reset/);
+            assert.match(forms[1], new RegExp(`<button[^>]*title="${hint}"[^>]*>重置密码<\/button>`));
+            assert.doesNotMatch(forms[1], /<span\b/);
+        }
+        assert.doesNotMatch(html.replace(/<[^>]*>/g, ''), new RegExp(hint), 'Hint is not persistent page text');
+        assert.doesNotMatch(row, /oi33-enrollment__review-form/, 'Pending-review form remains separate from account actions');
+    }
+});
+
 test('mandatory password change page uses native secure POST fields without filling secrets', () => {
     const html = env.render('oi33_password_change.html', { handler: { csrfToken: 'csrf-private' } });
     const change = form(html, 'data-enrollment-password-change');
@@ -155,6 +189,14 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('real Chrome reset confirmation c
         assert.equal(posted.length, 1);
         assert.deepEqual(Object.fromEntries(posted[0]), { csrfToken: 'csrf-test', uid: '45', revision: '9', action: 'reset_password' });
         assert.equal(new URL(page.url()).search, '', 'never submit forged query uid/revision');
+        const unexpectedDialogs = [];
+        page.on('dialog', async (dialog) => { unexpectedDialogs.push(dialog.message()); await dialog.dismiss(); });
+        await Promise.all([page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame()),
+            page.locator('.oi33-enrollment__account-actions button[name=action][value=disable]').click()]);
+        await page.waitForLoadState('load');
+        assert.deepEqual(unexpectedDialogs, [], 'Disabling an account must not trigger reset confirmation');
+        assert.equal(posted.length, 2);
+        assert.deepEqual(Object.fromEntries(posted[1]), { csrfToken: 'csrf-test', uid: '45', revision: '9', action: 'disable' });
     } finally { await browser.close(); }
 });
 
@@ -324,6 +366,59 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('mandatory password inputs and la
                 }
                 assert.equal(await page.locator('input[type=password]').count(), 3);
                 assert.equal(await page.locator('form').evaluate((form) => form.checkValidity()), true);
+            }
+        }
+    } finally { await browser.close(); }
+});
+
+if (process.env.OI33_LAYOUT_TEST === '1') test('desktop account buttons share one aligned row with hover-only guidance in both themes and CSS orders', async () => {
+    const { chromium } = require('playwright');
+    const theme = fs.readFileSync(path.join(root, 'node_modules/@hydrooj/ui-default/public/theme-4.58.4.css'), 'utf8');
+    const custom = ['frontend/oi33-design-system.css', 'frontend/enrollment.css']
+        .map((file) => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
+    const hint = '重置为 123456，下次登录必须修改。';
+    const fixture = render({ enrollments: [{ _id: 45, realName: '测试学生', revision: 9, status: 'approved',
+        enabled: true, accountType: 'regular', history: [] }], passwordResetAllowedUids: [45] });
+    const browser = await chromium.launch({ channel: 'chrome', headless: true });
+    try {
+        const page = await browser.newPage();
+        for (const [order, sheet] of [['core-first', theme + custom], ['core-last', custom + theme]]) {
+            for (const mode of ['', 'class="theme--dark"', 'data-mantine-color-scheme="dark"']) {
+                for (const width of [1024, 1440]) {
+                    await page.setViewportSize({ width, height: 980 });
+                    await page.setContent(`<!doctype html><html ${mode}><head><meta charset="utf-8"><style>${sheet}</style></head><body><main class="main">${fixture}</main></body></html>`);
+                    const reset = page.locator('[data-enrollment-password-reset] button');
+                    assert.equal(await reset.getAttribute('title'), hint);
+                    assert.equal((await page.innerText('body')).includes(hint), false);
+                    await reset.hover();
+                    assert.equal(await reset.getAttribute('title'), hint, 'Native hover tooltip retains the reset explanation');
+                    const result = await page.locator('.oi33-enrollment__account-actions').evaluate((row) => {
+                        const rectangle = (element) => {
+                            const { x, y, right, height } = element.getBoundingClientRect();
+                            const style = getComputedStyle(element);
+                            return { x, y, right, height, borderTop: parseFloat(style.borderTopWidth), paddingTop: parseFloat(style.paddingTop) };
+                        };
+                        return { display: getComputedStyle(row).display,
+                            buttons: [...row.querySelectorAll('button')].map(rectangle),
+                            forms: [...row.children].map(rectangle), scrollWidth: document.documentElement.scrollWidth };
+                    });
+                    const details = JSON.stringify({ order, mode, width, ...result });
+                    assert.equal(result.display, 'flex', details);
+                    assert.equal(result.buttons.length, 2, details);
+                    assert.equal(result.forms.length, 2, details);
+                    const [disable, resetRect] = result.buttons;
+                    assert.ok(Math.abs(disable.y - resetRect.y) < 1, `Same button row: ${details}`);
+                    assert.ok(Math.abs(disable.height - resetRect.height) < 1, `Matching heights: ${details}`);
+                    assert.ok(Math.abs(resetRect.x - disable.right - 12) < 1, `Consistent 12px gap: ${details}`);
+                    for (const button of result.buttons) {
+                        assert.ok(button.height >= 42 && button.x >= 0 && button.right <= width, `Visible desktop buttons: ${details}`);
+                    }
+                    for (const renderedForm of result.forms) {
+                        assert.equal(renderedForm.borderTop, 0, `No action divider: ${details}`);
+                        assert.equal(renderedForm.paddingTop, 0, `No extra reset top padding: ${details}`);
+                    }
+                    assert.ok(result.scrollWidth <= width + 1, `No horizontal overflow: ${details}`);
+                }
             }
         }
     } finally { await browser.close(); }

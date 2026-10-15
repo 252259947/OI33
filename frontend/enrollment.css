@@ -26,7 +26,8 @@
 .oi33-enrollment__filter-hint { margin: 12px 0 0; }
 .oi33-enrollment__history { margin-top: 20px; font-size: 13px; line-height: 1.8; }
 .oi33-enrollment__history summary { cursor: pointer; color: #64748b; }
-.oi33-enrollment__password-reset { padding-top: 16px; border-top: 1px solid var(--oi33-border, #e2e8f0); }
+.oi33-enrollment__account-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 16px 0; }
+.oi33-enrollment__account-actions > form { margin: 0; }
 .oi33-password-change { max-width: 720px; margin-right: auto; margin-left: auto; }
 .oi33-password-change .section { background: var(--oi33-surface, #fff); }
 .oi33-enrollment.oi33-password-change label, .oi33-password-change .oi33-enrollment__muted { color: var(--oi33-text-2, #526078); -webkit-text-fill-color: var(--oi33-text-2, #526078); }

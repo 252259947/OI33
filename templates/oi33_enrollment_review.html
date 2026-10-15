@@ -44,17 +44,19 @@
         <div class="oi33-enrollment__actions"><button class="primary button" name="action" value="approve">核验通过</button><button class="button" name="action" value="reject">退回补充</button></div>
       </form>
       {% endif %}
-      <form method="post" class="oi33-enrollment__actions">
-        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}">
-        {% if entry.enabled %}<button class="button" name="action" value="disable">停用账号</button>{% else %}<button class="button" name="action" value="enable">恢复启用</button>{% endif %}
-        {% if entry.accountType == 'temporary' and entry.status == 'approved' %}<button class="button" name="action" value="convert">转为日常账号（保留 UID）</button>{% endif %}
-      </form>
-      {% if entry._id in (passwordResetAllowedUids or []) %}
-      <form method="post" action="{{ url('oi33_enrollment_review') }}" class="oi33-enrollment__actions oi33-enrollment__password-reset" data-enrollment-password-reset>
-        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}"><input type="hidden" name="action" value="reset_password">
-        <button class="button" type="submit">重置密码</button><span class="oi33-enrollment__muted">重置为 123456，下次登录必须修改。</span>
-      </form>
-      {% endif %}
+      <div class="oi33-enrollment__account-actions">
+        <form method="post" class="oi33-enrollment__actions">
+          <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}">
+          {% if entry.enabled %}<button class="button" name="action" value="disable">停用账号</button>{% else %}<button class="button" name="action" value="enable">恢复启用</button>{% endif %}
+          {% if entry.accountType == 'temporary' and entry.status == 'approved' %}<button class="button" name="action" value="convert">转为日常账号（保留 UID）</button>{% endif %}
+        </form>
+        {% if entry._id in (passwordResetAllowedUids or []) %}
+        <form method="post" action="{{ url('oi33_enrollment_review') }}" class="oi33-enrollment__actions oi33-enrollment__password-reset" data-enrollment-password-reset>
+          <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}"><input type="hidden" name="action" value="reset_password">
+          <button class="button" type="submit" title="重置为 123456，下次登录必须修改。">重置密码</button>
+        </form>
+        {% endif %}
+      </div>
       {% if entry.accountType == 'temporary' and entry.status == 'approved' %}
       <form method="post" class="oi33-enrollment__filters">
         <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}"><input type="hidden" name="action" value="extend">
