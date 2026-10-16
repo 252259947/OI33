@@ -10,6 +10,7 @@ const net = require('node:net');
 const http = require('node:http');
 const { spawn, execFileSync } = require('node:child_process');
 const { MongoClient } = require('mongodb');
+const WebSocket = require('ws');
 
 const root = path.resolve(__dirname, '../..');
 const globalModules = process.env.OI33_QA_GLOBAL_MODULES || '/usr/local/share/.config/yarn/global/node_modules';
@@ -27,6 +28,8 @@ const run = `oi33-enrollment-name-qa-${Date.now()}-${process.pid}`;
 const report = { run, tests: [], isolated: { mongoPort, httpPort: 8899, aiPort }, ok: false };
 const aiRequests = [];
 const held = new Map();
+const openSockets = new Set();
+const sessionSecrets = new Set();
 let fixture, profile, hydroProcess, mongoProcess, client, aiServer;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -59,14 +62,15 @@ async function waitFor(predicate, label, ms = 55000) {
 }
 function session() {
   const cookies = new Map();
-  return async (route, form, html = false, extraHeaders = {}) => {
+  const actor = async (route, form, html = false, extraHeaders = {}) => {
+    const headers = { Accept: html ? 'text/html' : 'application/json', Referer: `${base}${route}`, Origin: base,
+      Cookie: [...cookies].map(([key, value]) => `${key}=${value}`).join('; '),
+      ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}), ...extraHeaders };
+    // A null value means genuinely absent, not the string "null" sent by fetch.
+    for (const [key, value] of Object.entries(headers)) if (value === null) delete headers[key];
     const response = await fetch(`${base}${route}`, {
       method: form ? 'POST' : 'GET', redirect: 'manual',
-      headers: { Accept: html ? 'text/html' : 'application/json', Referer: `${base}${route}`, Origin: base,
-        Cookie: [...cookies].map(([key, value]) => `${key}=${value}`).join('; '),
-        ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
-        ...extraHeaders,
-      },
+      headers,
       body: form ? new URLSearchParams(form) : undefined,
     });
     for (const cookie of response.headers.getSetCookie()) {
@@ -78,6 +82,31 @@ function session() {
     try { body = JSON.parse(text); } catch { body = { raw: text }; }
     return { status: response.status, body, location: response.headers.get('location'), cache: response.headers.get('cache-control') };
   };
+  actor.cookie = () => [...cookies].map(([key, value]) => `${key}=${value}`).join('; ');
+  return actor;
+}
+async function connectSocket(route, cookie = '') {
+  const socket = new WebSocket(`ws://127.0.0.1:8899${route}`, { headers: { Origin: base, ...(cookie ? { Cookie: cookie } : {}) } });
+  const state = { socket, messages: [], closed: false, closeCode: null, error: false };
+  openSockets.add(socket);
+  socket.on('message', (data) => {
+    if (String(data) === 'ping') { socket.send('pong'); return; }
+    try { state.messages.push(JSON.parse(String(data))); } catch {}
+  });
+  socket.on('close', (code) => { state.closed = true; state.closeCode = code; openSockets.delete(socket); });
+  socket.on('error', () => { state.error = true; });
+  await waitFor(() => socket.readyState === WebSocket.OPEN || state.closed || state.error, 'fixture WebSocket handshake', 6000);
+  assert.equal(socket.readyState, WebSocket.OPEN, 'Fixture WebSocket must open successfully');
+  return state;
+}
+async function subscribeMessages(credential) {
+  sessionSecrets.add(credential);
+  const state = await connectSocket('/websocket');
+  state.socket.send(JSON.stringify({ operation: 'subscribe', channels: ['message'], credential,
+    request_id: 'password-security-fixture', subscription_id: 'password-security-fixture' }));
+  await waitFor(() => state.messages.some((message) => message.operation === 'verify') || state.closed,
+    'fixture gateway subscription response', 6000);
+  return state;
 }
 async function login(actor, name) {
   await actor('/login');
@@ -116,7 +145,7 @@ async function startAi() {
   });
   await new Promise((resolve) => aiServer.listen(aiPort, '127.0.0.1', resolve));
 }
-async function verify(db, ids) {
+async function verify(db, { ids, rid }) {
   const actors = Object.fromEntries(Object.keys(ids).map((name) => [name, session()]));
   for (const [name, actor] of Object.entries(actors)) await login(actor, name);
   const enrollment = (name) => db.collection('oi33_enrollment').findOne({ _id: ids[name] });
@@ -326,9 +355,57 @@ async function verify(db, ids) {
     await db.collection(name).insertOne({ _id: 'reset-synthetic-token', uid: ids.normal, isActive: true });
   }
   await db.collection('oi33_oauth_code').insertOne({ _id: 'reset-synthetic-code', uid: ids.normal, consumed: false });
+  const credentialState = async () => ({
+    user: await db.collection('user').findOne({ _id: ids.normal }, { projection: { hash: 1, salt: 1 } }),
+    enrollment: await enrollment('normal'),
+    tokens: await Promise.all(['token', 'oi33_token', 'oi33_oauth_token', 'oi33_oauth_refresh', 'oi33_oauth_code']
+      .map(async (collection) => [collection, await db.collection(collection).find({ uid: ids.normal }).sort({ _id: 1 }).toArray()])),
+  });
+  const deniedOrigins = [
+    ['foreign Origin with omitted Referer', { Origin: 'https://foreign.invalid', Referer: null }],
+    ['foreign Origin with empty Referer', { Origin: 'https://foreign.invalid', Referer: '' }],
+    ['both source headers omitted', { Origin: null, Referer: null }],
+    ['null Origin with same-site Referer', { Origin: 'null' }],
+    ['malformed Origin with same-site Referer', { Origin: 'not-a-url' }],
+    ['malformed Referer with same-site Origin', { Referer: 'not-a-url' }],
+    ['foreign Origin conflicts with same-site Referer', { Origin: 'https://foreign.invalid' }],
+    ['foreign Referer conflicts with same-site Origin', { Referer: 'https://foreign.invalid/reset' }],
+    ['same host but different scheme', { Origin: base.replace('http:', 'https:'), Referer: null }],
+    ['same host but different port', { Origin: 'http://127.0.0.1:8898', Referer: null }],
+    ['cross-site Fetch Metadata despite forged source', { 'Sec-Fetch-Site': 'cross-site' }],
+  ];
+  for (const [label, headers] of deniedOrigins) {
+    const before = await credentialState();
+    result = await actors.admin('/oi33/enrollment/review', resetForm, false, headers);
+    const unchanged = same(before, await credentialState());
+    check(`sudo-authorized reset rejects ${label} without any credential/enrollment/token mutation`, rejected(result)
+      && unchanged, JSON.stringify({ status: result.status, unchanged, url: result.location || result.body.url,
+      error: result.body.error?.name || result.body.error }));
+  }
+  // The allowed Referer-only path mutates a separate synthetic account so both
+  // valid browser source combinations are tested through a real successful reset.
+  const batchBefore = await enrollment('batch');
+  result = await actors.admin('/oi33/enrollment/review', {
+    action: 'reset_password', uid: String(ids.batch), revision: String(batchBefore.revision),
+  }, false, { Origin: null });
+  check('same-origin Referer without Origin permits authorized reset', result.status < 400
+    && (await enrollment('batch')).requiresPasswordChange
+    && (await enrollment('batch')).revision === batchBefore.revision + 1);
+  const oldRecord = await connectSocket(`/record-detail-conn?rid=${rid}&noTemplate=1`, actors.normal.cookie());
+  await waitFor(() => oldRecord.messages.some((message) => message.rdoc?._id === rid), 'initial core record update', 6000);
+  check('real core record-detail socket receives initial authenticated update before reset', !oldRecord.closed
+    && oldRecord.messages.some((message) => message.rdoc?._id === rid));
+  const normalToken = await db.collection('token').findOne({ uid: ids.normal, tokenType: 0 });
+  assert.ok(normalToken?._id, 'Synthetic student login must have a persisted session');
+  const oldGateway = await subscribeMessages(normalToken._id);
+  check('browser gateway accepts normal current student credential before reset',
+    oldGateway.messages.some((message) => message.accept?.includes(`message:${ids.normal}`)));
+  const oldRecordMessageCount = oldRecord.messages.length;
+  const oldGatewayMessageCount = oldGateway.messages.length;
   const identityBeforeReset = await enrollment('normal');
-  result = await actors.admin('/oi33/enrollment/review', resetForm);
+  result = await actors.admin('/oi33/enrollment/review', resetForm, false, { Referer: null });
   doc = await enrollment('normal');
+  check('same-origin Origin without Referer permits authorized reset', result.status < 400 && doc.requiresPasswordChange);
   check('admin reset marks force-change and saves safe history while retaining verification and identity', result.status < 400
     && doc.requiresPasswordChange && doc.passwordReset.state === 'ready' && !doc.passwordOperation
     && doc.revision === identityBeforeReset.revision + 1 && doc.status === 'approved'
@@ -368,7 +445,13 @@ async function verify(db, ids) {
   result = await student('/home/security', { operation: 'change_password', current: 'WrongFixturePassword', password, verifyPassword: password });
   check('wrong current password retains force-change and releases operation lock', rejected(result)
     && (await enrollment('normal')).requiresPasswordChange && !(await enrollment('normal')).passwordOperation);
-  result = await student('/home/security', { operation: 'change_password', current: '123456', password, verifyPassword: password });
+  for (const [label, headers] of deniedOrigins) {
+    const before = await credentialState();
+    result = await student('/home/security', { operation: 'change_password', current: '123456', password, verifyPassword: password }, false, headers);
+    check(`forced native password change rejects ${label} without credential/enrollment/token mutation`, rejected(result)
+      && same(before, await credentialState()), `HTTP ${result.status}`);
+  }
+  result = await student('/home/security', { operation: 'change_password', current: '123456', password, verifyPassword: password }, false, { Origin: null });
   check('successful native password change clears the matching requirement and logs out', result.status < 400
     && (result.location || result.body.url) === '/login' && !(await enrollment('normal')).requiresPasswordChange
     && !(await enrollment('normal')).passwordOperation);
@@ -380,6 +463,35 @@ async function verify(db, ids) {
   check('new password permits normal login again', result.status < 400 && (result.location || result.body.url) !== '/home/security');
   result = await finalStudent('/oi33/enrollment');
   check('student regains ordinary access without losing verification', result.status === 200 && result.body.enrollment.status === 'approved');
+  for (const [label, headers] of deniedOrigins) {
+    const before = await credentialState();
+    result = await finalStudent('/home/security', { operation: 'change_password', current: password,
+      password: 'SyntheticNeverSavedPassword!2026', verifyPassword: 'SyntheticNeverSavedPassword!2026' }, false, headers);
+    check(`ordinary native password change rejects ${label} without credential/enrollment/token mutation`, rejected(result)
+      && same(before, await credentialState()), `HTTP ${result.status}`);
+  }
+  // Crucially, no inbound traffic or fixture events were sent to the old
+  // sockets during reset/forced change: enrollment is approved again now.
+  const newRecord = await connectSocket(`/record-detail-conn?rid=${rid}&noTemplate=1`, finalStudent.cookie());
+  await waitFor(() => newRecord.messages.some((message) => message.rdoc?._id === rid), 'new core record connection', 6000);
+  const currentToken = await db.collection('token').findOne({ uid: ids.normal, tokenType: 0 });
+  const newGateway = await subscribeMessages(currentToken._id);
+  check('new browser gateway accepts fresh credential after password change',
+    newGateway.messages.some((message) => message.accept?.includes(`message:${ids.normal}`)));
+  result = await actors.admin('/qa/password-security-event', {});
+  check('synthetic event broadcaster runs only inside isolated fixture', result.status === 200);
+  await waitFor(() => oldRecord.closed && oldGateway.closed
+    && newRecord.messages.some((message) => message.rdoc?.score === 17)
+    && newGateway.messages.some((message) => JSON.stringify(message).includes('synthetic-password-security-event')),
+  'old sockets revoked and fresh sockets updated after reset/change', 10000);
+  check('idle pre-reset core record socket closes after password recovery without any new record push',
+    oldRecord.closeCode === 4003 && oldRecord.messages.length === oldRecordMessageCount);
+  check('idle pre-reset browser gateway closes without leaking later messages', oldGateway.closeCode === 4003
+    && oldGateway.messages.length === oldGatewayMessageCount);
+  check('new authenticated core record socket receives later normal updates', !newRecord.closed
+    && newRecord.messages.some((message) => message.rdoc?.score === 17));
+  check('new browser gateway receives normal messages with refreshed session', !newGateway.closed
+    && newGateway.messages.some((message) => JSON.stringify(message).includes('synthetic-password-security-event')));
   result = await finalStudent('/oi33/enrollment/review', { ...resetForm, uid: String(ids.invalid) });
   check('student cannot forge an administrator password reset', rejected(result));
   result = await actors.admin('/oi33/enrollment/review', resetForm);
@@ -397,6 +509,9 @@ async function verify(db, ids) {
 async function main() {
   assert.equal(process.platform, 'linux', 'Run this isolated runtime test under Linux/WSL.');
   for (const port of [mongoPort, 8899, aiPort]) await ensureFree(port);
+  // WSL may start its existing boot services with this invocation. Capture
+  // their identities only after boot settles, before creating our fixture.
+  await delay(4000);
   report.isolated.existingServicesBefore = originalSockets();
   fixture = fs.mkdtempSync('/tmp/oi33-enrollment-name-qa-');
   profile = path.join(os.homedir(), '.hydro', 'profiles', run);
@@ -413,7 +528,7 @@ async function main() {
   const ready = path.join(fixture, 'ready.json');
   write(path.join(fixture, 'addon/index.js'), `
 const fs = require('fs');
-const { db, UserModel, DomainModel, PRIV } = require('hydrooj');
+const { db, UserModel, DomainModel, ProblemModel, RecordModel, Handler, PRIV } = require('hydrooj');
 exports.apply = async function(ctx) {
   await require(${JSON.stringify(path.join(root, 'handler/enrollment.ts'))}).apply(ctx);
   const { submitEnrollment, provisionEnrollment } = require(${JSON.stringify(path.join(root, 'model/enrollment.ts'))});
@@ -439,7 +554,20 @@ exports.apply = async function(ctx) {
     apiKey: ${JSON.stringify(apiKey)}, models: [{ name: 'deepseek-v4-flash', input: 1, inputCached: 0.1, output: 2 }] });
   await db.collection('oi33_ai_config').insertOne({ _id: 'main', student_model: 'deepseek-v4-flash',
     moderation_model: 'deepseek-v4-flash', enrollment_auto_review_enabled: '1' });
-  fs.writeFileSync(${JSON.stringify(ready)}, JSON.stringify(ids));
+  const pid = await ProblemModel.add('system', 'QA_PASSWORD_WS', 'Synthetic password socket problem', 'Isolated fixture only', ids.admin);
+  const rid = await RecordModel.add('system', pid, ids.normal, 'cc', '// synthetic fixture only', false);
+  class QaPasswordSecurityEventHandler extends Handler {
+    async post() {
+      this.checkPriv(PRIV.PRIV_ALL);
+      const rdoc = await RecordModel.update('system', rid, { score: 17 });
+      ctx.broadcast('record/change', rdoc);
+      ctx.broadcast('user/message', [ids.normal], { from: ids.admin, to: ids.normal,
+        content: 'synthetic-password-security-event', _id: 'synthetic-event-only-no-message-write' });
+      this.response.body = { ok: true };
+    }
+  }
+  ctx.Route('qa_password_security_event', '/qa/password-security-event', QaPasswordSecurityEventHandler);
+  fs.writeFileSync(${JSON.stringify(ready)}, JSON.stringify({ ids, rid: String(rid) }));
 };
 `);
   const env = { ...process.env, NODE_PATH: globalModules, PATH: `/root/.nix-profile/bin:${process.env.PATH}`,
@@ -480,6 +608,8 @@ async function stop(child) {
 main().catch((error) => { report.error = error.stack; console.error(error.message); process.exitCode = 1; }).finally(async () => {
   for (const res of held.values()) res.destroy();
   held.clear();
+  for (const socket of openSockets) socket.terminate();
+  openSockets.clear();
   await stop(hydroProcess); await client?.close(); await stop(mongoProcess);
   if (aiServer) { aiServer.closeAllConnections(); await new Promise((resolve) => aiServer.close(resolve)); }
   if (process.platform === 'linux' && report.isolated.existingServicesBefore) {
@@ -490,12 +620,14 @@ main().catch((error) => { report.error = error.stack; console.error(error.messag
   }
   if (fixture && fs.existsSync(path.join(fixture, 'hydro.log'))) {
     const log = fs.readFileSync(path.join(fixture, 'hydro.log'), 'utf8');
-    report.isolated.runtimeLogContainsSecret = [password, apiKey, rawError].some((secret) => log.includes(secret));
+    report.isolated.runtimeLogContainsSecret = [password, apiKey, rawError, 'SyntheticNeverSavedPassword!2026', ...sessionSecrets].some((secret) => log.includes(secret));
+    report.isolated.runtimeLogContainsRawMessageEvent = /MessageEvent\s*\{/.test(log);
     if (report.isolated.runtimeLogContainsSecret) { report.ok = false; process.exitCode = 1; }
+    if (report.isolated.runtimeLogContainsRawMessageEvent) { report.ok = false; process.exitCode = 1; }
   }
   report.mockRequests = aiRequests.length;
   report.finishedAt = new Date().toISOString();
-  const safe = [password, apiKey, rawError].reduce((text, secret) => text.replaceAll(secret, '[REDACTED]'), JSON.stringify(report, null, 2));
+  const safe = [password, apiKey, rawError, ...sessionSecrets].reduce((text, secret) => text.replaceAll(secret, '[REDACTED]'), JSON.stringify(report, null, 2));
   if (fixture) write(path.join(fixture, 'report.json'), safe);
   const reports = path.join(__dirname, 'reports');
   fs.mkdirSync(reports, { recursive: true });

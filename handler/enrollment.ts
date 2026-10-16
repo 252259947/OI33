@@ -19,6 +19,37 @@ function truthy(value: unknown) { return value === true || value === 1 || value 
 function privateResponse(h: any) {
     h.response.addHeader('Cache-Control', 'private, no-store');
 }
+
+/** Account mutations are browser same-origin operations, even when Referer is omitted.
+ * Use Koa's resolved protocol and host (including trusted reverse-proxy settings),
+ * never an origin supplied through form fields, query parameters or CORS flags. */
+export function requireAccountMutationOrigin(h: any) {
+    const deny = () => { throw new ForbiddenError('无法确认请求来源，请从本站页面重新提交。'); };
+    const headers = h.request.headers || {};
+    const parse = (value: unknown, originOnly: boolean) => {
+        if (typeof value !== 'string' || !/^https?:\/\//.test(value) || /[\s\\]/u.test(value)) return deny();
+        try {
+            const url = new URL(value);
+            if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password
+                || (originOnly && (url.pathname !== '/' || url.search || url.hash))) return deny();
+            return url.origin;
+        } catch { return deny(); }
+    };
+    // Koa 3's request.origin is the incoming Origin header, NOT the server origin.
+    const expected = parse(`${h.context?.request?.protocol}://${h.context?.request?.host}`, true);
+    const origin = headers.origin;
+    const referer = headers.referer;
+    const hasOrigin = origin !== undefined && origin !== '';
+    const hasReferer = referer !== undefined && referer !== '';
+    // Origin:null is not an absent header. Conflicting headers must not fall
+    // back to a seemingly valid Referer. Missing both is fail-closed too.
+    if (!hasOrigin && !hasReferer) return deny();
+    if (hasOrigin && parse(origin, true) !== expected) return deny();
+    if (hasReferer && parse(referer, false) !== expected) return deny();
+    if (headers['sec-fetch-site'] !== undefined
+        && !['same-origin', 'same-site', 'none'].includes(headers['sec-fetch-site'])) return deny();
+}
+
 function assertAccountAdmin(user: any) {
     if (!isAccountAdmin(user)) throw new ForbiddenError('仅 OJ 站点管理员可以进行实名审核与账号管理。');
 }
@@ -27,6 +58,7 @@ function assertAccountAdmin(user: any) {
 // password verification, sudo, password validation and session invalidation.
 export function installEnrollmentPasswordChange(h: any) {
     if (h.args.operation !== 'change_password' || h.__oi33PasswordChangeWrapped) return;
+    requireAccountMutationOrigin(h);
     const original = h.postChangePassword;
     if (typeof original !== 'function') return;
     h.__oi33PasswordChangeWrapped = true;
@@ -59,6 +91,11 @@ async function recordAllowed(doc: Enrollment, h: any, rdoc: any): Promise<boolea
 
 /** Called after Hydro's parallel handler/create listeners finish, before business prepare. */
 export async function enforceEnrollment(h: any, websocket = false): Promise<'cleanup' | void> {
+    if (!websocket && h.request.method.toLowerCase() === 'post'
+        && ['Oi33EnrollmentReview', 'HomeSecurity'].includes(nameOf(h))) {
+        // Runs before native sudo/operation dispatch can retain or replay args.
+        requireAccountMutationOrigin(h);
+    }
     const uid = h.user?._id;
     if (!uid || uid <= 0) return;
     const handler = nameOf(h);
@@ -113,22 +150,53 @@ export async function enforceEnrollment(h: any, websocket = false): Promise<'cle
 // WS has no before-prepare lifecycle event. Wrap its request-owned methods, not shared prototypes.
 export function protectEnrollmentConnection(h: any) {
     const gateway = nameOf(h) === 'WebsocketEventsConnectionManager';
+    // create/ws runs after Hydro authenticates the handshake. Never obtain this identity
+    // from args, headers or later payloads: baseLayer's session inherits the token document.
+    const handshakeUid = h.user?._id || 0;
+    const handshakeIdentity = handshakeUid > 0 ? {
+        uid: handshakeUid,
+        credential: typeof h.session?._id === 'string' && h.session.uid === handshakeUid ? h.session._id : null,
+    } : null;
     // Core's browser gateway can authenticate a payload credential without changing h.user.
     // Pin one browser identity to a connection and retain credentials only in this closure.
     // Trusted server gateways validate their secret in core prepare() and multiplex identities.
     let gatewayIdentity: { uid: number; credential: string } | null = null;
+    let revoked = false;
+    const assertOpen = () => {
+        if (revoked) throw new ForbiddenError('登录连接已失效，请重新连接。');
+    };
+    const revoke = () => {
+        if (revoked) return;
+        revoked = true;
+        h.close(4003, '账号权限或登录状态已改变，请重新连接。');
+    };
     const trustedGateway = () => gateway && h.privileged === true;
+    const checkSession = async (identity: { uid: number; credential: string | null }) => {
+        if (!identity.credential) throw new ForbiddenError('登录凭据缺失，请重新登录。');
+        const session = await TokenModel.get(identity.credential, TokenModel.TYPE_SESSION);
+        const expiry = new Date(session?.expireAt).getTime();
+        if (!session || session.uid !== identity.uid || !Number.isFinite(expiry) || expiry <= Date.now()) {
+            throw new ForbiddenError('登录凭据已失效，请重新登录。');
+        }
+        assertOpen();
+    };
     const checkCurrentIdentity = async () => {
+        assertOpen();
         if (trustedGateway()) return;
+        if ((h.user?._id || 0) !== handshakeUid) throw new ForbiddenError('连接身份已改变，请重新连接。');
         if (gatewayIdentity) {
-            const session = await TokenModel.get(gatewayIdentity.credential, TokenModel.TYPE_SESSION);
-            if (!session || session.uid !== gatewayIdentity.uid) throw new ForbiddenError('登录凭据已失效，请重新登录。');
             const user = await UserModel.getById('system', gatewayIdentity.uid);
             if (!user) throw new ForbiddenError('账号不存在。');
             const subject = Object.create(h);
             subject.user = user;
             await enforceEnrollment(subject, true);
         } else await enforceEnrollment(h, true);
+        // Recheck the original token last, including when a reset and subsequent password
+        // change both finished while this connection was idle. The enrollment flag alone
+        // is not proof that the old login remains valid.
+        if (handshakeIdentity) await checkSession(handshakeIdentity);
+        if (gatewayIdentity) await checkSession(gatewayIdentity);
+        assertOpen();
     };
     const checkGatewayCredential = async (payload: any) => {
         if (!gateway || trustedGateway() || !['subscribe', 'resume'].includes(payload?.operation)) return;
@@ -137,7 +205,8 @@ export function protectEnrollmentConnection(h: any) {
         if (typeof payload.credential !== 'string' || payload.credential.length > 4096) throw new ForbiddenError('登录凭据无效。');
         const session = await TokenModel.get(payload.credential, TokenModel.TYPE_SESSION);
         if (!session?.uid) throw new ForbiddenError('登录凭据无效或已过期。');
-        if ((gatewayIdentity && gatewayIdentity.uid !== session.uid) || (h.user?._id > 0 && h.user._id !== session.uid)) {
+        if ((gatewayIdentity && (gatewayIdentity.uid !== session.uid || gatewayIdentity.credential !== payload.credential))
+            || (handshakeIdentity && handshakeIdentity.uid !== session.uid)) {
             throw new ForbiddenError('同一浏览器连接不能混用不同用户身份，请重新连接。');
         }
         const user = await UserModel.getById('system', session.uid);
@@ -145,6 +214,12 @@ export function protectEnrollmentConnection(h: any) {
         const subject = Object.create(h);
         subject.user = user;
         await enforceEnrollment(subject, true);
+        await checkSession({ uid: session.uid, credential: payload.credential });
+        // Two subscription requests can await authentication concurrently. Do not let the
+        // later completion replace the identity already accepted by the first request.
+        if (gatewayIdentity && (gatewayIdentity.uid !== session.uid || gatewayIdentity.credential !== payload.credential)) {
+            throw new ForbiddenError('同一浏览器连接不能更换登录凭据，请重新连接。');
+        }
         gatewayIdentity = { uid: session.uid, credential: payload.credential };
     };
     // Dynamic ctx.on callbacks (including user/message) do not pass __subscribe or message().
@@ -157,7 +232,7 @@ export function protectEnrollmentConnection(h: any) {
                 await checkCurrentIdentity();
                 return originalSend.apply(this, args);
             } catch {
-                this.close(4003, '账号权限或登录状态已改变，请重新连接。');
+                revoke();
             }
         });
         return sends;
@@ -168,22 +243,29 @@ export function protectEnrollmentConnection(h: any) {
         h[method] = async function (...args: any[]) {
             if (gateway && method === 'prepare') {
                 // Do not treat a mere gateway header as privileged: core must validate it first.
-                const result = await original?.apply(this, args);
-                await checkCurrentIdentity();
-                return result;
+                try {
+                    assertOpen();
+                    const result = await original?.apply(this, args);
+                    await checkCurrentIdentity();
+                    return result;
+                } catch (error) { revoke(); throw error; }
             }
             if (method === 'message') {
                 try {
+                    await checkCurrentIdentity();
                     await checkGatewayCredential(args[0]);
                     await checkCurrentIdentity();
                 } catch {
                     // Core's onmessage exception handler logs the whole MessageEvent, which can
                     // contain the gateway credential. Close locally without throwing that event
                     // into core logging, and never run the original method after a policy denial.
-                    this.close(4003, '账号权限或登录状态已改变，请重新连接。');
+                    revoke();
                     return;
                 }
-            } else await checkCurrentIdentity();
+            } else {
+                try { await checkCurrentIdentity(); }
+                catch (error) { revoke(); throw error; }
+            }
             return original?.apply(this, args);
         };
     }
@@ -193,10 +275,13 @@ export function protectEnrollmentConnection(h: any) {
         const original = h[method];
         if (typeof original !== 'function') continue;
         h[method] = async function (...args: any[]) {
-            await checkCurrentIdentity();
-            const doc = await getEnrollment(this.user?._id);
-            if (doc?.accountType === 'temporary' && method !== 'queueClear' && !(await recordAllowed(doc, this, args[0]))) return;
-            return original.apply(this, args);
+            try {
+                await checkCurrentIdentity();
+                const doc = await getEnrollment(this.user?._id);
+                if (doc?.accountType === 'temporary' && method !== 'queueClear' && !(await recordAllowed(doc, this, args[0]))) return;
+                assertOpen();
+                return original.apply(this, args);
+            } catch { revoke(); }
         };
     }
     h.__subscribe = (h.__subscribe || []).map((subscription: any) => ({
@@ -207,9 +292,10 @@ export function protectEnrollmentConnection(h: any) {
                 const doc = await getEnrollment(this.user?._id);
                 if (doc?.accountType === 'temporary' && subscription.name === 'record/change'
                     && !(await recordAllowed(doc, this, args[0]))) return;
+                assertOpen();
                 return subscription.target.apply(this, args);
             } catch (error: any) {
-                this.close(4003, '账号权限已改变，请刷新页面。');
+                revoke();
             }
         },
     }));
@@ -328,6 +414,7 @@ export class Oi33EnrollmentReviewHandler extends Handler {
     async post(domainId: string, uid: number, revision: number, action: string, reason = '', validUntil = '') {
         assertAccountAdmin(this.user);
         privateResponse(this);
+        requireAccountMutationOrigin(this);
         const target = await getEnrollment(uid);
         if (!target || target.domainId !== domainOf(this)) throw new ForbiddenError('不能管理其他域的身份档案。');
         if (uid === this.user._id) throw new ForbiddenError('不能审核或变更自己的账号状态，请由另一位管理员操作。');

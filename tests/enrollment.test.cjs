@@ -174,9 +174,16 @@ function harness() {
     });
     function handler(name, method = 'post', args = {}, uid = 10) {
         const headers = {};
+        let session = {};
+        if (uid > 0 && (name.endsWith('Connection') || name === 'WebsocketEventsConnectionManager')) {
+            const sid = `handshake-${uid}`;
+            const sessions = collection('session');
+            if (!sessions.docs.some((doc) => doc._id === sid)) sessions.docs.push({ _id: sid, uid, expireAt: future() });
+            session = Object.create(sessions.docs.find((doc) => doc._id === sid));
+        }
         return { constructor: { name: `${name}Handler` }, user: { _id: uid, hasPriv(priv) { return this.privAll === true && priv === 4; } }, domain: { _id: 'system' },
-            args: { domainId: 'system', ...args }, request: { method, headers: {} }, session: {}, response: { body: {}, addHeader: (k, v) => { headers[k] = v; } },
-            headers, context: { HydroContext: { user: { _id: uid }, domain: { _id: 'system' } } }, url: (name) => `/${name}`,
+            args: { domainId: 'system', ...args }, request: { method, headers: { origin: 'https://oj.fixture.invalid', referer: 'https://oj.fixture.invalid/' } }, session, response: { body: {}, addHeader: (k, v) => { headers[k] = v; } },
+            headers, context: { request: { protocol: 'https', host: 'oj.fixture.invalid' }, HydroContext: { user: { _id: uid }, domain: { _id: 'system' } } }, url: (name) => `/${name}`,
             limitRate: async () => {},
             close(code) { this.closed = code; } };
     }
@@ -757,6 +764,12 @@ test('record details and pretest mapping require current owner and contest scope
 
 test('WS gates prepare, arbitrary messages, direct updates and subscriptions after revocation', async () => {
     const h = harness();
+    const pending = h.handler('RecordMainConnection', 'get', { tid: cid });
+    h.api.protectEnrollmentConnection(pending);
+    await assert.rejects(pending.prepare(), h.ForbiddenError);
+    assert.equal(pending.closed, 4003);
+    await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '学生甲', accountType: 'temporary', contestScopes: temp().contestScopes, validUntil: future() }, 1);
+    await assert.rejects(pending.prepare(), h.ForbiddenError, 'a denied connection cannot revive after approval');
     const socket = h.handler('RecordMainConnection', 'get', { tid: cid, pretest: true });
     let messages = 0; let updates = 0;
     socket.prepare = async () => {};
@@ -764,8 +777,6 @@ test('WS gates prepare, arbitrary messages, direct updates and subscriptions aft
     socket.onRecordChange = async () => { updates++; };
     socket.__subscribe = [{ name: 'record/change', target: socket.onRecordChange }];
     h.api.protectEnrollmentConnection(socket);
-    await assert.rejects(socket.prepare(), h.ForbiddenError);
-    await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '学生甲', accountType: 'temporary', contestScopes: temp().contestScopes, validUntil: future() }, 1);
     await socket.prepare(); await socket.message({ rids: [] });
     assert.equal(messages, 1);
     const allowed = { _id: new FakeObjectId('a123456789abcdef01234567'), domainId: 'system', uid: 10, contest: new FakeObjectId(cid) };
@@ -895,13 +906,17 @@ test('password-change operation logs redact the current password without changin
 test('anonymous gateway checks payload credentials instead of trusting its guest handshake identity', async () => {
     const h = harness();
     await h.collection('core_user').insertOne({ _id: 10 });
-    await h.collection('session').insertOne({ _id: 'test-session-10', uid: 10 });
-    const gateway = h.handler('WebsocketEventsConnectionManager', 'get', {}, 0);
+    await h.collection('session').insertOne({ _id: 'test-session-10', uid: 10, expireAt: future() });
     let accepted = 0;
-    gateway.prepare = async () => {};
-    gateway.message = async () => { accepted++; };
-    gateway.send = () => {};
-    h.api.protectEnrollmentConnection(gateway);
+    const connect = () => {
+        const socket = h.handler('WebsocketEventsConnectionManager', 'get', {}, 0);
+        socket.prepare = async () => {};
+        socket.message = async () => { accepted++; };
+        socket.send = () => {};
+        h.api.protectEnrollmentConnection(socket);
+        return socket;
+    };
+    let gateway = connect();
     await gateway.prepare();
     const payload = { operation: 'subscribe', credential: 'test-session-10', channels: ['message'] };
     await assert.doesNotReject(gateway.message(payload));
@@ -909,10 +924,15 @@ test('anonymous gateway checks payload credentials instead of trusting its guest
     assert.equal(accepted, 0);
     await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '学生甲', accountType: 'temporary',
         contestScopes: temp().contestScopes, validUntil: future() }, 1);
+    gateway = connect();
     await assert.doesNotReject(gateway.message(payload));
     assert.equal(gateway.closed, 4003);
     assert.equal(accepted, 0);
     await h.model.manageEnrollment(10, 1, 'convert', 1);
+    await gateway.message(payload);
+    assert.equal(accepted, 0, 'policy changes cannot revive a closed gateway');
+    gateway = connect();
+    await gateway.prepare();
     await gateway.message(payload);
     assert.equal(accepted, 1);
     assert.equal(gateway.user._id, 0, 'must not rewrite the core handshake user');
@@ -925,8 +945,8 @@ test('dynamic gateway output checks pinned identity, session revocation and enro
     const h = harness();
     await h.collection('core_user').insertOne({ _id: 10 });
     await h.collection('core_user').insertOne({ _id: 11 });
-    await h.collection('session').insertOne({ _id: 'test-session-10', uid: 10 });
-    await h.collection('session').insertOne({ _id: 'test-session-11', uid: 11 });
+    await h.collection('session').insertOne({ _id: 'test-session-10', uid: 10, expireAt: future() });
+    await h.collection('session').insertOne({ _id: 'test-session-11', uid: 11, expireAt: future() });
     await h.model.provisionEnrollment({ uid: 10, domainId: 'system', realName: '学生甲' }, 1);
     await h.model.provisionEnrollment({ uid: 11, domainId: 'system', realName: '学生乙' }, 1);
     const gateway = h.handler('WebsocketEventsConnectionManager', 'get', {}, 0);
@@ -954,6 +974,7 @@ test('dynamic gateway output checks pinned identity, session revocation and enro
 test('gateway bypass is granted only after core secret validation and preserves internal multiplexing', async () => {
     const h = harness();
     const gateway = h.handler('WebsocketEventsConnectionManager', 'get', {}, 10);
+    gateway.session = {}; // server-to-server secret authentication does not require a browser session
     await h.model.submitEnrollment(10, 'system', { realName: '未核验' }, 0);
     let sent = 0; let received = 0;
     gateway.prepare = async function () { this.privileged = true; }; // core sets this only after secret verification
