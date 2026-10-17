@@ -22,7 +22,7 @@
   </section>
   {% for entry in enrollments %}
   <section class="section">
-    <div class="section__header"><h2 class="section__title">{{ entry.realName }} <span class="oi33-enrollment__muted">UID {{ entry._id }}</span></h2></div>
+    <div class="section__header"><h2 class="section__title"><a class="oi33-enrollment__profile-link" href="{{ url('user_detail', uid=entry._id) }}" title="查看个人主页">{{ entry.realName or '查看个人主页' }}</a> <span class="oi33-enrollment__muted">UID {{ entry._id }}</span></h2></div>
     <div class="section__body">
       <div class="oi33-enrollment__status"><strong>{% if not entry.enabled %}已停用{% elif entry.status == 'pending' %}待人工确认{% elif entry.status == 'approved' %}已审核{% else %}审核未通过{% endif %}</strong><span>{% if entry.accountType == 'temporary' %}临时比赛账号{% else %}日常账号{% endif %} · 版本 {{ entry.revision }}</span></div>
       {% if entry.requiresPasswordChange %}<div class="oi33-enrollment__notice" role="status">此账号需要修改密码；学生登录后须先设置新密码，才能继续使用 OJ。</div>{% endif %}

@@ -1,4 +1,8 @@
+.oi33-enrollment .section { background: var(--oi33-surface, #fff); }
 .oi33-enrollment .section__body { padding: 24px; }
+.oi33-enrollment .oi33-enrollment__profile-link { color: var(--oi33-text, #182033); -webkit-text-fill-color: currentColor; text-decoration: none; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.oi33-enrollment .oi33-enrollment__profile-link:is(:hover, :focus-visible) { color: var(--oi33-brand-strong, #4546c7); text-decoration: underline; }
+.oi33-enrollment .oi33-enrollment__profile-link:focus-visible { outline: 2px solid var(--oi33-brand, #5b5ce2); outline-offset: 3px; border-radius: 2px; }
 .oi33-enrollment__muted { color: var(--oi33-text-secondary, #64748b); font-size: 14px; line-height: 1.7; }
 .oi33-enrollment__form { display: grid; gap: 18px; margin-top: 24px; }
 .oi33-enrollment label { display: grid; gap: 8px; font-weight: 600; }

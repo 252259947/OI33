@@ -16,6 +16,11 @@ class Loader extends nunjucks.Loader {
 const env = new nunjucks.Environment(new Loader(), { autoescape: true });
 env.addGlobal('url', (name, args = {}) => {
     if (name === 'home_security') return '/home/security';
+    if (name === 'user_detail') {
+        assert.deepEqual(Object.keys(args).filter((key) => key !== '__keywords'), ['uid'], 'Profile URLs contain only the stable UID');
+        assert.ok(Number.isSafeInteger(args.uid) && args.uid > 0);
+        return `/user/${args.uid}`;
+    }
     assert.equal(name, 'oi33_enrollment_review');
     const query = new URLSearchParams(args.query || {}).toString();
     return route + (query ? `?${query}` : '');
@@ -71,6 +76,42 @@ test('review filters escape names in inputs and preserve status/name across both
         assert.equal(url.searchParams.has('uid'), false);
     }
     assert.doesNotMatch(render(), />上一页<|>下一页</);
+});
+
+test('review card names link to the corresponding user profile without putting real names in URLs', () => {
+    const entries = [
+        { _id: 46, realName: '测试学生甲', revision: 2 },
+        { _id: 45, realName: '张" & <script>window.profileInjected=1</script>', revision: 9 },
+    ].map((entry) => ({ ...entry, status: 'approved', accountType: 'regular', enabled: true, history: [] }));
+    const html = render({ enrollments: entries, passwordResetAllowedUids: [45, 46] });
+    const links = [...html.matchAll(/<a\b(?=[^>]*class="[^"]*\boi33-enrollment__profile-link\b)[^>]*>([\s\S]*?)<\/a>/g)];
+    const cards = [...html.matchAll(/<section class="section">[\s\S]*?<\/section>/g)]
+        .map((match) => match[0]).filter((card) => card.includes('<h2'));
+    assert.equal(links.length, entries.length);
+    assert.equal(cards.length, entries.length);
+    for (const [index, link] of links.entries()) {
+        const entry = entries[index];
+        assert.match(link[0], new RegExp(`href="/user/${entry._id}"`));
+        assert.match(link[0], /title="查看个人主页"/);
+        assert.doesNotMatch(link[0], /target=|onclick=|tabindex="-1"|role="button"/);
+        assert.match(cards[index], new RegExp(`href="/user/${entry._id}"`), 'Name points to its own card UID');
+        assert.match(cards[index], new RegExp(`UID ${entry._id}</span>`));
+    }
+    assert.equal(links[0][1], entries[0].realName);
+    assert.ok(links[1][1].includes('&quot;') && links[1][1].includes('&amp;') && links[1][1].includes('&lt;script&gt;'));
+    assert.doesNotMatch(html, /<script>window\.profileInjected/);
+    const postForms = [...html.matchAll(/<form\b[^>]*method="post"[^>]*>[\s\S]*?<\/form>/g)];
+    assert.equal(postForms.length, 4, 'Both account-action forms stay independent per student');
+    for (const [index, entry] of entries.entries()) {
+        for (const post of postForms.slice(index * 2, index * 2 + 2)) {
+            assert.match(post[0], /name="csrfToken" value="csrf-test"/);
+            assert.match(post[0], new RegExp(`name="uid" value="${entry._id}"`));
+            assert.match(post[0], new RegExp(`name="revision" value="${entry.revision}"`));
+            assert.doesNotMatch(post[0], /oi33-enrollment__profile-link/);
+        }
+    }
+    const unnamed = render({ enrollments: [{ _id: 47, realName: '', status: 'pending', enabled: true, revision: 1, history: [] }] });
+    assert.match(unnamed, /href="\/user\/47"[^>]*>查看个人主页<\/a>/, 'Missing names retain a usable profile link');
 });
 
 test('review client registers only this admin page and does not auto-submit name input', () => {
@@ -321,6 +362,103 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('desktop review filters align and
                 }
             }
         }
+    } finally { await browser.close(); }
+});
+
+if (process.env.OI33_LAYOUT_TEST === '1') test('desktop profile names remain legible and navigate by mouse and keyboard in both themes and CSS orders', async () => {
+    const { chromium } = require('playwright');
+    const theme = fs.readFileSync(path.join(root, 'node_modules/@hydrooj/ui-default/public/theme-4.58.4.css'), 'utf8');
+    const custom = ['frontend/oi33-design-system.css', 'frontend/enrollment.css']
+        .map((file) => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
+    const fixture = render({ enrollments: [
+        { _id: 46, realName: '测试学生甲', revision: 2 },
+        { _id: 45, realName: '张" & <script>window.profileInjected=1</script>', revision: 9 },
+    ].map((entry) => ({ ...entry, status: 'approved', accountType: 'regular', enabled: true, history: [] })),
+    passwordResetAllowedUids: [45, 46] });
+    const browser = await chromium.launch({ channel: 'chrome', headless: true });
+    const navigations = [];
+    try {
+        const page = await browser.newPage();
+        let documentHtml = '';
+        await page.route('http://oi33-profile.test/**', async (request) => {
+            const req = request.request(), url = new URL(req.url());
+            if (req.isNavigationRequest()) navigations.push({ pathname: url.pathname, search: url.search, method: req.method() });
+            await request.fulfill({ contentType: 'text/html; charset=utf-8', body: url.pathname === route
+                ? documentHtml : '<!doctype html><title>Profile</title><h1>个人主页</h1>' });
+        });
+        const inspectLink = async (link) => link.evaluate((element) => {
+            const parse = (color) => color.match(/[\d.]+/g).map(Number);
+            const backgroundOf = (start) => {
+                const result = [0, 0, 0]; let remaining = 1;
+                for (let node = start; node && remaining > 0; node = node.parentElement) {
+                    const color = parse(getComputedStyle(node).backgroundColor), alpha = color[3] ?? 1;
+                    for (let i = 0; i < 3; i++) result[i] += color[i] * alpha * remaining;
+                    remaining *= 1 - alpha;
+                }
+                return result.map((value) => value + 255 * remaining);
+            };
+            const luminance = (color) => color.slice(0, 3).map((v) => v / 255)
+                .map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4)
+                .reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+            const style = getComputedStyle(element), rect = element.getBoundingClientRect();
+            const foreground = parse(style.webkitTextFillColor || style.color), background = backgroundOf(element);
+            const [lo, hi] = [luminance(foreground), luminance(background)].sort((a, b) => a - b);
+            return { foreground, background, sectionBackground: getComputedStyle(element.closest('.section')).backgroundColor,
+                headerBackground: getComputedStyle(element.closest('.section__header')).backgroundColor,
+                contrast: (hi + .05) / (lo + .05), x: rect.x, right: rect.right, height: rect.height,
+                display: style.display, visibility: style.visibility, pointerEvents: style.pointerEvents,
+                decoration: style.textDecorationLine, outline: parseFloat(style.outlineWidth), outlineStyle: style.outlineStyle,
+                tabindex: element.tabIndex, focused: document.activeElement === element, focusVisible: element.matches(':focus-visible') };
+        });
+        for (const [order, sheet] of [['core-first', theme + custom], ['core-last', custom + theme]]) {
+            for (const mode of ['', 'class="theme--dark"', 'data-mantine-color-scheme="dark"']) {
+                for (const width of [1024, 1440]) {
+                    await page.setViewportSize({ width, height: 980 });
+                    documentHtml = `<!doctype html><html ${mode}><head><meta charset="utf-8"><style>${sheet}</style></head><body><main class="main">${fixture}</main></body></html>`;
+                    await page.goto(`http://oi33-profile.test${route}`);
+                    const links = page.locator('a.oi33-enrollment__profile-link');
+                    assert.equal(await links.count(), 2);
+                    assert.equal(await page.evaluate(() => window.profileInjected), undefined);
+                    for (let index = 0; index < 2; index++) {
+                        const link = links.nth(index);
+                        const normal = await inspectLink(link);
+                        const details = JSON.stringify({ order, mode, width, index, normal });
+                        assert.ok(normal.contrast >= 4.5, `Normal text contrast: ${details}`);
+                        assert.ok(normal.height >= 20 && normal.x >= 0 && normal.right <= width + 1, `Profile text stays in viewport: ${details}`);
+                        assert.equal(normal.tabindex, 0, details);
+                        assert.notEqual(normal.display, 'none', details);
+                        assert.equal(normal.visibility, 'visible', details);
+                        assert.notEqual(normal.pointerEvents, 'none', details);
+                    }
+                    await links.first().hover();
+                    const hovered = await inspectLink(links.first());
+                    assert.ok(hovered.contrast >= 4.5, JSON.stringify({ order, mode, width, hovered }));
+                    assert.ok(hovered.decoration.includes('underline'), 'Hover identifies the name as a link');
+                    await Promise.all([page.waitForURL('http://oi33-profile.test/user/46'), links.first().click()]);
+                    assert.equal(page.context().pages().length, 1, 'Profile opens in the same tab');
+
+                    // Reach the second student's link through the normal keyboard focus order.
+                    await page.goto(`http://oi33-profile.test${route}`);
+                    await page.locator('input[name=name]').focus();
+                    const second = page.locator('a.oi33-enrollment__profile-link').nth(1);
+                    let focused = false;
+                    for (let attempt = 0; attempt < 16; attempt++) {
+                        await page.keyboard.press('Tab');
+                        focused = await second.evaluate((element) => document.activeElement === element);
+                        if (focused) break;
+                    }
+                    assert.equal(focused, true, 'Second profile link is reachable with Tab');
+                    const keyboard = await inspectLink(second);
+                    const details = JSON.stringify({ order, mode, width, keyboard });
+                    assert.ok(keyboard.focusVisible && keyboard.outline >= 2 && keyboard.outlineStyle !== 'none', `Visible keyboard focus: ${details}`);
+                    assert.ok(keyboard.contrast >= 4.5 && keyboard.decoration.includes('underline'), `Readable focused name: ${details}`);
+                    await Promise.all([page.waitForURL('http://oi33-profile.test/user/45'), page.keyboard.press('Enter')]);
+                }
+            }
+        }
+        const profiles = navigations.filter((item) => item.pathname.startsWith('/user/'));
+        assert.equal(profiles.length, 24, 'Each desktop theme/order variant navigates both profiles');
+        assert.ok(navigations.every((item) => item.method === 'GET' && item.search === ''), 'Profile clicks never submit an account mutation or include real names');
     } finally { await browser.close(); }
 });
 

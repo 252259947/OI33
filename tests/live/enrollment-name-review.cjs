@@ -270,6 +270,16 @@ async function verify(db, { ids, rid }) {
       && /no-store/.test(result.cache) && !html.includes(apiKey) && !html.includes(rawError)
       && !html.includes('fixture-deepseek') && !html.includes('127.0.0.1:18999'));
   }
+  result = await actors.admin(`/oi33/enrollment/review?status=approved&name=${encodeURIComponent('张明')}`, null, true);
+  const profileLink = (result.body.raw || '').match(/<a class="oi33-enrollment__profile-link" href="([^"]+)" title="查看个人主页">张明<\/a>/);
+  check('actual admin review name links to the matching native UID profile without putting the name in the URL',
+    result.status === 200 && profileLink?.[1] === `/user/${ids.normal}`
+    && (result.body.raw || '').includes(`UID ${ids.normal}`));
+  if (profileLink) {
+    result = await actors.admin(profileLink[1], null, true);
+    check('following the review name link opens the actual student profile',
+      result.status === 200 && (result.body.raw || '').includes('normal'));
+  }
   result = await actors.normal('/oi33/enrollment/review');
   check('ordinary approved user cannot read private review queue', rejected(result), `HTTP ${result.status}`);
   result = await actors.normal(`/oi33/enrollment?uid=${ids.error}`);
