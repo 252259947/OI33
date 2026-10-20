@@ -95,6 +95,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
                 + '<html data-page="problem_detail"><head><meta charset="utf-8"></head><body class="mode--scratchpad"><div id="scratchpad">'
                 + '<div class="scratchpad__toolbar"><button class="scratchpad__toolbar__pretest" data-global-hotkey="f9">运行自测 (F9)</button>'
                 + '<button class="scratchpad__toolbar__submit" data-global-hotkey="f10">递交评测 (F10)</button>'
+                + '<button class="scratchpad__toolbar__button" data-global-hotkey="alt+p"><span class="icon icon-edit"></span> 自测</button>'
                 + '<div class="scratchpad__toolbar__item"><select><option>C++14</option></select></div></div>'
                 + '<div class="problem-content"><div class="richmedia">'
                 + '<pre><code class="language-input2">4 5\n</code></pre><pre><code class="language-output2">9\n</code></pre>'
@@ -159,6 +160,13 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
                     if (/SCRATCHPAD_POST_PRETEST_(FULFILLED|REJECTED)/.test(action.type)) state.ui.isPosting = false;
                     if (action.type === 'SCRATCHPAD_RECORDS_PUSH') state.records.items = { ...state.records.items, [action.payload.rdoc._id]: action.payload.rdoc };
                     if (action.type === 'SCRATCHPAD_UI_SET_VISIBILITY') state.ui[action.payload.uiElement].visible = action.payload.visibility;
+                    if (action.type === 'SCRATCHPAD_UI_TOGGLE_VISIBILITY') {
+                        state.ui[action.payload.uiElement].visible = !state.ui[action.payload.uiElement].visible;
+                    }
+                    const pane = document.querySelector('#pretest-pane');
+                    pane.style.height = state.ui.pretest.visible ? '300px' : '0px';
+                    pane.style.visibility = state.ui.pretest.visible ? 'visible' : 'hidden';
+                    pane.style.overflow = 'hidden';
                     if (action.type === 'SCRATCHPAD_SETTING_UPDATE') {
                         state.ui.settings.config = { ...state.ui.settings.config, [action.payload.setting]: action.payload.value };
                         window.fixtureEditor.updateOptions(state.ui.settings.config);
@@ -190,8 +198,14 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
             hotkeyMod.exports.default.afterLoading();
             window.nativePretests = 0;
             window.nativeSubmits = 0;
+            window.nativePanelToggles = 0;
             document.querySelector('.scratchpad__toolbar__pretest').addEventListener('click', () => window.nativePretests++);
             document.querySelector('.scratchpad__toolbar__submit').addEventListener('click', () => window.nativeSubmits++);
+            // Match the original toolbar's onClick; the product enhancement must leave this handler intact.
+            document.querySelector('[data-global-hotkey="alt+p"]').addEventListener('click', () => {
+                window.nativePanelToggles++;
+                window.store.dispatch({ type: 'SCRATCHPAD_UI_TOGGLE_VISIBILITY', payload: { uiElement: 'pretest' } });
+            });
             window.complete = (rid, status, message, compilerTexts = []) => window.store.dispatch({
                 type: 'SCRATCHPAD_RECORDS_PUSH', payload: { rdoc: { _id: rid, status, time: 1, memory: 128, testCases: [{ message }], compilerTexts } },
             });
@@ -203,8 +217,40 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         await page.addScriptTag({ content: bundle });
         await page.addScriptTag({ content: helperBundle });
         await page.evaluate(() => window.registeredPages[0].afterLoading());
-        await page.waitForSelector('.oi33-pretest-feedback');
+        await page.waitForSelector('.oi33-pretest-feedback', { state: 'attached' });
         const initial = await page.evaluate(() => ({ code: window.fixtureEditor.getValue(), position: window.fixtureEditor.getPosition() }));
+        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), false);
+        assert.equal(await page.locator('#pretest-pane').evaluate((node) => node.getBoundingClientRect().height), 0);
+        const toggle = page.getByRole('button', { name: '测试数据 (Alt+P)', exact: true });
+        assert.equal(await toggle.isVisible(), true);
+        assert.match(await toggle.textContent(), /测试数据/);
+        assert.match(await toggle.getAttribute('title'), /打开或收起样例和自定义输入/);
+        await toggle.click();
+        assert.equal(await page.locator('[aria-label="选择自测样例"]').isVisible(), true);
+        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), true);
+        const visibleGeometry = await page.evaluate(() => {
+            const pane = document.querySelector('#pretest-pane').getBoundingClientRect();
+            const input = document.querySelector('[aria-label="自测输入"]').getBoundingClientRect();
+            return { height: pane.height, inside: input.top >= pane.top && input.bottom <= pane.bottom && input.bottom <= innerHeight };
+        });
+        assert.equal(visibleGeometry.height, 300);
+        assert.equal(visibleGeometry.inside, true);
+        assert.equal(await page.evaluate(() => window.posts.length), 0, 'Opening data does not submit or run');
+        if (process.env.OI33_PRETEST_SCREENSHOT_DIR) {
+            fs.mkdirSync(process.env.OI33_PRETEST_SCREENSHOT_DIR, { recursive: true });
+            await page.locator('#scratchpad').screenshot({
+                path: path.join(process.env.OI33_PRETEST_SCREENSHOT_DIR, 'pretest-before-run.png'),
+            });
+        }
+        await page.evaluate(() => window.registeredPages[0].afterLoading());
+        await page.waitForTimeout(100);
+        assert.equal(await page.evaluate(() => window.state.ui.pretest.visible), true, 'Repeat mount preserves the open panel');
+        await page.keyboard.press('Alt+p');
+        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), false);
+        await page.keyboard.press('Alt+p');
+        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), true);
+        assert.equal(await page.evaluate(() => window.nativePanelToggles), 3, 'Original button and hotkey each toggle exactly once');
+        assert.equal(await page.evaluate(() => window.posts.length), 0);
         assert.deepEqual(await page.locator('[aria-label="选择自测样例"] option').allTextContents(), ['自定义输入', '样例 1', '样例 2', '样例 3']);
         assert.equal(await page.locator('.native-result').isVisible(), false);
         await page.keyboard.press('F9');
@@ -286,6 +332,10 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         await page.keyboard.press('F10');
         assert.equal(await page.evaluate(() => window.nativeSubmits), 1);
         assert.equal(await page.evaluate(() => window.state.ui.pretest.visible), false);
+        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), false);
+        await page.keyboard.press('Alt+p');
+        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), true);
+        assert.equal(await page.evaluate(() => window.posts.length), 7, 'Reopening after submit does not run again');
         assert.deepEqual(await page.evaluate(() => ({ code: window.fixtureEditor.getValue(), position: window.fixtureEditor.getPosition() })), initial);
         assert.deepEqual(errors, []);
         // Contrast uses the established theme tokens, not white background/white text.

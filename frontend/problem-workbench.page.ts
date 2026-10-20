@@ -433,8 +433,18 @@ function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
     toolbar.querySelectorAll<HTMLButtonElement>('.scratchpad__toolbar__button').forEach((button) => {
         const label = (button.textContent || '').trim();
         const hotkey = button.dataset.globalHotkey;
-        if (hotkey === 'alt+p' || hotkey === 'alt+r'
-            || label === '自测' || label === '评测记录' || label === 'Pretest' || label === 'Records') {
+        if (hotkey === 'alt+p') {
+            // Keep Hydro's own panel toggle and hotkey: preparing input must not run code.
+            button.classList.remove('oi33-scratchpad-toolbar__legacy-toggle');
+            button.title = '打开或收起样例和自定义输入（Alt+P）';
+            button.dataset.tooltip = button.title;
+            button.setAttribute('aria-label', '测试数据 (Alt+P)');
+            button.childNodes.forEach((node) => {
+                if (node.nodeType === Node.TEXT_NODE && ['自测', 'Pretest'].includes(node.textContent?.trim() || '')) {
+                    node.textContent = ' 测试数据';
+                }
+            });
+        } else if (hotkey === 'alt+r' || label === '评测记录' || label === 'Records') {
             button.classList.add('oi33-scratchpad-toolbar__legacy-toggle');
         }
     });
@@ -628,10 +638,13 @@ function mountScratchpadWorkbench() {
 
     root.classList.add('oi33-scratchpad-ready');
     removeLegacyScratchpadRail(root, store);
-    ['pretest', 'records'].forEach((uiElement) => store.dispatch({
-        type: 'SCRATCHPAD_UI_SET_VISIBILITY',
-        payload: { uiElement, visibility: false },
-    }));
+    if (root.dataset.oi33ScratchpadInitialized !== '1') {
+        root.dataset.oi33ScratchpadInitialized = '1';
+        ['pretest', 'records'].forEach((uiElement) => store.dispatch({
+            type: 'SCRATCHPAD_UI_SET_VISIBILITY',
+            payload: { uiElement, visibility: false },
+        }));
+    }
     mountProblemTabs(root, store);
     mountEditorSettings(toolbar, store);
     void configureScratchpadEditor(root, store);
