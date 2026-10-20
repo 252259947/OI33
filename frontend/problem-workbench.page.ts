@@ -439,11 +439,13 @@ function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
             button.title = '打开或收起样例和自定义输入（Alt+P）';
             button.dataset.tooltip = button.title;
             button.setAttribute('aria-label', '测试数据 (Alt+P)');
-            button.childNodes.forEach((node) => {
-                if (node.nodeType === Node.TEXT_NODE && ['自测', 'Pretest'].includes(node.textContent?.trim() || '')) {
-                    node.textContent = ' 测试数据';
+            const labels = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+            while (labels.nextNode()) {
+                const node = labels.currentNode;
+                if (['自测', 'Pretest'].includes(node.textContent?.trim() || '')) {
+                    node.textContent = node.textContent!.replace(/自测|Pretest/, '测试数据');
                 }
-            });
+            }
         } else if (hotkey === 'alt+r' || label === '评测记录' || label === 'Records') {
             button.classList.add('oi33-scratchpad-toolbar__legacy-toggle');
         }

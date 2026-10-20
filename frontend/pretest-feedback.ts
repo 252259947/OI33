@@ -4,6 +4,7 @@ type Run = { input: string; sample?: PublicSample; rid?: string; error?: string;
 const RUNNING = new Set([0, 20, 21, 22]);
 const MAX_COMPARE_LENGTH = 200000;
 const MAX_DISPLAY_LENGTH = 32000;
+let feedbackId = 0;
 const STATUS_LABELS: Record<number, string> = {
     2: '答案状态异常', 3: '运行超时', 4: '内存超限', 5: '输出超限', 6: '运行出错',
     7: '编译失败', 8: '系统错误', 9: '已取消', 10: '未知错误', 11: '运行失败',
@@ -98,12 +99,22 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
     let comparison: HTMLElement;
     let stale: HTMLElement;
     let executedInput: HTMLElement;
-    let outputLabel: HTMLElement;
     let recordLink: HTMLAnchorElement;
     let resources: HTMLElement;
+    let summary: HTMLElement;
+    let actualTab: HTMLButtonElement;
+    let expectedTab: HTMLButtonElement;
+    let runButton: HTMLButtonElement;
+    let outputTab: 'actual' | 'expected' = 'actual';
     let lastRender = '';
 
     const currentSample = () => samples.find((sample) => sample.id === sampleId);
+    const canRun = () => {
+        const state = store.getState();
+        const native = root.querySelector<HTMLButtonElement>('.scratchpad__toolbar__pretest');
+        return !!native && !native.disabled
+            && !state.ui?.isPosting && !state.pretest?.isRunning && !(state.ui?.pretestWaitSec > 0);
+    };
     const render = () => {
         if (!panel?.isConnected) return;
         const state = store.getState();
@@ -114,43 +125,73 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
         const view = run?.error
             ? { status: '自测未提交成功', kind: 'error', actual: '', comparison: run.error }
             : run ? pretestResult(record, run.sample)
-                : { status: '选择样例或输入数据后，点击「运行自测 (F9)」。', kind: 'idle', actual: '', comparison: '' };
+                : { status: '', kind: 'idle', actual: '', comparison: '' };
         const changed = !!run && currentInput !== run.input;
         const selected = run?.sample || (!run ? currentSample() : undefined);
-        const expectedText = selected?.output ?? (run ? '本次自定义输入没有标准输出。' : '选择公开样例后显示预期输出。');
+        const hasExpected = selected?.output !== null && selected?.output !== undefined;
+        const expectedText = selected?.output ?? '';
+        if (!hasExpected) outputTab = 'actual';
         const metrics = record && view.kind !== 'pending' ? [
             Number.isFinite(record.time) ? `${record.time} ms` : '',
             Number.isFinite(record.memory) ? `${record.memory} KiB` : '',
         ].filter(Boolean).join(' · ') : '';
-        const snapshot = JSON.stringify([view, changed, expectedText, selected?.id, sampleId, run?.input, run?.rid, metrics]);
+        const enabled = canRun();
+        const supported = !!root.querySelector('.scratchpad__toolbar__pretest');
+        const waiting = Number(state.ui?.pretestWaitSec || 0);
+        const snapshot = JSON.stringify([view, changed, hasExpected, expectedText, selected?.id, sampleId,
+            run?.input, run?.rid, metrics, outputTab, enabled, waiting, supported]);
         if (snapshot === lastRender) return;
         lastRender = snapshot;
         select.value = sampleId;
         status.textContent = view.status;
+        status.title = view.status;
+        summary.hidden = !run;
         resources.textContent = metrics;
+        resources.title = metrics;
+        runButton.disabled = !enabled;
+        runButton.title = supported ? '运行当前输入（F9）；运行成功不代表整题通过' : '当前题型或语言不支持自测';
+        runButton.textContent = waiting > 0 ? `运行自测 (${Math.ceil(waiting)}s)` : '运行自测 (F9)';
         const url = run?.rid && recordUrl?.(run.rid);
         recordLink.hidden = !url;
         if (url) recordLink.href = url;
         panel.dataset.result = view.kind;
         comparison.textContent = view.comparison;
+        comparison.title = view.comparison;
+        comparison.hidden = !view.comparison;
         stale.hidden = !changed;
+        if (!changed) (stale as HTMLDetailsElement).open = false;
         executedInput.textContent = displayed(run?.input || '') || '（空输入）';
-        outputLabel.textContent = run ? `本次预期输出${selected ? ` · 样例 ${selected.id}` : ''}` : '预期输出';
         expected.textContent = displayed(expectedText) || '（空输出）';
-        actual.textContent = displayed(view.actual) || (view.kind === 'pending' || view.kind === 'idle' ? '等待运行…' : '（无输出）');
+        expected.setAttribute('aria-label', selected ? `样例 ${selected.id} 的预期输出` : '预期输出');
+        expectedTab.disabled = !hasExpected;
+        expectedTab.title = hasExpected ? `查看${run ? '本次运行的' : ''}样例 ${selected!.id} 预期输出` : '自定义输入没有标准输出';
+        actualTab.setAttribute('aria-selected', String(outputTab === 'actual'));
+        expectedTab.setAttribute('aria-selected', String(outputTab === 'expected'));
+        actualTab.tabIndex = outputTab === 'actual' ? 0 : -1;
+        expectedTab.tabIndex = outputTab === 'expected' ? 0 : -1;
+        expected.hidden = outputTab !== 'expected';
+        actual.hidden = outputTab !== 'actual';
+        actual.classList.toggle('is-placeholder', view.kind === 'idle');
+        actual.textContent = displayed(view.actual)
+            || (view.kind === 'idle' ? '运行后查看结果' : view.kind === 'pending' ? '等待运行…' : '（无输出）');
     };
     const mount = () => {
+        if (panel?.isConnected) { render(); return; }
         const nativeInput = root.querySelector<HTMLTextAreaElement>('textarea.scratchpad__data-input');
         const nativePanel = nativeInput?.closest('.splitpane-fill');
-        if (!nativePanel || panel?.isConnected) return;
+        if (!nativePanel) return;
         nativePanel.classList.add('oi33-pretest-host');
         panel = element('section', 'oi33-pretest-feedback');
         panel.setAttribute('aria-label', '自测与公开样例对照');
-        const header = element('div', 'oi33-pretest-feedback__toolbar');
-        const label = element('label', 'oi33-pretest-feedback__sample', '测试数据');
+        const outputId = `oi33-pretest-output-${++feedbackId}`;
+        const grid = element('div', 'oi33-pretest-feedback__grid');
+        const inputColumn = element('div', 'oi33-pretest-feedback__column oi33-pretest-feedback__column--input');
+        const inputHeader = element('div', 'oi33-pretest-feedback__column-header');
+        const label = element('label', 'oi33-pretest-feedback__sample', '测试用例');
         select = element('select', 'select');
         select.setAttribute('aria-label', '选择自测样例');
-        const custom = element('option', '', samples.length ? '自定义输入' : '自定义输入（无公开样例）');
+        select.title = samples.length ? '选择公开样例，或填写自定义输入' : '本题无公开样例，可填写自定义输入（允许留空）';
+        const custom = element('option', '', '自定义输入');
         custom.value = '';
         select.append(custom);
         samples.forEach((sample) => {
@@ -168,44 +209,101 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
             render();
         });
         label.append(select);
+        inputHeader.append(label);
+        const resultColumn = element('div', 'oi33-pretest-feedback__column oi33-pretest-feedback__column--result');
+        const resultHeader = element('div', 'oi33-pretest-feedback__column-header');
+        const tabs = element('div', 'oi33-pretest-feedback__tabs');
+        tabs.setAttribute('role', 'tablist');
+        tabs.setAttribute('aria-label', '输出内容');
+        actualTab = element('button', 'oi33-pretest-feedback__tab', '实际');
+        expectedTab = element('button', 'oi33-pretest-feedback__tab', '预期');
+        [actualTab, expectedTab].forEach((tab) => {
+            tab.type = 'button';
+            tab.setAttribute('role', 'tab');
+        });
+        actualTab.setAttribute('aria-label', '实际输出');
+        expectedTab.setAttribute('aria-label', '预期输出');
+        actualTab.id = `${outputId}-actual-tab`;
+        expectedTab.id = `${outputId}-expected-tab`;
+        actualTab.setAttribute('aria-controls', `${outputId}-actual`);
+        expectedTab.setAttribute('aria-controls', `${outputId}-expected`);
+        actualTab.addEventListener('click', () => { outputTab = 'actual'; render(); });
+        expectedTab.addEventListener('click', () => {
+            if (expectedTab.disabled) return;
+            outputTab = 'expected'; render();
+        });
+        tabs.addEventListener('keydown', (event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            if (event.key === 'Home' || expectedTab.disabled) outputTab = 'actual';
+            else if (event.key === 'End') outputTab = 'expected';
+            else outputTab = outputTab === 'actual' ? 'expected' : 'actual';
+            render();
+            (outputTab === 'actual' ? actualTab : expectedTab).focus();
+        });
+        tabs.append(actualTab, expectedTab);
         recordLink = element('a', 'oi33-pretest-feedback__record', '运行详情');
         recordLink.target = '_blank';
         recordLink.rel = 'noopener';
         recordLink.hidden = true;
-        header.append(label, element('span', 'oi33-pretest-feedback__note', '仅核对公开样例；多解/特殊判题以正式评测为准。'), recordLink);
+        const close = element('button', 'oi33-pretest-feedback__close', '⌄');
+        close.type = 'button';
+        close.title = '收起自测面板（Alt+P 可重新打开）';
+        close.setAttribute('aria-label', '收起自测面板');
+        close.addEventListener('click', () => store.dispatch({
+            type: 'SCRATCHPAD_UI_SET_VISIBILITY', payload: { uiElement: 'pretest', visibility: false },
+        }));
+        const heading = element('strong', 'oi33-pretest-feedback__heading', '运行结果');
+        heading.title = '自测仅核对当前输入；运行成功不代表整题通过，多解或特殊判题以正式评测为准。';
+        resultHeader.append(heading, tabs, recordLink, close);
         status = element('div', 'oi33-pretest-feedback__status');
         status.setAttribute('role', 'status');
         resources = element('span', 'oi33-pretest-feedback__resources');
-        const summary = element('div', 'oi33-pretest-feedback__summary');
+        summary = element('div', 'oi33-pretest-feedback__summary');
         summary.append(status, resources);
         comparison = element('div', 'oi33-pretest-feedback__comparison');
         stale = element('details', 'oi33-pretest-feedback__stale');
         stale.hidden = true;
         executedInput = element('pre', '');
-        stale.append(element('summary', '', '输入已修改；下方结果仍对应上次运行，点击查看当时输入。'), executedInput);
-        const grid = element('div', 'oi33-pretest-feedback__grid');
-        const inputColumn = element('label', 'oi33-pretest-feedback__column');
+        const staleSummary = element('summary', '', '输入已修改 · 查看上次运行输入');
+        staleSummary.title = '下方结果仍对应上次运行；请重新运行以更新结果。';
+        stale.append(staleSummary, executedInput);
+        const inputBody = element('div', 'oi33-pretest-feedback__input-body');
         input = element('textarea', 'oi33-pretest-feedback__input');
         input.setAttribute('aria-label', '自测输入');
         input.spellcheck = false;
         input.wrap = 'off';
-        input.placeholder = '输入测试数据（可留空）';
+        input.placeholder = '输入测试数据…';
+        input.title = '可填写自定义输入，允许留空；点击右下角按钮或按 F9 运行';
         input.addEventListener('input', () => {
             sampleId = '';
             customInput = true;
             store.dispatch({ type: 'SCRATCHPAD_PRETEST_DATA_CHANGE', payload: { type: 'input', value: input.value } });
             render();
         });
-        inputColumn.append(element('span', '', '输入（可编辑）'), input);
-        const expectedColumn = element('div', 'oi33-pretest-feedback__column');
-        outputLabel = element('span', '', '预期输出');
-        expected = element('pre', '');
-        expectedColumn.append(outputLabel, expected);
-        const actualColumn = element('div', 'oi33-pretest-feedback__column');
-        actual = element('pre', '');
-        actualColumn.append(element('span', '', '本次实际输出 / 运行信息'), actual);
-        grid.append(inputColumn, expectedColumn, actualColumn);
-        panel.append(header, summary, comparison, stale, grid);
+        runButton = element('button', 'oi33-pretest-feedback__run', '运行自测 (F9)');
+        runButton.type = 'button';
+        runButton.setAttribute('aria-label', '运行自测 (F9)');
+        runButton.title = '运行当前输入（F9）；运行成功不代表整题通过';
+        runButton.addEventListener('click', () => {
+            if (canRun()) root.querySelector<HTMLButtonElement>('.scratchpad__toolbar__pretest')?.click();
+        });
+        inputBody.append(input, runButton);
+        inputColumn.append(inputHeader, inputBody);
+        const resultBody = element('div', 'oi33-pretest-feedback__result-body');
+        expected = element('pre', 'oi33-pretest-feedback__expected');
+        actual = element('pre', 'oi33-pretest-feedback__actual');
+        actual.id = `${outputId}-actual`;
+        expected.id = `${outputId}-expected`;
+        actual.setAttribute('role', 'tabpanel');
+        expected.setAttribute('role', 'tabpanel');
+        actual.setAttribute('aria-labelledby', actualTab.id);
+        expected.setAttribute('aria-labelledby', expectedTab.id);
+        actual.setAttribute('aria-label', '本次实际输出或运行信息');
+        resultBody.append(summary, comparison, stale, actual, expected);
+        resultColumn.append(resultHeader, resultBody);
+        grid.append(inputColumn, resultColumn);
+        panel.append(grid);
         nativePanel.append(panel);
         lastRender = '';
         render();
@@ -234,6 +332,7 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
         start(inputValue: string) {
             const sample = currentSample();
             run = { input: inputValue, sample: sample?.input === inputValue ? sample : undefined };
+            outputTab = 'actual';
             render();
             return run;
         },
