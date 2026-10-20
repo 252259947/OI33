@@ -90,6 +90,8 @@ async function checkHomepage(request, label, expectHomework = false) {
     `status ${result.status}; ${result.status === 200 ? '' : html.slice(-5000)}`);
   check(`repository main and navbar overrides are used ${label}`,
     html.includes('oi33-home__hero') && html.includes('oi33-nav__main'));
+  check(`legacy hitokoto configuration renders no quote card or request container ${label}`,
+    !/name=["']hitokoto["']|<h[1-6][^>]*>\s*(?:Hitokoto|一言)\s*<\/h[1-6]>/i.test(html));
   check(`homework section appears exactly once ${label}`,
     (html.match(/id="oi33-homework-title"/g) || []).length === 1);
   check(`homework ${expectHomework ? 'content' : 'empty state'} renders ${label}`,
@@ -492,7 +494,7 @@ exports.apply = async function(ctx) {
   await UserModel.updateGroup('system', '基础班', [4]);
   await UserModel.updateGroup('system', '提高班', [4]);
   await UserModel.updateGroup('system', '仅教师可见班', []);
-  await SystemModel.set('hydrooj.homepage', ${JSON.stringify('- width: 9\n  contest: 5\n  training: 10\n- width: 3\n  checkin: true\n  ranking: 10\n')});
+  await SystemModel.set('hydrooj.homepage', ${JSON.stringify('- width: 9\n  contest: 5\n  training: 10\n- width: 3\n  checkin: true\n  hitokoto: true\n  ranking: 10\n')});
   const pid = await ProblemModel.add('system', 'QA1', 'QA problem', 'Synthetic fixture only', 2);
   const otherPid = await ProblemModel.add('system', 'QA2', 'QA unrelated problem', 'Synthetic fixture only', 2);
   await ProblemModel.addAdditionalFile('system', pid, 'qa-note.txt', Buffer.from('QA fixture statement attachment'), 2);

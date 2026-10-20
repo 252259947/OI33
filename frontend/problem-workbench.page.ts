@@ -1,6 +1,7 @@
 import {
     $, addPage, ctx, i18n, loadMonaco, NamedPage, Notification, request,
 } from '@hydrooj/ui-default';
+import { EDITOR_FONT_MAX, EDITOR_FONT_MIN, installEditorWheelZoom } from './editor-wheel-zoom';
 import './problem-workbench.css';
 
 const problemPages = ['problem_detail', 'contest_detail_problem', 'homework_detail_problem'];
@@ -109,6 +110,7 @@ const CUSTOM_EDITOR_THEMES: Record<string, string> = {
     monoindustrial: 'monoindustrial',
 };
 const loadedEditorThemes = new Set<string>();
+const configuredScratchpadEditors = new WeakSet<object>();
 
 type ScratchpadStore = {
     dispatch: (action: any) => any;
@@ -350,8 +352,7 @@ function mountProblemTabs(root: ScratchpadRoot, store: ScratchpadStore) {
     });
 }
 
-async function updateEditorSetting(store: ScratchpadStore, setting: string, value: unknown) {
-    const { customOptions } = await loadMonaco([]);
+function commitEditorSetting(store: ScratchpadStore, customOptions: any, setting: string, value: unknown) {
     const liveTheme = customOptions.theme ?? null;
     const stateTheme = store.getState().ui?.settings?.config?.theme ?? null;
     if (setting !== 'theme' && liveTheme !== stateTheme) {
@@ -369,6 +370,11 @@ async function updateEditorSetting(store: ScratchpadStore, setting: string, valu
     });
 }
 
+async function updateEditorSetting(store: ScratchpadStore, setting: string, value: unknown) {
+    const { customOptions } = await loadMonaco([]);
+    commitEditorSetting(store, customOptions, setting, value);
+}
+
 function isKnownEditorTheme(theme: string) {
     return BUILTIN_EDITOR_THEMES.some(([id]) => id === theme) || !!CUSTOM_EDITOR_THEMES[theme];
 }
@@ -379,12 +385,25 @@ async function getScratchpadMonaco() {
     return scratchpad?.monaco || (window as any).monaco;
 }
 
-async function compactScratchpadEditorGutter() {
+async function configureScratchpadEditor(root: HTMLElement, store: ScratchpadStore) {
     const scratchpad = (ctx as any).scratchpad;
     if (!scratchpad?.editor && scratchpad?.load) await scratchpad.load;
-    scratchpad?.editor?.updateOptions({
+    const editor = scratchpad?.editor;
+    const container = root.querySelector<HTMLElement>('.ScratchpadMonacoEditor');
+    if (!editor || configuredScratchpadEditors.has(editor)
+        || !container || !root.isConnected || !container.contains(editor.getDomNode())) return;
+    const { customOptions, monaco } = await loadMonaco([]);
+    if (configuredScratchpadEditors.has(editor)
+        || !root.isConnected || !container.contains(editor.getDomNode())) return;
+    configuredScratchpadEditors.add(editor);
+    editor.updateOptions({
         glyphMargin: false,
         lineNumbersMinChars: 3,
+    });
+    installEditorWheelZoom(editor, container, monaco.editor.EditorOption.fontSize, (size) => {
+        commitEditorSetting(store, customOptions, 'fontSize', size);
+        const select = root.querySelector<HTMLSelectElement>('[data-oi33-editor-font-size]');
+        if (select) select.value = String(size);
     });
 }
 
@@ -435,12 +454,14 @@ function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
     const fontLabel = createElement('label', 'oi33-scratchpad-settings__field');
     fontLabel.append(createElement('span', '', '字号大小'));
     const fontSelect = createElement('select', 'select') as HTMLSelectElement;
-    [12, 13, 14, 15, 16, 18, 20, 22].forEach((fontSize) => {
+    fontSelect.setAttribute('data-oi33-editor-font-size', '');
+    fontSelect.title = `Ctrl + 鼠标滚轮调整字号（${EDITOR_FONT_MIN}–${EDITOR_FONT_MAX}px）`;
+    for (let fontSize = EDITOR_FONT_MIN; fontSize <= EDITOR_FONT_MAX; fontSize += 1) {
         const option = createElement('option') as HTMLOptionElement;
         option.value = String(fontSize);
         option.textContent = `${fontSize}px`;
         fontSelect.append(option);
-    });
+    }
     fontSelect.value = String(store.getState().ui?.settings?.config?.fontSize || 14);
     fontSelect.addEventListener('change', () => void updateEditorSetting(store, 'fontSize', Number(fontSelect.value)));
     fontLabel.append(fontSelect);
@@ -531,6 +552,9 @@ function installScratchpadObserver(root: HTMLElement, store: ScratchpadStore) {
     const observer = new MutationObserver(() => {
         const toolbar = root.querySelector<HTMLElement>('.scratchpad__toolbar');
         if (toolbar) mountEditorSettings(toolbar, store);
+        // On re-entry Hydro's singleton may still reference the disposed editor
+        // until the asynchronously created replacement has mounted its DOM.
+        void configureScratchpadEditor(root, store);
     });
     observer.observe(root, { childList: true, subtree: true });
 }
@@ -612,7 +636,7 @@ function mountScratchpadWorkbench() {
     }));
     mountProblemTabs(root, store);
     mountEditorSettings(toolbar, store);
-    void compactScratchpadEditorGutter();
+    void configureScratchpadEditor(root, store);
     installPretestFlow(root, store);
     installScratchpadObserver(root, store);
     return true;
