@@ -433,20 +433,14 @@ function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
     toolbar.querySelectorAll<HTMLButtonElement>('.scratchpad__toolbar__button').forEach((button) => {
         const label = (button.textContent || '').trim();
         const hotkey = button.dataset.globalHotkey;
-        if (hotkey === 'alt+p') {
-            // Keep Hydro's own panel toggle and hotkey: preparing input must not run code.
-            button.classList.remove('oi33-scratchpad-toolbar__legacy-toggle');
-            button.title = '打开或收起样例和自定义输入（Alt+P）';
-            // Native title cannot push the viewport sideways near the right edge.
+        if (hotkey === 'alt+p' || button.matches('.scratchpad__toolbar__pretest')) {
+            // Keep React-owned controls as request/capability adapters, not UI.
+            // Hydro skips hidden hotkeys; the visible bottom button owns F9.
+            button.classList.add('oi33-scratchpad-toolbar__legacy-toggle');
+            button.hidden = true;
+            button.tabIndex = -1;
+            button.setAttribute('aria-hidden', 'true');
             button.removeAttribute('data-tooltip');
-            button.setAttribute('aria-label', '测试数据 (Alt+P)');
-            const labels = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
-            while (labels.nextNode()) {
-                const node = labels.currentNode;
-                if (['自测', 'Pretest'].includes(node.textContent?.trim() || '')) {
-                    node.textContent = node.textContent!.replace(/自测|Pretest/, '测试数据');
-                }
-            }
         } else if (hotkey === 'alt+r' || label === '评测记录' || label === 'Records') {
             button.classList.add('oi33-scratchpad-toolbar__legacy-toggle');
         }
@@ -591,14 +585,6 @@ function installPretestFlow(root: ScratchpadRoot, store: ScratchpadStore) {
                 });
             });
         }
-        const submitButton = (event.target as Element | null)?.closest<HTMLButtonElement>('.scratchpad__toolbar__submit');
-        if (submitButton && !submitButton.classList.contains('disabled')) {
-            store.dispatch({
-                type: 'SCRATCHPAD_UI_SET_VISIBILITY',
-                payload: { uiElement: 'pretest', visibility: false },
-            });
-            return;
-        }
         const button = (event.target as Element | null)?.closest<HTMLButtonElement>('.scratchpad__toolbar__pretest');
         if (!button || button.classList.contains('disabled')) return;
         const state = store.getState();
@@ -643,10 +629,16 @@ function mountScratchpadWorkbench() {
     removeLegacyScratchpadRail(root, store);
     if (root.dataset.oi33ScratchpadInitialized !== '1') {
         root.dataset.oi33ScratchpadInitialized = '1';
-        ['pretest', 'records'].forEach((uiElement) => store.dispatch({
+        store.dispatch({
             type: 'SCRATCHPAD_UI_SET_VISIBILITY',
-            payload: { uiElement, visibility: false },
-        }));
+            payload: { uiElement: 'records', visibility: false },
+        });
+    }
+    if (!store.getState().ui?.pretest?.visible) {
+        store.dispatch({
+            type: 'SCRATCHPAD_UI_SET_VISIBILITY',
+            payload: { uiElement: 'pretest', visibility: true },
+        });
     }
     mountProblemTabs(root, store);
     mountEditorSettings(toolbar, store);

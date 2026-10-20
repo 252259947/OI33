@@ -246,16 +246,9 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
         recordLink.target = '_blank';
         recordLink.rel = 'noopener';
         recordLink.hidden = true;
-        const close = element('button', 'oi33-pretest-feedback__close', '⌄');
-        close.type = 'button';
-        close.title = '收起自测面板（Alt+P 可重新打开）';
-        close.setAttribute('aria-label', '收起自测面板');
-        close.addEventListener('click', () => store.dispatch({
-            type: 'SCRATCHPAD_UI_SET_VISIBILITY', payload: { uiElement: 'pretest', visibility: false },
-        }));
         const heading = element('strong', 'oi33-pretest-feedback__heading', '运行结果');
         heading.title = '自测仅核对当前输入；运行成功不代表整题通过，多解或特殊判题以正式评测为准。';
-        resultHeader.append(heading, tabs, recordLink, close);
+        resultHeader.append(heading, tabs, recordLink);
         status = element('div', 'oi33-pretest-feedback__status');
         status.setAttribute('role', 'status');
         resources = element('span', 'oi33-pretest-feedback__resources');
@@ -283,6 +276,7 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
         });
         runButton = element('button', 'oi33-pretest-feedback__run', '运行自测 (F9)');
         runButton.type = 'button';
+        runButton.dataset.globalHotkey = 'f9';
         runButton.setAttribute('aria-label', '运行自测 (F9)');
         runButton.title = '运行当前输入（F9）；运行成功不代表整题通过';
         runButton.addEventListener('click', () => {

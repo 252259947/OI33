@@ -587,12 +587,6 @@
   background: var(--oi33-surface, #fff);
 }
 
-.mode--scratchpad #scratchpad.oi33-scratchpad-ready .scratchpad__toolbar__pretest {
-  border-color: rgba(91, 92, 226, .22);
-  color: var(--oi33-brand-strong, #4546c7);
-  background: var(--oi33-brand-soft, #eeefff);
-}
-
 .mode--scratchpad #scratchpad.oi33-scratchpad-ready .scratchpad__toolbar__submit {
   border-color: var(--oi33-brand, #5b5ce2);
   color: #fff;
@@ -606,14 +600,9 @@
   background: var(--oi33-brand-strong, #4546c7);
 }
 
-.mode--scratchpad #scratchpad.oi33-scratchpad-ready
-  .scratchpad__toolbar__button[data-global-hotkey="alt+p"].activated {
-  border-color: var(--oi33-line-strong, #d5dcea);
-  color: var(--oi33-brand-strong, #4546c7) !important;
-  background: var(--oi33-brand-soft, #eeefff) !important;
-}
-
-.mode--scratchpad #scratchpad.oi33-scratchpad-ready .oi33-scratchpad-toolbar__legacy-toggle {
+.mode--scratchpad #scratchpad.oi33-scratchpad-ready .oi33-scratchpad-toolbar__legacy-toggle,
+.mode--scratchpad #scratchpad.oi33-scratchpad-ready .scratchpad__toolbar__pretest,
+.mode--scratchpad #scratchpad.oi33-scratchpad-ready .scratchpad__toolbar__button[data-global-hotkey="alt+p"] {
   display: none !important;
 }
 
@@ -857,8 +846,7 @@
   gap: 2px;
 }
 
-.mode--scratchpad .oi33-pretest-feedback__tab,
-.mode--scratchpad .oi33-pretest-feedback__close {
+.mode--scratchpad .oi33-pretest-feedback__tab {
   height: 24px;
   padding: 0 6px;
   border: 0;
@@ -887,14 +875,6 @@
   text-decoration: none;
 }
 
-.mode--scratchpad .oi33-pretest-feedback__close {
-  flex: none;
-  width: 22px;
-  padding: 0;
-  font-size: 18px;
-}
-
-.mode--scratchpad .oi33-pretest-feedback__close:hover,
 .mode--scratchpad .oi33-pretest-feedback__tab:not(:disabled):hover {
   color: var(--oi33-brand-strong, #4546c7);
   background: var(--oi33-brand-soft, #eeefff);
@@ -1040,8 +1020,7 @@
 }
 
 .mode--scratchpad .oi33-pretest-feedback__run:focus-visible,
-.mode--scratchpad .oi33-pretest-feedback__tab:focus-visible,
-.mode--scratchpad .oi33-pretest-feedback__close:focus-visible {
+.mode--scratchpad .oi33-pretest-feedback__tab:focus-visible {
   outline: 2px solid var(--oi33-brand-strong, #4546c7);
   outline-offset: -2px;
 }

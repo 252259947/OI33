@@ -64,7 +64,9 @@ test('page integration keeps existing pretest endpoint, request shape, hotkeys a
     assert.match(source, /pretest: true/);
     assert.match(source, /feedback\.start\(latest\.pretest\.input\)/);
     assert.match(source, /feedback\.bindRecord\(snapshot, String\(result\.rid\)\)/);
-    assert.match(source, /scratchpad__toolbar__submit/);
+    assert.doesNotMatch(source, /scratchpad__toolbar__submit/, 'Pretest enhancement does not capture the native formal-submit action');
+    assert.doesNotMatch(source, /\{[^{}]*uiElement:\s*['"]pretest['"][^{}]*visibility:\s*false[^{}]*\}/,
+        'No flow or mount branch dispatches a hidden pretest pane');
     assert.match(source, /installEditorWheelZoom/);
     assert.doesNotMatch(fs.readFileSync(helperPath, 'utf8'), /innerHTML|request\.|fetch\(|\.score\s*=/);
 });
@@ -96,7 +98,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
                 + '<div class="scratchpad__toolbar flex-row flex-cross-center"><button class="scratchpad__toolbar__item scratchpad__toolbar__button scratchpad__toolbar__pretest enabled" data-global-hotkey="f9"><div><span class="icon icon-debug"></span> 运行自测 (F9)</div></button>'
                 + '<button class="scratchpad__toolbar__item scratchpad__toolbar__button scratchpad__toolbar__submit enabled" data-global-hotkey="f10"><div><span class="icon icon-play"></span> 递交评测 (F10)</div></button>'
                 + '<button class="scratchpad__toolbar__item scratchpad__toolbar__button enabled" data-global-hotkey="alt+q" name="problem-sidebar__quit-scratchpad"><div><span class="icon icon-close"></span> 退出 (Alt+Q)</div></button>'
-                + '<button class="scratchpad__toolbar__item scratchpad__toolbar__button enabled" data-global-hotkey="alt+p" data-tooltip="Toggle Pretest Panel (Alt+P)"><div><span class="icon icon-edit"></span> <span>自测</span></div></button>'
+                + '<button id="native-pretest-toggle" class="scratchpad__toolbar__item scratchpad__toolbar__button enabled" data-global-hotkey="alt+p" data-tooltip="Toggle Pretest Panel (Alt+P)"><div><span class="icon icon-edit"></span> <span>自测</span></div></button>'
                 + '<div class="scratchpad__toolbar__item"><select class="select"><option>C++14</option></select></div></div>'
                 + '<div class="problem-content"><div class="richmedia">'
                 + '<pre><code class="language-input2">4 5\n</code></pre><pre><code class="language-output2">9\n</code></pre>'
@@ -172,7 +174,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
                     pane.style.height = state.ui.pretest.visible ? '200px' : '0px';
                     pane.style.visibility = state.ui.pretest.visible ? 'visible' : 'hidden';
                     pane.style.overflow = 'hidden';
-                    document.querySelector('.scratchpad__toolbar__pretest').classList.toggle('disabled',
+                    document.querySelector('.scratchpad__toolbar__pretest')?.classList.toggle('disabled',
                         !!(state.ui.isPosting || state.ui.pretestWaitSec || state.pretest.isRunning));
                     if (action.type === 'SCRATCHPAD_SETTING_UPDATE') {
                         state.ui.settings.config = { ...state.ui.settings.config, [action.payload.setting]: action.payload.value };
@@ -230,21 +232,28 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         await page.addStyleTag({ content: 'html,body{margin:0}#scratchpad{position:relative!important;inset:auto!important;width:50vw!important;height:auto!important;margin:30px auto}'
             + '.problem-content{display:none!important}.scratchpad__toolbar{position:static!important;display:flex!important}'
             + '.ScratchpadMonacoEditor{width:100%!important}#pretest-pane{display:flex;flex-direction:column;position:absolute;height:100%;width:100%;top:0;left:0}' });
+        assert.equal(await page.evaluate(() => window.state.ui.pretest.visible), false, 'Fixture begins with the native panel closed');
+        assert.equal(await page.locator('#native-pretest-allotment').evaluate((node) => node.getBoundingClientRect().height), 0);
         await page.addScriptTag({ content: bundle });
         await page.addScriptTag({ content: helperBundle });
         await page.evaluate(() => window.registeredPages[0].afterLoading());
-        await page.waitForSelector('.oi33-pretest-feedback', { state: 'attached' });
+        await page.waitForSelector('.oi33-pretest-feedback', { state: 'visible' });
         const initial = await page.evaluate(() => ({ code: window.fixtureEditor.getValue(), position: window.fixtureEditor.getPosition() }));
-        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), false);
-        assert.equal(await page.locator('#native-pretest-allotment').evaluate((node) => node.getBoundingClientRect().height), 0);
-        const toggle = page.getByRole('button', { name: '测试数据 (Alt+P)', exact: true });
-        assert.equal(await toggle.isVisible(), true);
-        assert.match(await toggle.textContent(), /测试数据/);
-        assert.doesNotMatch(await toggle.locator('div > span:not(.icon)').textContent(), /^自测$/);
-        assert.match(await toggle.getAttribute('title'), /打开或收起样例和自定义输入/);
-        assert.match(await toggle.getAttribute('title'), /Alt\+P/);
-        assert.equal(await toggle.getAttribute('data-tooltip'), null, 'Native title replaces the overflowing Hydro tooltip');
-        await toggle.click();
+        assert.equal(await page.evaluate(() => window.state.ui.pretest.visible), true, 'Mount opens the native panel through state, not CSS');
+        const nativeRunButton = page.locator('.scratchpad__toolbar__pretest');
+        const toggle = page.locator('#native-pretest-toggle');
+        for (const legacyButton of [nativeRunButton, toggle]) {
+            assert.equal(await legacyButton.isVisible(), false, 'Legacy top actions are not visible');
+            assert.equal(await legacyButton.evaluate((node) => node.hidden), true);
+            assert.equal(await legacyButton.getAttribute('aria-hidden'), 'true');
+            assert.equal(await legacyButton.evaluate((node) => node.tabIndex), -1, 'Legacy top actions are excluded from keyboard navigation');
+            assert.equal(await legacyButton.getAttribute('data-tooltip'), null, 'Hidden legacy actions cannot create overflowing tooltips');
+            assert.equal(await legacyButton.evaluate((node) => { node.focus(); return document.activeElement === node; }), false);
+        }
+        assert.equal(await nativeRunButton.getAttribute('data-global-hotkey'), 'f9', 'Original identity remains available to React and observers');
+        assert.equal(await toggle.getAttribute('data-global-hotkey'), 'alt+p');
+        assert.equal(await page.locator('.scratchpad__toolbar [data-global-hotkey="alt+p"]:visible').count(), 0);
+        assert.equal(await page.locator('.oi33-pretest-feedback__close').count(), 0, 'Permanent panel has no collapse button');
         assert.equal(await page.locator('[aria-label="选择自测样例"]').isVisible(), true);
         assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), true);
         const visibleGeometry = await page.evaluate(() => {
@@ -254,7 +263,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         });
         assert.equal(visibleGeometry.height, 200);
         assert.equal(visibleGeometry.inside, true);
-        assert.equal(await page.evaluate(() => window.posts.length), 0, 'Opening data does not submit or run');
+        assert.equal(await page.evaluate(() => window.posts.length), 0, 'Opening the permanent panel does not submit or run');
         assert.equal(await page.locator('.oi33-pretest-feedback__status').isVisible(), false, 'Idle has no explanatory status banner');
         assert.equal(await page.locator('.oi33-pretest-feedback__comparison').isVisible(), false);
         assert.equal(await page.locator('.oi33-pretest-feedback__resources').isVisible(), false);
@@ -268,7 +277,10 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         assert.match(await page.locator('[aria-label="选择自测样例"]').getAttribute('title'), /公开样例/);
         assert.equal(await page.locator('.oi33-pretest-feedback').getAttribute('title'), null, 'Help is on relevant controls, not a page-wide hover banner');
         const runButton = page.locator('.oi33-pretest-feedback__run');
-        const closeButton = page.locator('.oi33-pretest-feedback__close');
+        assert.equal(await runButton.isVisible(), true);
+        assert.equal(await page.getByRole('button', { name: /运行自测/ }).count(), 1, 'Bottom run is the only visible run entry');
+        assert.equal(await page.locator('[data-global-hotkey="f9"]:visible').count(), 1, 'Hydro hotkeys see exactly one visible F9 entry');
+        assert.equal(await runButton.getAttribute('data-global-hotkey'), 'f9');
         const assertPaneGeometry = async (label) => {
             const boxes = await page.evaluate(() => {
                 const box = (node) => { const r = node.getBoundingClientRect(); return {
@@ -285,7 +297,6 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
                     columns: [...document.querySelectorAll('.oi33-pretest-feedback__column')].map(box),
                     bodies: ['.oi33-pretest-feedback__input-body', '.oi33-pretest-feedback__result-body'].map(sel => box(document.querySelector(sel))),
                     run: box(document.querySelector('.oi33-pretest-feedback__run')),
-                    close: box(document.querySelector('.oi33-pretest-feedback__close')),
                 };
             });
             assert.equal(boxes.pane.height, 200, label);
@@ -306,7 +317,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
             assert.ok(Math.abs(boxes.bodies[0].bottom - boxes.bodies[1].bottom) < 1, `${label}: body bottom alignment`);
             assert.ok(boxes.columns[0].right <= boxes.columns[1].x + 1, `${label}: no overlap`);
             assert.ok(boxes.columns.every(box => box.width > 250), `${label}: useful column width`);
-            for (const item of [boxes.panel, ...boxes.columns, ...boxes.bodies, boxes.run, boxes.close]) {
+            for (const item of [boxes.panel, ...boxes.columns, ...boxes.bodies, boxes.run]) {
                 assert.ok(item.y >= boxes.pane.y - 1 && item.bottom <= boxes.pane.bottom + 1
                     && item.x >= boxes.pane.x - 1 && item.right <= boxes.pane.right + 1, `${label}: clipped control ${JSON.stringify(item)}`);
                 assert.ok(item.scrollWidth <= item.clientWidth + 2, `${label}: horizontal overflow`);
@@ -347,10 +358,11 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         await page.waitForTimeout(100);
         assert.equal(await page.evaluate(() => window.state.ui.pretest.visible), true, 'Repeat mount preserves the open panel');
         await page.keyboard.press('Alt+p');
-        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), false);
+        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), true, 'Removed Alt+P shortcut cannot collapse the panel');
         await page.keyboard.press('Alt+p');
         assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), true);
-        assert.equal(await page.evaluate(() => window.nativePanelToggles), 3, 'Original button and hotkey each toggle exactly once');
+        assert.equal(await page.evaluate(() => window.state.ui.pretest.visible), true);
+        assert.equal(await page.evaluate(() => window.nativePanelToggles), 0, 'Retired toggle is never invoked by Alt+P');
         assert.equal(await page.evaluate(() => window.posts.length), 0);
         assert.deepEqual(await page.locator('[aria-label="选择自测样例"] option').allTextContents(), ['自定义输入', '样例 1', '样例 2', '样例 3']);
         assert.equal(await page.locator('.native-result').isVisible(), false);
@@ -369,6 +381,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         await page.evaluate(() => window.complete('run1', 1, '3\n'));
         assert.equal(await runButton.isDisabled(), true, 'Native cooldown also disables the local button');
         await runButton.evaluate(button => button.click());
+        await page.keyboard.press('F9');
         assert.equal(await page.evaluate(() => window.posts.length), 1);
         await page.evaluate(() => window.clearCooldown());
         assert.equal(await runButton.isDisabled(), false);
@@ -466,28 +479,32 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
             return { none: window.PretestHelper.readPublicSamples(empty), partial: window.PretestHelper.readPublicSamples(duplicate) };
         });
         assert.deepEqual(extracted, { none: [], partial: [{ id: '1', input: '', output: null }] });
-        // Re-mount must not add a second request handler or panel.
+        // Re-mount restores a native pane that Hydro previously hid, without
+        // adding a second request handler or resetting its input/results.
+        await page.evaluate(() => window.store.dispatch({
+            type: 'SCRATCHPAD_UI_SET_VISIBILITY', payload: { uiElement: 'pretest', visibility: false },
+        }));
         await page.evaluate(() => window.registeredPages[0].afterLoading());
         await page.waitForTimeout(100);
         assert.equal(await page.locator('.oi33-pretest-feedback').count(), 1);
+        assert.equal(await page.evaluate(() => window.state.ui.pretest.visible), true);
+        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), true);
+        assert.equal(await page.locator('[data-global-hotkey="f9"]:visible').count(), 1);
         await page.keyboard.press('F9');
         assert.equal(await page.evaluate(() => window.posts.length), 7);
         await page.evaluate(() => window.requests[6].resolve({ rid: 'run6' }));
         await page.evaluate(() => window.complete('run6', 1, 'ok'));
         await page.evaluate(() => window.clearCooldown());
-        await closeButton.click();
-        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), false);
-        assert.equal(await page.evaluate(() => window.state.ui.pretest.visible), false);
-        await toggle.click();
-        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), true);
-        assert.equal(await page.evaluate(() => window.posts.length), 7, 'Close and reopen do not issue a run');
+        assert.equal(await page.locator('.oi33-pretest-feedback__close').count(), 0);
         await page.keyboard.press('F10');
         assert.equal(await page.evaluate(() => window.nativeSubmits), 1);
-        assert.equal(await page.evaluate(() => window.state.ui.pretest.visible), false);
-        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), false);
+        assert.equal(await page.evaluate(() => window.state.ui.pretest.visible), true, 'Formal submission does not collapse the permanent panel');
+        assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), true);
         await page.keyboard.press('Alt+p');
         assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), true);
-        assert.equal(await page.evaluate(() => window.posts.length), 7, 'Reopening after submit does not run again');
+        assert.equal(await page.evaluate(() => window.nativePanelToggles), 0);
+        assert.equal(await page.evaluate(() => window.posts.length), 7, 'F10 and retired Alt+P never issue a pretest');
+        assert.equal(await page.evaluate(() => window.nativePretests), 0, 'Visible run and F9 both use the same intercepted native path exactly once');
         assert.deepEqual(await page.evaluate(() => ({ code: window.fixtureEditor.getValue(), position: window.fixtureEditor.getPosition() })), initial);
         assert.deepEqual(errors, []);
         // Use the actual shared dark-theme tokens, not fixture-only colors.
@@ -498,10 +515,10 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         });
         assert.equal(colors.foreground, 'rgb(238, 241, 248)');
         assert.notEqual(colors.foreground, colors.background);
-        await assertPaneGeometry('custom run after reopen');
+        await assertPaneGeometry('custom run after formal submission');
 
         // Long input/output scroll within their own controls; the 200 px pane
-        // and the run/close controls remain intact, including expanded stale input.
+        // and the run control remain intact, including expanded stale input.
         await page.evaluate(() => window.complete('run6', 1, `${'x'.repeat(500)}\n`.repeat(100)));
         await page.locator('[aria-label="自测输入"]').fill('changed\n'.repeat(80));
         await page.locator('.oi33-pretest-feedback__stale summary').click();
