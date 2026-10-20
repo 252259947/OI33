@@ -96,7 +96,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
                 + '<div class="scratchpad__toolbar flex-row flex-cross-center"><button class="scratchpad__toolbar__item scratchpad__toolbar__button scratchpad__toolbar__pretest enabled" data-global-hotkey="f9"><div><span class="icon icon-debug"></span> 运行自测 (F9)</div></button>'
                 + '<button class="scratchpad__toolbar__item scratchpad__toolbar__button scratchpad__toolbar__submit enabled" data-global-hotkey="f10"><div><span class="icon icon-play"></span> 递交评测 (F10)</div></button>'
                 + '<button class="scratchpad__toolbar__item scratchpad__toolbar__button enabled" data-global-hotkey="alt+q" name="problem-sidebar__quit-scratchpad"><div><span class="icon icon-close"></span> 退出 (Alt+Q)</div></button>'
-                + '<button class="scratchpad__toolbar__item scratchpad__toolbar__button enabled" data-global-hotkey="alt+p"><div><span class="icon icon-edit"></span> <span>自测</span></div></button>'
+                + '<button class="scratchpad__toolbar__item scratchpad__toolbar__button enabled" data-global-hotkey="alt+p" data-tooltip="Toggle Pretest Panel (Alt+P)"><div><span class="icon icon-edit"></span> <span>自测</span></div></button>'
                 + '<div class="scratchpad__toolbar__item"><select class="select"><option>C++14</option></select></div></div>'
                 + '<div class="problem-content"><div class="richmedia">'
                 + '<pre><code class="language-input2">4 5\n</code></pre><pre><code class="language-output2">9\n</code></pre>'
@@ -242,6 +242,8 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         assert.match(await toggle.textContent(), /测试数据/);
         assert.doesNotMatch(await toggle.locator('div > span:not(.icon)').textContent(), /^自测$/);
         assert.match(await toggle.getAttribute('title'), /打开或收起样例和自定义输入/);
+        assert.match(await toggle.getAttribute('title'), /Alt\+P/);
+        assert.equal(await toggle.getAttribute('data-tooltip'), null, 'Native title replaces the overflowing Hydro tooltip');
         await toggle.click();
         assert.equal(await page.locator('[aria-label="选择自测样例"]').isVisible(), true);
         assert.equal(await page.locator('[aria-label="自测输入"]').isVisible(), true);

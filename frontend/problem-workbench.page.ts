@@ -437,7 +437,8 @@ function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
             // Keep Hydro's own panel toggle and hotkey: preparing input must not run code.
             button.classList.remove('oi33-scratchpad-toolbar__legacy-toggle');
             button.title = '打开或收起样例和自定义输入（Alt+P）';
-            button.dataset.tooltip = button.title;
+            // Native title cannot push the viewport sideways near the right edge.
+            button.removeAttribute('data-tooltip');
             button.setAttribute('aria-label', '测试数据 (Alt+P)');
             const labels = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
             while (labels.nextNode()) {
