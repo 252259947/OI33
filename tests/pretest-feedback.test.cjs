@@ -252,6 +252,8 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         }
         assert.equal(await nativeRunButton.getAttribute('data-global-hotkey'), 'f9', 'Original identity remains available to React and observers');
         assert.equal(await toggle.getAttribute('data-global-hotkey'), 'alt+p');
+        assert.equal(await page.locator('.scratchpad__toolbar__submit').getAttribute('data-tooltip-pos'), 'top right',
+            'Rightmost submit tooltip opens leftward without changing its native action');
         assert.equal(await page.locator('.scratchpad__toolbar [data-global-hotkey="alt+p"]:visible').count(), 0);
         assert.equal(await page.locator('.oi33-pretest-feedback__close').count(), 0, 'Permanent panel has no collapse button');
         assert.equal(await page.locator('[aria-label="选择自测样例"]').isVisible(), true);
@@ -287,12 +289,24 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
                     x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height,
                     scrollWidth: node.scrollWidth, clientWidth: node.clientWidth,
                 }; };
+                const toolbar = document.querySelector('.scratchpad__toolbar');
+                const toolbarStyle = getComputedStyle(toolbar);
                 return {
                     pane: box(document.querySelector('#native-pretest-allotment')),
                     panel: box(document.querySelector('.oi33-pretest-feedback')),
                     editor: box(document.querySelector('.ScratchpadMonacoEditor')),
-                    toolbar: box(document.querySelector('.scratchpad__toolbar')),
-                    actions: [...document.querySelectorAll('.scratchpad__toolbar > button, .scratchpad__toolbar select')]
+                    toolbar: box(toolbar),
+                    toolbarInsets: {
+                        left: parseFloat(toolbarStyle.paddingLeft) + parseFloat(toolbarStyle.borderLeftWidth),
+                        right: parseFloat(toolbarStyle.paddingRight) + parseFloat(toolbarStyle.borderRightWidth),
+                    },
+                    toolbarOrder: [
+                        '.scratchpad__toolbar [data-global-hotkey="alt+q"]',
+                        '.oi33-scratchpad-toolbar__language > select',
+                        '.oi33-scratchpad-settings__button',
+                        '.scratchpad__toolbar__submit',
+                    ].map(selector => box(document.querySelector(selector))),
+                    actions: [...document.querySelectorAll('.scratchpad__toolbar > button, .scratchpad__toolbar select, .oi33-scratchpad-settings__button')]
                         .map(box).filter(item => item.width > 0 && item.height > 0).sort((a, b) => a.x - b.x),
                     columns: [...document.querySelectorAll('.oi33-pretest-feedback__column')].map(box),
                     bodies: ['.oi33-pretest-feedback__input-body', '.oi33-pretest-feedback__result-body'].map(sel => box(document.querySelector(sel))),
@@ -310,6 +324,17 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
                 `${label}: toolbar action stays within toolbar ${JSON.stringify({ action, toolbar: boxes.toolbar })}`);
                 if (index) assert.ok(boxes.actions[index - 1].right <= action.x + 1, `${label}: toolbar actions do not overlap`);
             });
+            const [exitAction, languageAction, settingsAction, submitAction] = boxes.toolbarOrder;
+            assert.ok(boxes.toolbarOrder.every(action => action.width > 0 && action.height > 0),
+                `${label}: exit, language, settings and submit stay visible`);
+            assert.ok(exitAction.right <= languageAction.x + 1 && languageAction.right <= settingsAction.x + 1
+                && settingsAction.right <= submitAction.x + 1, `${label}: toolbar order is exit < language < settings < submit`);
+            assert.ok(Math.abs(exitAction.x - boxes.toolbar.x - boxes.toolbarInsets.left) <= 1,
+                `${label}: exit is flush with the left inner edge`);
+            assert.ok(languageAction.x >= boxes.toolbar.x + boxes.toolbar.width / 2,
+                `${label}: language, settings and submit form a right-aligned group`);
+            assert.ok(Math.abs(boxes.toolbar.right - boxes.toolbarInsets.right - submitAction.right) <= 1,
+                `${label}: submit is flush with the right inner edge`);
             assert.equal(boxes.columns.length, 2, label);
             assert.ok(Math.abs(boxes.columns[0].y - boxes.columns[1].y) < 1, `${label}: header alignment`);
             assert.ok(Math.abs(boxes.columns[0].bottom - boxes.columns[1].bottom) < 1, `${label}: bottom alignment`);

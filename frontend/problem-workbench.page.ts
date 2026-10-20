@@ -443,6 +443,9 @@ function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
             button.removeAttribute('data-tooltip');
         } else if (hotkey === 'alt+r' || label === '评测记录' || label === 'Records') {
             button.classList.add('oi33-scratchpad-toolbar__legacy-toggle');
+        } else if (hotkey === 'f10') {
+            // The rightmost action's native tooltip must open toward the editor.
+            button.dataset.tooltipPos = 'top right';
         }
     });
     toolbar.querySelector('.scratchpad__toolbar__split')?.classList.add('oi33-scratchpad-toolbar__legacy-toggle');
