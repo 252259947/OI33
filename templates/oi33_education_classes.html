@@ -7,7 +7,7 @@
       <form method="post" class="education-class-form">
         <input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="update">
         <label>新班型名称<input class="textbox" name="name" required maxlength="80" placeholder="例如：提高班 / 周六班"></label>
-        <label>学生 UID（可暂时留空）<textarea class="textbox" name="uids" rows="2" placeholder="多个 UID 用逗号或空格分隔"></textarea></label>
+        {% set pickerUids = [] %}{% include "partials/education_student_picker.html" %}
         <button class="primary rounded button" type="submit">保存班型</button>
       </form>
     </div>
@@ -19,7 +19,7 @@
         <details><summary>编辑班型成员</summary>
           <form method="post" class="education-class-form">
             <input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="update"><input type="hidden" name="name" value="{{ group.name }}">
-            <label>完整成员 UID 名单<textarea class="textbox" name="uids" rows="3">{{ group.uids|join(', ') }}</textarea></label>
+            {% set pickerUids = group.uids %}{% include "partials/education_student_picker.html" %}
             <p class="help-text">保存会替换本班型成员，其他班型不变。已发布作业的应交名单不自动重算；作业访问范围会随当前班型变化。</p>
             <button class="rounded button" type="submit">保存成员</button>
           </form>

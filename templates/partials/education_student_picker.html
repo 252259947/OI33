@@ -1,0 +1,13 @@
+<div class="education-student-picker" data-student-picker data-search-url="{{ url('oi33_education_students') }}"{% if pickerTid %} data-tid="{{ pickerTid }}"{% endif %}>
+  <div class="education-student-picker__ui" hidden>
+    <label>按姓名选择学生<input class="textbox" data-student-search type="search" maxlength="80" autocomplete="off" placeholder="输入姓名或用户名查找，同名学生可核对 UID"></label>
+    <p class="help-text" data-student-status role="status">输入姓名查找，可选择多名学生。</p>
+    <div data-student-results class="education-student-picker__results"></div>
+    <div data-student-selected class="education-student-picker__selected" aria-label="已选学生"></div>
+  </div>
+  <details class="education-student-picker__advanced">
+    <summary>高级：直接输入 UID</summary>
+    <label>学生 UID（可留空）<textarea class="textbox" name="uids" rows="2" placeholder="多个 UID 用逗号或空格分隔">{{ pickerUids|join(', ') }}</textarea></label>
+  </details>
+  {% for uid in pickerUids %}<span hidden data-student-seed data-uid="{{ uid }}" data-name="{{ names[uid] }}"></span>{% endfor %}
+</div>

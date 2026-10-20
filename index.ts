@@ -27,6 +27,8 @@ import { apply as applyHomepage } from './handler/homepage';
 import { apply as applyEnrollment } from './handler/enrollment';
 import { apply as applyEducation } from './handler/education';
 import { apply as applyHomeworkAccess } from './handler/homework-access';
+import { apply as applyRecentLearning } from './handler/recent-learning';
+import { apply as applyStudentPicker } from './handler/student-picker';
 import { apply as applyPersonalFiles } from './handler/personal-files';
 import { apply as applyTrainingAccess } from './handler/training-access';
 import { apply as applyScoreboardIdentity } from './handler/scoreboard-identity';
@@ -84,6 +86,8 @@ export async function apply(ctx: Context) {
     await applyEnrollment(ctx);
     await applyEducation(ctx);
     applyHomeworkAccess(ctx);
+    await applyRecentLearning(ctx);
+    applyStudentPicker(ctx);
     applyPersonalFiles(ctx);
     applyTrainingAccess(ctx);
     applyScoreboardIdentity(ctx);

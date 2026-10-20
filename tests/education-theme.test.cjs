@@ -29,6 +29,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('rendered teaching labels and rel
     }
   }
   const env = new nunjucks.Environment(new Loader(path.join(root, 'templates')), { autoescape: true });
+  env.addGlobal('url', (name) => `/fixture/${name}`);
   const members = env.render('oi33_education_classes.html', {
     groups: [{ name: '2026级', uids: [17, 18] }, { name: '测试', uids: [3] }],
     names: { 17: '测试学生甲', 18: '测试学生乙', 3: '测试账号' }, csrfToken: 'fixture-only',

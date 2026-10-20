@@ -47,9 +47,13 @@ function fixture() {
     ProblemModel: { get: async (_, pid) => ({ docId: Number(pid) }) },
   };
   const auth = load('model/education-auth.ts', { hydrooj: hydro });
+  const catalog = load('model/homework-catalog.ts', {
+    './education-policy': load('model/education-policy.ts', {}),
+  });
   const policy = load('handler/homework-access.ts', {
     hydrooj: hydro, '../model/education-auth': auth,
     '../model/education': { listClassGroups: async () => groups, educationRosterColl: {} },
+    '../model/homework-catalog': catalog,
     './enrollment': { enforceEnrollment: async (h) => { if (h.disabled) throw new ForbiddenError('disabled'); } },
   });
   const makeUser = (uid = 4, role = 'default', permission = PERM.PERM_VIEW_HOMEWORK | PERM.PERM_ATTEND_HOMEWORK | PERM.PERM_SUBMIT_PROBLEM) => ({

@@ -1,8 +1,13 @@
 import {
-    Context, ContestAlreadyAttendedError, ContestModel, ForbiddenError, Handler, ObjectId, param, PERM, PRIV, ProblemModel, Types,
+    Context, ContestAlreadyAttendedError, ContestModel, ForbiddenError, Handler, ObjectId, param, PERM, PRIV, ProblemModel,
+    STATUS, Types, ValidationError,
 } from 'hydrooj';
 import { isEducationCoach } from '../model/education-auth';
 import { educationRosterColl, listClassGroups } from '../model/education';
+import {
+    annotateHomeworkProgress, HOMEWORK_PROGRESS_FILTERS, homeworkDeadlineLabel, isLongTermHomework, selectStudentHomework,
+} from '../model/homework-catalog';
+import type { HomeworkProgressFilter } from '../model/homework-catalog';
 import { enforceEnrollment } from './enrollment';
 
 const order = { penaltySince: -1, endAt: -1, beginAt: -1, _id: -1 } as const;
@@ -24,28 +29,64 @@ export function homeworkQuery(user: any, groups: string[], group = '', q = '') {
 }
 
 async function addRosterCounts(domainId: string, tdocs: any[]) {
+    if (!tdocs.length) return;
     const rosters = await educationRosterColl.find({ domainId, tid: { $in: tdocs.map((doc) => doc.docId) } }).toArray();
     for (const doc of tdocs) {
+        doc.educationLongTerm = isLongTermHomework(doc);
+        doc.educationDeadlineLabel = homeworkDeadlineLabel(doc);
         const roster = rosters.find((item) => String(item.tid) === String(doc.docId));
         if (roster) doc.educationRosterCount = roster.entries.filter((entry) => !entry.exemptAt).length;
     }
+}
+
+export async function studentHomeworkPage(
+    domainId: string, uid: number, query: any, page: number, pageSize: number, progress: HomeworkProgressFilter,
+) {
+    // Project only light catalog metadata and this student's canonical scores.
+    // Filtering/sorting must precede pagination, not just reorder the current page.
+    const docs = await ContestModel.getMulti(domainId, query)
+        .project({ docId: 1, pids: 1, beginAt: 1, endAt: 1, penaltySince: 1 }).toArray();
+    const statuses = docs.length && uid > 0 ? await ContestModel.getMultiStatus(domainId, {
+        uid, docId: { $in: docs.map((doc) => doc.docId) },
+    }).project({ docId: 1, detail: 1 }).toArray() : [];
+    const statusById = new Map(statuses.map((status) => [String(status.docId), status]));
+    const now = new Date();
+    const ordered = selectStudentHomework(docs.map((doc) => annotateHomeworkProgress(
+        doc, statusById.get(String(doc.docId)), now, STATUS.STATUS_ACCEPTED,
+    )), progress, now);
+    const selected = ordered.slice((page - 1) * pageSize, page * pageSize);
+    const fullDocs = selected.length ? await ContestModel.getMulti(domainId, {
+        ...query, docId: { $in: selected.map((doc) => doc.docId) },
+    }).toArray() : [];
+    const docsById = new Map(fullDocs.map((doc) => [String(doc.docId), doc]));
+    // Repeat the original visibility query on the full read as a defence in
+    // depth if assignments change while the catalog is loading.
+    const tdocs = selected.filter((doc) => docsById.has(String(doc.docId))).map((doc) => annotateHomeworkProgress(
+        docsById.get(String(doc.docId)), statusById.get(String(doc.docId)), now, STATUS.STATUS_ACCEPTED,
+    ));
+    return [tdocs, Math.ceil(ordered.length / pageSize), ordered.length] as const;
 }
 
 class HomeworkMainAdapter extends Handler {
     @param('group', Types.Name, true)
     @param('page', Types.PositiveInt, true)
     @param('q', Types.String, true)
-    async get(domainId: string, group = '', page = 1, q = '') {
+    @param('progress', Types.String, true)
+    async get(domainId: string, group = '', page = 1, q = '', progress: HomeworkProgressFilter = 'all') {
         this.checkPerm(PERM.PERM_VIEW_HOMEWORK);
+        if (!HOMEWORK_PROGRESS_FILTERS.includes(progress)) throw new ValidationError('progress');
         const groups = await homeworkGroups(this.user, domainId);
-        const [tdocs, tpcount] = await this.paginate(
-            ContestModel.getMulti(domainId, homeworkQuery(this.user, groups, group, q)).sort(order), page, 'contest',
-        );
+        const coach = isEducationCoach(this.user);
+        const query = homeworkQuery(this.user, groups, group, q);
+        const [tdocs, tpcount] = coach
+            ? await this.paginate(ContestModel.getMulti(domainId, query).sort(order), page, 'contest')
+            : await studentHomeworkPage(domainId, this.user._id, query, page,
+                this.ctx.setting.get('pagination.contest') || 20, progress);
         await addRosterCounts(domainId, tdocs);
         this.response.addHeader('Cache-Control', 'private, no-store');
         this.response.template = 'homework_main.html';
         this.response.body = {
-            tdocs, tpcount, page, groups, group, q, educationIsCoach: isEducationCoach(this.user),
+            tdocs, tpcount, page, groups, group, q, progress: coach ? 'all' : progress, educationIsCoach: coach,
             calendar: tdocs.map((doc) => ({ ...doc, url: this.url('homework_detail', { tid: doc.docId }) })),
         };
     }

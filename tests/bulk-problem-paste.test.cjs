@@ -136,12 +136,16 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('browser paste integration, atomi
             data.set(textarea, { vjEditorInstance: window.editor });
             window.UiContext = { domainId: 'system' };
             window.requests = [];
-            window.delayLookup = 0;
+            // Explicit gates keep pending-request assertions deterministic even
+            // when Chrome is slow; a 100 ms timer could finish before page.fill.
+            window.lookupGate = null;
+            window.holdLookup = () => { window.lookupGate = new Promise((resolve) => { window.unlockLookup = resolve; }); };
+            window.releaseLookup = () => { window.lookupGate = null; window.unlockLookup(); };
             window.require = () => ({ $: window.$, NamedPage: function () {}, addPage() {},
                 ReactDOM: { flushSync: (fn) => fn() }, ProblemSelectAutoComplete: { getOrConstruct: () => instance }, request: {
                     async get(url, args) {
                         window.requests.push({ url, args });
-                        if (window.delayLookup) await new Promise((r) => setTimeout(r, window.delayLookup));
+                        if (window.lookupGate) await window.lookupGate;
                         if (args.q === 'missing') return { pdocs: [] };
                         const docId = Number(args.q.replace(/\D/g, ''));
                         return { pdocs: [{ docId, pid: args.q, title: `题目 ${docId}` }] };
@@ -165,26 +169,33 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('browser paste integration, atomi
         await paste('#global-search', 'LuoguB2002, LuoguB2025');
         await paste('#picker', 'LuoguB2002');
         assert.equal(await page.evaluate(() => window.requests.length), before);
-        await page.evaluate(() => { window.delayLookup = 100; });
+        await page.evaluate(() => window.holdLookup());
         await paste('#picker', 'LuoguB9, LuoguB8');
         await paste('#picker', 'LuoguB6, LuoguB5');
         assert.equal(await page.evaluate(() => document.querySelector('#form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))), false);
         await page.evaluate(() => window.setSelected(['99', '100']));
+        await page.evaluate(() => window.releaseLookup());
         await page.waitForFunction(() => !document.querySelector('[data-oi33-bulk-problem-paste]').hasAttribute('aria-busy'));
         assert.deepEqual(await page.evaluate(() => window.selected()), ['99', '100', '9', '8']);
+        await page.evaluate(() => window.holdLookup());
         await paste('#picker', 'LuoguB2, LuoguB3');
         await page.fill('#picker', 'new query');
+        await page.evaluate(() => window.releaseLookup());
         await page.waitForFunction(() => !document.querySelector('[data-oi33-bulk-problem-paste]').hasAttribute('aria-busy'));
         assert.deepEqual(await page.evaluate(() => window.selected()), ['99', '100', '9', '8']);
         await page.selectOption('[aria-label="目标章节"]', '7');
         await page.fill('[aria-label="批量题号"]', 'LuoguB2, LuoguB3');
+        await page.evaluate(() => window.holdLookup());
         await page.click('[data-import]');
         assert.equal(await page.evaluate(() => document.querySelector('#training').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))), false);
+        await page.evaluate(() => window.releaseLookup());
         await page.waitForFunction(() => !document.querySelector('[data-import]').disabled);
         assert.deepEqual(await page.evaluate(() => JSON.parse(window.editor.value()).map((c) => c.pids)), [[99], [7, 2, 3]]);
         await page.fill('[aria-label="批量题号"]', 'LuoguB4, LuoguB5');
+        await page.evaluate(() => window.holdLookup());
         await page.click('[data-import]');
         await page.evaluate(() => { const dag = JSON.parse(window.editor.value()); dag[0].title = '保留用户修改'; window.editor.value(JSON.stringify(dag)); });
+        await page.evaluate(() => window.releaseLookup());
         await page.waitForFunction(() => !document.querySelector('[data-import]').disabled);
         assert.equal(await page.inputValue('[aria-label="批量题号"]'), 'LuoguB4, LuoguB5');
         assert.deepEqual(await page.evaluate(() => JSON.parse(window.editor.value()).map((c) => c.pids)), [[99], [7, 2, 3]]);

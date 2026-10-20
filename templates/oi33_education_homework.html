@@ -35,7 +35,7 @@
   <section class="section"><div class="section__header"><h2 class="section__title">应交名单管理</h2></div><div class="section__body">
     <form method="post" class="education-class-form"><input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="preview">
       <label>操作<select class="select" name="mode">{% if not roster %}<option value="initialize">为旧作业建立名单</option>{% else %}<option value="sync">同步班型新增学生（保留原名单及免除状态）</option><option value="add">补发给指定学生</option><option value="exempt">免除指定学生</option>{% endif %}</select></label>
-      {% if roster %}<label>学生 UID（补发或免除时填写）<input class="textbox" name="uids" placeholder="用逗号或空格分隔"></label>
+      {% if roster %}{% set pickerUids = [] %}{% set pickerTid = tdoc.docId %}{% include "partials/education_student_picker.html" %}
       <label>免除原因<input class="textbox" name="reason" maxlength="300" placeholder="免除时必填，例如转班或请假"></label>{% endif %}
       <p class="help-text">同步只补充新成员，不因转班删除原名单，也不会撤销已有免除。补发学生须属于作业开放班型。所有操作均先预览再确认。</p>
       <button class="rounded button" type="submit">预览名单变化</button>

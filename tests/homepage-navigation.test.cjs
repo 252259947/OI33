@@ -88,14 +88,14 @@ test('permission checkers and anonymous personal-record filtering survive', () =
   assert.match(guest, /name="nav_login"/);
 });
 
-test('only the quick training entry changes; hero keeps its training action', () => {
+test('homework quick entry stays put while hero resumes the last lesson', () => {
   const html = env.render('main.html', context());
   const quick = html.match(/<nav class="oi33-home__quick"[\s\S]*?<\/nav>/)[0];
   assert.equal((quick.match(/class="oi33-quick-card"/g) || []).length, 4);
   assert.match(quick, /href="\/homework_main"/);
   assert.match(quick, /icon-calendar/);
   assert.doesNotMatch(quick, /training_main/);
-  assert.match(html, /href="\/training_main">继续训练/);
+  assert.match(html, /href="\/oi33_recent_learning"[^>]*>继续练习/);
 });
 
 test('homework inserts between contest and training without changing original contents', () => {

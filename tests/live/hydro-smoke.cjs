@@ -10,6 +10,7 @@ const path = require('node:path');
 const net = require('node:net');
 const { spawn, execFileSync } = require('node:child_process');
 const { MongoClient, ObjectId } = require('mongodb');
+const { checkLearningUx } = require('./learning-ux-checks.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const globalModules = process.env.OI33_QA_GLOBAL_MODULES || '/usr/local/share/.config/yarn/global/node_modules';
@@ -470,13 +471,13 @@ async function main() {
   const ready = path.join(fixture, 'ready.json');
   const seed = `
 const fs = require('fs');
-const { db, UserModel, DomainModel, ProblemModel, ContestModel, PRIV, PERM, SystemModel, SettingModel } = require('hydrooj');
+const { db, UserModel, DomainModel, ProblemModel, ContestModel, TrainingModel, STATUS, PRIV, PERM, SystemModel, SettingModel } = require('hydrooj');
 exports.apply = async function(ctx) {
   const base = ${JSON.stringify(root)};
-  for (const name of ['mobile-access', 'theme', 'enrollment', 'education', 'homework-access', 'personal-files', 'account-batch', 'homepage', 'homepage-fortune', 'article']) await require(base + '/handler/' + name + '.ts').apply(ctx);
+  for (const name of ['mobile-access', 'theme', 'enrollment', 'education', 'homework-access', 'recent-learning', 'student-picker', 'personal-files', 'account-batch', 'homepage', 'homepage-fortune', 'article']) await require(base + '/handler/' + name + '.ts').apply(ctx);
   if (!await DomainModel.get('system')) await DomainModel.add('system', 2, 'Isolated QA', 'Synthetic fixture only');
   const users = {};
-  for (const [name, uid, priv] of [['nobody',0,PRIV.PRIV_DEFAULT],['qa_admin',2,PRIV.PRIV_ALL],['qa_coach',3,PRIV.PRIV_DEFAULT],['qa_student',4,PRIV.PRIV_DEFAULT],['qa_outsider',5,PRIV.PRIV_DEFAULT],['qa_new',6,PRIV.PRIV_DEFAULT],['qa_other_coach',7,PRIV.PRIV_DEFAULT],['qa_power_student',8,PRIV.PRIV_DEFAULT],['qa_coach_no_file',9,PRIV.PRIV_DEFAULT & ~PRIV.PRIV_CREATE_FILE]]) {
+  for (const [name, uid, priv] of [['nobody',0,PRIV.PRIV_DEFAULT],['qa_admin',2,PRIV.PRIV_ALL],['qa_coach',3,PRIV.PRIV_DEFAULT],['qa_student',4,PRIV.PRIV_DEFAULT],['qa_outsider',5,PRIV.PRIV_DEFAULT],['qa_new',6,PRIV.PRIV_DEFAULT],['qa_other_coach',7,PRIV.PRIV_DEFAULT],['qa_power_student',8,PRIV.PRIV_DEFAULT],['qa_coach_no_file',9,PRIV.PRIV_DEFAULT & ~PRIV.PRIV_CREATE_FILE],['qa_learning_student',10,PRIV.PRIV_DEFAULT]]) {
     users[name] = await UserModel.create(name + '@fixture.invalid', name, ${JSON.stringify(password)}, uid, '127.0.0.1', priv);
   }
   await DomainModel.addRole('system', 'coach', PERM.PERM_DEFAULT | PERM.PERM_CREATE_HOMEWORK | PERM.PERM_EDIT_HOMEWORK_SELF);
@@ -490,13 +491,15 @@ exports.apply = async function(ctx) {
   await DomainModel.setUserRole('system', 8, 'qa_power_student', true);
   await UserModel.setById(2, { timeZone: 'Pacific/Kiritimati' });
   await UserModel.setById(3, { timeZone: 'Pacific/Honolulu' });
-  for (const uid of [2,3,4,5,7,8,9]) await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: uid === 2 ? 3 : 1, realname_name: 'QA ' + uid });
+  for (const uid of [2,3,4,5,7,8,9,10]) await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: uid === 2 ? 3 : 1, realname_name: 'QA ' + uid });
   await UserModel.updateGroup('system', '基础班', [4]);
   await UserModel.updateGroup('system', '提高班', [4]);
   await UserModel.updateGroup('system', '仅教师可见班', []);
   await SystemModel.set('hydrooj.homepage', ${JSON.stringify('- width: 9\n  contest: 5\n  training: 10\n- width: 3\n  checkin: true\n  hitokoto: true\n  ranking: 10\n')});
   const pid = await ProblemModel.add('system', 'QA1', 'QA problem', 'Synthetic fixture only', 2);
   const otherPid = await ProblemModel.add('system', 'QA2', 'QA unrelated problem', 'Synthetic fixture only', 2);
+  const trainingId = await TrainingModel.add('system', 'QA recent learning training', 'Synthetic training only', 2,
+    [{ _id: 1, title: 'QA first section', pids: [pid], requireNids: [] }], 'QA training description');
   await ProblemModel.addAdditionalFile('system', pid, 'qa-note.txt', Buffer.from('QA fixture statement attachment'), 2);
   const lang = Object.keys(SettingModel.langs).find((key) => key.startsWith('cc') && !SettingModel.langs[key].disabled);
   if (!lang) throw new Error('Isolated runtime has no enabled C++ fixture language.');
@@ -509,7 +512,8 @@ exports.apply = async function(ctx) {
   const articleContent = ${JSON.stringify('QA excerpt $\\frac{1}{2}$ and $x^2$.')};
   const articleId = await articles.addArticle({ domainId: 'system', owner: 2, title: 'QA formula article',
     content: articleContent, visibility: 'public', binding, ip: '127.0.0.1' });
-  fs.writeFileSync(${JSON.stringify(ready)}, JSON.stringify({users,pid,otherPid,lang,articleId:String(articleId),articleContent,tid:String(tid),otherTid:String(otherTid)}));
+  fs.writeFileSync(${JSON.stringify(ready)}, JSON.stringify({users,pid,otherPid,lang,articleId:String(articleId),articleContent,tid:String(tid),otherTid:String(otherTid),
+    trainingId:String(trainingId),acceptedStatus:STATUS.STATUS_ACCEPTED,wrongStatus:STATUS.STATUS_WRONG_ANSWER}));
 };
 `;
   write(path.join(fixture, 'addon/index.js'), seed);
@@ -636,6 +640,10 @@ exports.apply = async function(ctx) {
   check('class change does not silently rewrite historical snapshot', unchanged.entries.length === 2);
   await checkEmptyHomeworkLifecycle(db, coach, student, defaults, fixtureData.pid);
   await checkHomeworkAccess(db, { coach, otherCoach, student, applicant, outsider, powerfulStudent }, fixtureData);
+  const learningStudent = session();
+  await login(learningStudent, 'qa_learning_student');
+  await checkLearningUx({ db, check, actors: { admin, coach, otherCoach, student, applicant, outsider, learningStudent },
+    fixtureData, session, login });
   const multiple = new URLSearchParams({ users: 'qa_regular,QA Regular,R01', accountType: 'regular' });
   multiple.append('groups', '基础班'); multiple.append('groups', '提高班');
   result = await admin('/oi33/accounts/batch', multiple);

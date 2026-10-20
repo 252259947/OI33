@@ -2,6 +2,7 @@ import {
     $, addPage, ctx, i18n, loadMonaco, NamedPage, Notification, request,
 } from '@hydrooj/ui-default';
 import { EDITOR_FONT_MAX, EDITOR_FONT_MIN, installEditorWheelZoom } from './editor-wheel-zoom';
+import { installPretestFeedback } from './pretest-feedback';
 import './problem-workbench.css';
 
 const problemPages = ['problem_detail', 'contest_detail_problem', 'homework_detail_problem'];
@@ -120,6 +121,7 @@ type ScratchpadStore = {
 
 type ScratchpadRoot = HTMLElement & {
     oi33Unsubscribe?: () => void;
+    oi33Pretest?: ReturnType<typeof installPretestFeedback>;
 };
 
 type RecordsPanel = HTMLElement & {
@@ -555,30 +557,26 @@ function installScratchpadObserver(root: HTMLElement, store: ScratchpadStore) {
         // On re-entry Hydro's singleton may still reference the disposed editor
         // until the asynchronously created replacement has mounted its DOM.
         void configureScratchpadEditor(root, store);
+        (root as ScratchpadRoot).oi33Pretest?.mount();
     });
     observer.observe(root, { childList: true, subtree: true });
 }
 
-function firstSampleInput() {
-    const samples = Array.from(document.querySelectorAll<HTMLElement>('.problem-content pre code[class*="language-input"]'));
-    samples.sort((a, b) => {
-        const aId = Number(a.className.match(/language-input(\d+)/)?.[1] || Number.MAX_SAFE_INTEGER);
-        const bId = Number(b.className.match(/language-input(\d+)/)?.[1] || Number.MAX_SAFE_INTEGER);
-        return aId - bId;
-    });
-    return samples[0]?.textContent || '';
-}
-
-function installPretestFlow(root: HTMLElement, store: ScratchpadStore) {
+function installPretestFlow(root: ScratchpadRoot, store: ScratchpadStore) {
     if (root.dataset.oi33PretestFlow === '1') return;
     root.dataset.oi33PretestFlow = '1';
+    const feedback = installPretestFeedback(root, store, recordDetailUrl);
+    root.oi33Pretest = feedback;
 
     root.addEventListener('click', (event) => {
         if ((event.target as Element | null)?.closest('.scratchpad-fill-button')) {
-            window.setTimeout(() => store.dispatch({
-                type: 'SCRATCHPAD_UI_SET_VISIBILITY',
-                payload: { uiElement: 'pretest', visibility: true },
-            }));
+            window.setTimeout(() => {
+                feedback.filledSample();
+                store.dispatch({
+                    type: 'SCRATCHPAD_UI_SET_VISIBILITY',
+                    payload: { uiElement: 'pretest', visibility: true },
+                });
+            });
         }
         const submitButton = (event.target as Element | null)?.closest<HTMLButtonElement>('.scratchpad__toolbar__submit');
         if (submitButton && !submitButton.classList.contains('disabled')) {
@@ -597,23 +595,23 @@ function installPretestFlow(root: HTMLElement, store: ScratchpadStore) {
             type: 'SCRATCHPAD_UI_SET_VISIBILITY',
             payload: { uiElement: 'pretest', visibility: true },
         });
-        if (state.pretest?.input !== '') return;
-
-        const sample = firstSampleInput();
-        if (!sample) return;
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        store.dispatch({
-            type: 'SCRATCHPAD_PRETEST_DATA_CHANGE',
-            payload: { type: 'input', value: sample },
-        });
+        feedback.autofill();
         const latest = store.getState();
+        const snapshot = feedback.start(latest.pretest.input);
         const pretestRequest = request.post((window as any).UiContext.postSubmitUrl, {
             lang: latest.editor.lang,
             code: latest.editor.code,
             input: [latest.pretest.input],
             pretest: true,
+        }).then((result: any) => {
+            feedback.bindRecord(snapshot, String(result.rid));
+            return result;
+        }).catch((error: unknown) => {
+            feedback.fail(snapshot, error);
+            throw error;
         });
         store.dispatch({
             type: 'SCRATCHPAD_POST_PRETEST',
