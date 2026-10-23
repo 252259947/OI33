@@ -4,10 +4,11 @@ export type SampleBlock = {
     code: HTMLElement;
     native: boolean;
     scope: ParentNode;
+    label?: HTMLElement;
 };
 
 type Kind = SampleBlock['kind'];
-type Label = { kind?: Kind; id?: string; sample: boolean };
+type Label = { kind?: Kind; id?: string; sample: boolean; element?: HTMLElement };
 type Context = { id?: string; token: object };
 type State = {
     context?: Context;
@@ -52,7 +53,7 @@ export function discoverSampleBlocks(root: ParentNode): SampleBlock[] {
         while (state.used.has(String(state.nextId))) state.nextId += 1;
         return String(state.nextId++);
     };
-    const acceptLabel = (state: State, text: string, level = 0) => {
+    const acceptLabel = (state: State, text: string, level = 0, element?: HTMLElement) => {
         if (level && state.blockedLevel && level <= state.blockedLevel) state.blockedLevel = undefined;
         if (state.blockedLevel) { clear(state); return; }
         if (level && /^(?:(?:样例|示例)?(?:说明|解释)|提示|题解|注释|输入格式|输出格式)|^(?:sample\s+)?(?:explanation|notes?|hints?|solution|input format|output format)\b/i.test(text.trim())) {
@@ -74,7 +75,7 @@ export function discoverSampleBlocks(root: ParentNode): SampleBlock[] {
             if (parsed.sample && (!state.context || (parsed.id && state.context.id !== parsed.id))) {
                 state.context = { id: parsed.id, token: {} };
             }
-            state.pending = parsed;
+            state.pending = { ...parsed, element };
         }
     };
     const visit = (node: ParentNode, scope: ParentNode, state: State, infer = true) => {
@@ -122,17 +123,17 @@ export function discoverSampleBlocks(root: ParentNode): SampleBlock[] {
                     state.lastInput = id;
                     state.pairs.set(id, token);
                 }
-                candidates.push({ block: { id, kind, code, native: !!native, scope }, token });
+                candidates.push({ block: { id, kind, code, native: !!native, scope, label: native ? undefined : pending?.element }, token });
                 continue;
             }
             if (/^H[1-6]$/.test(tag)) {
-                acceptLabel(state, child.textContent || '', Number(tag[1]));
+                acceptLabel(state, child.textContent || '', Number(tag[1]), child);
                 continue;
             }
             const nested = children(child);
             if (['P', 'DIV', 'STRONG', 'B', 'LABEL', 'SPAN'].includes(tag)
                 && nested.every((item) => inline.has(item.tagName.toUpperCase()))) {
-                acceptLabel(state, child.textContent || '');
+                acceptLabel(state, child.textContent || '', 0, child);
                 continue;
             }
             // Code examples in quotes/tables/lists are not inferred as samples;

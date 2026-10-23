@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { transformSync } = require('esbuild');
 const { parseDocument } = require('htmlparser2');
-const { textContent, getOuterHTML } = require('domutils');
+const { textContent, getOuterHTML, prependChild } = require('domutils');
 
 const source = fs.readFileSync(path.join(__dirname, '../frontend/problem-samples.ts'), 'utf8');
 const compiled = transformSync(source, { loader: 'ts', format: 'cjs' }).code;
@@ -129,5 +129,51 @@ test('inline SVG className objects do not interrupt sample discovery', () => {
         const html = `<${tag}><div><h2>样例 99</h2><p>输入：</p>${pre('non-text')}</div></${tag}>`
             + '<h2>样例 1</h2><p>输入：</p>' + pre('real');
         assert.deepEqual(snapshot(discoverSampleBlocks(dom(html))), [['1', 'input', 'real', false]], tag);
+    }
+});
+
+test('fallback metadata identifies only the explicit role label element and leaves native headers untouched', () => {
+    for (const tag of ['p', 'strong', 'b', 'label', 'span', 'div', 'h3']) {
+        const root = dom(`<div class="richmedia"><h2>样例 1</h2><${tag} id="input-label">输入：</${tag}>`
+            + pre('in') + `<${tag} id="output-label">输出：</${tag}>` + pre('out') + '</div>');
+        const before = getOuterHTML(root);
+        const blocks = discoverSampleBlocks(root);
+        assert.equal(blocks.length, 2, tag);
+        assert.equal(blocks[0].label.attribs.id, 'input-label', tag);
+        assert.equal(blocks[1].label.attribs.id, 'output-label', tag);
+        assert.equal(getOuterHTML(root), before, 'Metadata discovery never moves labels');
+    }
+    const nested = discoverSampleBlocks(dom('<h2>样例 1</h2><p id="whole-label"><strong>输入：</strong></p>' + pre('in')));
+    assert.equal(nested[0].label.attribs.id, 'whole-label', 'Keep the original enclosing label and its markup intact');
+    const rawText = discoverSampleBlocks(dom('<h2>样例 1</h2>输入：' + pre('in')));
+    assert.equal(rawText[0].label, undefined, 'Bare text nodes are recognized but not offered for relocation');
+    const native = discoverSampleBlocks(dom('<div class="code-toolbar"><h2>输入数据 1</h2>' + pre('in', 'input1') + '</div>'));
+    assert.equal(native[0].label, undefined, 'Native Hydro headings already have their own layout');
+});
+
+test('moving exact fallback label nodes into their Prism blocks preserves discovery and scoped sample pairing', () => {
+    for (const roles of [
+        ['<h2>样例 1</h2>', '<p><strong>输入：</strong></p>', '<p>输出：</p>'],
+        ['', '<h3>输入样例 1</h3>', '<h3>输出样例 1</h3>'],
+        ['', '<h3>Sample Input 1</h3>', '<h3>Sample Output 1</h3>'],
+    ]) {
+        const wrap = (code) => `<div class="code-toolbar">${code}<div class="toolbar"><a>复制</a></div></div>`;
+        const group = (suffix) => `<div class="richmedia">${roles[0]}${roles[1]}${wrap(pre(`in-${suffix}`, 'text', ' 1\t2\n'))}`
+            + `${roles[2]}${wrap(pre(`out-${suffix}`, 'none', '3\n'))}</div>`;
+        const root = dom(group('one') + group('two'));
+        const before = discoverSampleBlocks(root);
+        const originalLabels = before.map((block) => block.label);
+        before.forEach((block) => prependChild(block.code.parent.parent, block.label));
+        const movedHtml = getOuterHTML(root);
+        for (let pass = 0; pass < 3; pass += 1) {
+            const after = discoverSampleBlocks(root);
+            assert.deepEqual(snapshot(after), snapshot(before));
+            after.forEach((block, index) => {
+                assert.equal(block.scope, before[index].scope, 'Moving the label cannot move the code out of its scope');
+                assert.equal(block.label, originalLabels[index], 'Rediscovery returns the same original label node');
+                assert.equal(block.code.textContent, before[index].code.textContent);
+            });
+            assert.equal(getOuterHTML(root), movedHtml, 'Rediscovery of relocated labels remains read-only');
+        }
     }
 });

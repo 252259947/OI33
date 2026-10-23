@@ -9,7 +9,8 @@
   margin-bottom: 20px;
 }
 
-.problem-content .oi33-sample-block > h2 {
+.problem-content .oi33-sample-block > h2,
+.problem-content .oi33-sample-block > .oi33-sample-label {
   order: 0;
   flex: 1 1 84px;
   min-width: 0;
@@ -90,7 +91,8 @@
   width: auto;
 }
 
-.problem-content .row > .oi33-sample-block > h2 {
+.problem-content .row > .oi33-sample-block > h2,
+.problem-content .row > .oi33-sample-block > .oi33-sample-label {
   grid-area: 1 / 1;
 }
 

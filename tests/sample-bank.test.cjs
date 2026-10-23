@@ -105,6 +105,12 @@ if (process.env.OI33_LAYOUT_TEST === '1' && process.env.OI33_SAMPLE_BANK_FIXTURE
                 await page.evaluate((html) => {
                     document.querySelector('#statement').innerHTML = html;
                     window.actions = [];
+                    window.bankLabels = [...document.querySelectorAll('#statement pre > code')].flatMap((code) => {
+                        const label = code.parentElement.previousElementSibling;
+                        const value = label?.textContent.trim().replace(/[:：]\s*$/, '').trim();
+                        if (!label || !/^(?:(?:输入|输出)(?:(?:样例|示例))?|(?:样例|示例)(?:输入|输出)|(?:sample |example )?(?:input|output))(?:\s*[#＃]?\s*\d+)?$/i.test(value)) return [];
+                        return [{ code, label, text: label.textContent, html: label.innerHTML, tag: label.tagName }];
+                    });
                     window.NativeHydro.$('#statement').trigger('vjContentNew');
                     window.SampleActions.installSampleActions(document.querySelector('#statement'));
                 }, entry.html);
@@ -120,6 +126,13 @@ if (process.env.OI33_LAYOUT_TEST === '1' && process.env.OI33_SAMPLE_BANK_FIXTURE
                     `${entry.pid}: no unmatched decoration or ordinary-code false positives`);
                 assert.equal(await page.locator('#statement .oi33-sample-action--fill').count(), expected.length,
                     `${entry.pid}: each sample input has exactly one fill control`);
+                await page.evaluate(() => {
+                    window.bankSampleNodes = [...document.querySelectorAll('.oi33-sample-block')].map((block) => ({
+                        block, code: block.querySelector('pre > code'), text: block.querySelector('pre > code').textContent,
+                        header: block.querySelector(':scope > .oi33-sample-label, :scope > h2'),
+                        copy: block.querySelector('.oi33-sample-action--copy'), fill: block.querySelector('.oi33-sample-action--fill'),
+                    }));
+                });
                 let copied = 0;
                 for (const sample of expected) {
                     for (const [kind, value] of [['输入', sample.input], ['输出', sample.output]]) {
@@ -145,10 +158,28 @@ if (process.env.OI33_LAYOUT_TEST === '1' && process.env.OI33_SAMPLE_BANK_FIXTURE
                 }
                 await page.evaluate(() => {
                     for (let i = 0; i < 3; ++i) window.SampleActions.installSampleActions(document.querySelector('#statement'));
+                    window.NativeHydro.$('#statement').trigger('vjContentNew');
                 });
                 assert.equal(await page.locator('#statement .oi33-sample-action--copy').count(), expectedCopies);
-                for (const dark of [false, true]) {
-                    await page.mouse.click(1435, 5);
+                assert.deepEqual(await page.evaluate(() => window.bankSampleNodes.flatMap(({ block, code, text, header, copy, fill }) => {
+                    return code.parentElement.parentElement !== block || code.textContent !== text
+                        || !header || block.querySelector(':scope > .oi33-sample-label, :scope > h2') !== header
+                        || block.querySelector('.oi33-sample-action--copy') !== copy || block.querySelector('.oi33-sample-action--fill') !== fill
+                        ? [text.slice(0, 30)] : [];
+                })), [], `${entry.pid}: repeat mount/highlight preserves sample/header/action nodes and payloads`);
+                assert.deepEqual(await page.evaluate(() => window.bankLabels.flatMap(({ code, label, text, html, tag }) => {
+                    const block = code.closest('.oi33-sample-block');
+                    if (!block) return [];
+                    return !label.isConnected || label.textContent !== text || label.innerHTML !== html || label.tagName !== tag
+                        || (!/\blanguage-(?:input|output)\d*/.test(code.className)
+                            && (label.parentElement !== block || !label.classList.contains('oi33-sample-label')))
+                        ? [text] : [];
+                })), [], `${entry.pid}: original sample labels retain DOM identity, markup and heading semantics`);
+                assert.deepEqual(await page.evaluate(() => window.SampleFeedback.readPublicSamples(document.querySelector('#statement'))), expected,
+                    `${entry.pid}: header relocation and remount preserve dropdown input/output pairs`);
+                for (const width of [1280, 1440, 1920]) for (const dark of [false, true]) {
+                    await page.setViewportSize({ width, height: 1000 });
+                    await page.mouse.click(width - 5, 5);
                     await page.evaluate((dark) => document.documentElement.classList.toggle('theme--dark', dark), dark);
                     await page.waitForFunction(() => {
                         const vars = getComputedStyle(document.documentElement);
@@ -163,13 +194,17 @@ if (process.env.OI33_LAYOUT_TEST === '1' && process.env.OI33_SAMPLE_BANK_FIXTURE
                         const toolbar = block.querySelector(':scope > .toolbar').getBoundingClientRect();
                         const pre = block.querySelector(':scope > pre').getBoundingClientRect();
                         const parent = block.getBoundingClientRect();
+                        const title = block.querySelector(':scope > .oi33-sample-label, :scope > h2')?.getBoundingClientRect();
                         return toolbar.bottom > pre.top + 1 || toolbar.left < parent.left - 1 || toolbar.right > parent.right + 1
+                            || !title || title.bottom > pre.top + 1 || title.right > toolbar.left + 1
+                            || Math.abs((title.top + title.bottom - toolbar.top - toolbar.bottom) / 2) > 1
                             ? [block.querySelector('pre > code').textContent.slice(0, 30)] : [];
                     }));
-                    assert.deepEqual(violations, [], `${entry.pid}: ${dark ? 'dark' : 'light'} controls remain above and within sample`);
+                    assert.deepEqual(violations, [], `${entry.pid}: ${width}px ${dark ? 'dark' : 'light'} label and controls share one row above the sample`);
                 }
                 result.samples.push({ pid: entry.pid, category: entry.category, contentSha256: entry.contentSha256,
-                    sampleCount: expected.length, copied, filled: expected.length, themes: ['light', 'dark'], passed: true });
+                    sampleCount: expected.length, copied, filled: expected.length, themes: ['light', 'dark'], widths: [1280, 1440, 1920],
+                    headerRowsAligned: true, nodeIdentityPreserved: true, passed: true });
             }
             assert.deepEqual(writes, [], 'Bank acceptance never sends a submission or production write');
             assert.deepEqual(errors, []);

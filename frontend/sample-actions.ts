@@ -4,12 +4,18 @@ const observedRoots = new WeakSet<HTMLElement>();
 
 /** Restyle native Prism actions without replacing their clipboard/fill listeners. */
 function enhanceSampleActions(root: HTMLElement) {
-    discoverSampleBlocks(root).forEach(({ code, id, kind }) => {
+    discoverSampleBlocks(root).forEach(({ code, id, kind, label: sampleLabel }) => {
         const block = code.parentElement?.parentElement;
         if (!block?.classList.contains('code-toolbar')) return;
         const toolbar = block.querySelector<HTMLElement>(':scope > .toolbar');
         if (!toolbar) return;
         block.classList.add('oi33-sample-block');
+        // Keep the original label node and its text; share the existing toolbar's
+        // header row without cloning code, controls, or their native listeners.
+        if (sampleLabel && root.contains(sampleLabel) && !sampleLabel.contains(block)) {
+            sampleLabel.classList.add('oi33-sample-label');
+            if (sampleLabel.parentElement !== block) block.insertBefore(sampleLabel, block.firstChild);
+        }
         if (kind === 'input' && !toolbar.querySelector('.scratchpad-fill-button')) {
             const item = document.createElement('div');
             item.className = 'toolbar-item scratchpad-fill-button';

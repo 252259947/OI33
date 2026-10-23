@@ -180,10 +180,14 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and native Hydro highligh
                     const bounds = wrapper.getBoundingClientRect();
                     const pre = wrapper.querySelector('pre').getBoundingClientRect();
                     const toolbar = wrapper.querySelector(':scope > .toolbar').getBoundingClientRect();
-                    const title = wrapper.querySelector(':scope > h2')?.getBoundingClientRect();
+                    const title = wrapper.querySelector(':scope > .oi33-sample-label, :scope > h2')?.getBoundingClientRect();
                     if (toolbar.left < bounds.left - 1 || toolbar.right > bounds.right + 1) violations.push(`${id}: toolbar outside sample`);
                     if (toolbar.bottom > pre.top + 1) violations.push(`${id}: toolbar overlays sample text`);
                     if (title && intersects(title, toolbar)) violations.push(`${id}: title overlaps actions`);
+                    if (title && Math.abs((title.top + title.bottom - toolbar.top - toolbar.bottom) / 2) > 1) {
+                        violations.push(`${id}: sample label and actions are not centered on the same row`);
+                    }
+                    if (title && title.bottom > pre.top + 1) violations.push(`${id}: label overlays sample text`);
                     const buttons = [...wrapper.querySelectorAll('.oi33-sample-action')].filter((node) => node.getClientRects().length);
                     for (let i = 0; i < buttons.length; ++i) {
                         const node = buttons[i];
@@ -269,10 +273,13 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and native Hydro highligh
         await page.evaluate(() => {
             window.originalCopy = document.querySelector('#input1').closest('.code-toolbar').querySelector('.oi33-sample-action--copy');
             window.originalFill = document.querySelector('#input1').closest('.code-toolbar').querySelector('.oi33-sample-action--fill');
+            window.originalNativeTitle = document.querySelector('#input1').closest('.code-toolbar').querySelector(':scope > h2');
             for (let i = 0; i < 4; ++i) window.SampleActions.installSampleActions(document.querySelector('#statement'));
         });
         assert.equal(await copy('input1').evaluate((node) => node === window.originalCopy), true);
         assert.equal(await fill('input1').evaluate((node) => node === window.originalFill), true);
+        assert.equal(await block('input1').locator(':scope > h2').evaluate((node) => node === window.originalNativeTitle), true,
+            'The native sample heading remains the original DOM node');
         assert.equal(await page.locator('.oi33-sample-action--copy').count(), 8);
         assert.equal(await page.locator('.oi33-sample-action--fill').count(), 4);
         await page.evaluate(() => {
@@ -309,15 +316,20 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and native Hydro highligh
         // input/output labels, not Hydro's language-inputN/outputN classes.
         await page.evaluate(() => {
             const statement = document.querySelector('#statement');
-            statement.innerHTML = '<h2>样例1</h2><p>输入：</p>'
+            statement.innerHTML = '<h2 id="legacy-group1">样例1</h2><p id="legacy-label-input1">输入：</p>'
                 + '<pre><code class="language-text" id="legacy-input1">8\n5 2 -3 7 -3 4 0 -3\n</code></pre>'
-                + '<p>输出：</p><pre><code class="language-text" id="legacy-output1">-3 3\n</code></pre>'
-                + '<h2>样例 2</h2><p>输入：</p><pre><code class="language-text" id="legacy-input2"></code></pre>'
-                + '<p>输出：</p><pre><code class="language-text" id="legacy-output2">empty input\n</code></pre>'
+                + '<p id="legacy-label-output1">输出：</p><pre><code class="language-text" id="legacy-output1">-3 3\n</code></pre>'
+                + '<h2 id="legacy-group2">样例 2</h2><h3 id="legacy-label-input2"><strong>输入样例 2</strong></h3><pre><code class="language-text" id="legacy-input2"></code></pre>'
+                + '<h3 id="legacy-label-output2">输出样例 2</h3><pre><code class="language-text" id="legacy-output2">empty input\n</code></pre>'
                 + '<h2>样例说明</h2><pre><code class="language-cpp" id="legacy-explanation">int answer = -3;\n</code></pre>'
                 + '<h2>输入格式</h2><pre><code class="language-text" id="legacy-format">n m\n</code></pre>'
                 + '<h2>解题代码</h2><p>这不是样例输入：</p>'
                 + '<pre><code class="language-cpp" id="legacy-ordinary">int main() { return 0; }\n</code></pre>';
+            window.originalCompatLabels = [...statement.querySelectorAll('[id^="legacy-label-"]')]
+                .map((node) => ({ node, id: node.id, text: node.textContent, html: node.innerHTML, tag: node.tagName }));
+            window.originalCompatSamples = window.SampleFeedback.readPublicSamples(statement);
+            window.labelClicks = 0;
+            document.querySelector('#legacy-label-input1').addEventListener('click', () => window.labelClicks++);
             window.SampleActions.installSampleActions(statement);
             window.NativeHydro.$(statement).trigger('vjContentNew');
         });
@@ -326,6 +338,23 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and native Hydro highligh
         assert.equal(await copy('legacy-input1').textContent(), '复制');
         assert.equal(await fill('legacy-input1').textContent(), '填充到自测');
         assert.equal(await copy('legacy-output1').getAttribute('aria-label'), '复制样例输出 1');
+        const assertOriginalLabels = async () => {
+            assert.deepEqual(await page.evaluate(() => window.originalCompatLabels.flatMap(({ node, id, text, html, tag }) => {
+                const code = document.querySelector(`#${id.replace('label-', '')}`);
+                const wrapper = code.closest('.code-toolbar');
+                return node !== document.getElementById(id) || node.textContent !== text || node.innerHTML !== html
+                    || node.tagName !== tag || node.parentElement !== wrapper || wrapper.firstElementChild !== node
+                    || !node.classList.contains('oi33-sample-label') || document.querySelectorAll(`#${id}`).length !== 1
+                    ? [id] : [];
+            })), [], 'Plain sample labels move intact into their own action row without cloning, rewriting or duplication');
+            assert.equal(await page.locator('#statement > #legacy-group1').count(), 1, 'The sample group heading stays outside the sample action row');
+            assert.equal(await page.locator('#statement > #legacy-group2').count(), 1);
+            assert.deepEqual(await page.evaluate(() => window.SampleFeedback.readPublicSamples(document.querySelector('#statement'))),
+                await page.evaluate(() => window.originalCompatSamples), 'Moving headings cannot change sample discovery or expected output pairs');
+        };
+        await assertOriginalLabels();
+        await page.locator('#legacy-label-input1').click();
+        assert.equal(await page.evaluate(() => window.labelClicks), 1, 'Moving the label preserves attached listeners');
         for (const [id, value] of [['legacy-input1', '8\n5 2 -3 7 -3 4 0 -3\n'], ['legacy-output1', '-3 3\n']]) {
             await copy(id).click();
             assert.equal(await readClipboard(), value, `${id}: native ClipboardJS still copies the heading-based sample`);
@@ -374,12 +403,30 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and native Hydro highligh
         await page.waitForFunction(() => document.querySelectorAll('.oi33-sample-action--copy').length === 4);
         assert.equal(await copy('legacy-input1').evaluate((node) => node === window.savedCompatCopy), true);
         assert.equal(await fill('legacy-input1').evaluate((node) => node === window.savedCompatFill), true);
+        await assertOriginalLabels();
         await fill('legacy-input1').click();
         assert.equal(await page.evaluate(() => window.actions.length), afterSecondFill + 1, 'New heading-based fill has one handler after re-highlighting');
-        for (const dark of [false, true]) {
-            await settleTheme(dark);
-            await assertGeometry(`heading-based samples in ${dark ? 'dark' : 'light'} theme`);
+        for (const width of [1280, 1440, 1920]) {
+            await page.setViewportSize({ width, height: 1000 });
+            for (const dark of [false, true]) {
+                await settleTheme(dark);
+                await page.evaluate(() => scrollTo(0, 0));
+                await assertGeometry(`heading-based samples, ${width}px ${dark ? 'dark' : 'light'} theme`);
+                if (process.env.OI33_SAMPLE_SCREENSHOT_DIR) {
+                    await page.screenshot({ path: path.join(process.env.OI33_SAMPLE_SCREENSHOT_DIR,
+                        `sample-header-plain-${width}-${dark ? 'dark' : 'light'}.png`) });
+                }
+            }
         }
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        for (const width of [480, 420, 360]) {
+            await page.locator('.fixture-host').evaluate((node, width) => { node.style.width = `${width}px`; }, width);
+            for (const dark of [false, true]) {
+                await settleTheme(dark);
+                await assertGeometry(`heading-based samples, dragged pane ${width}px ${dark ? 'dark' : 'light'}`);
+            }
+        }
+        await assertOriginalLabels();
         await page.evaluate(() => window.compatFeedback.dispose());
         assert.deepEqual(unexpectedRequests, [], 'Heading-based samples never submit or run code');
         assert.deepEqual(errors, []);
