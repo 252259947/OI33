@@ -107,7 +107,8 @@ function adapterFixture() {
   };
   return { adapter, queries, statusQueries, handler, ForbiddenError, ValidationError, docs };
 }
-test('student catalog scopes both reads to current domain/classes and only the requesting student status', async () => {
+test('student catalog scopes both reads to current domain/classes and only the requesting student status', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now });
   const f = adapterFixture();
   const query = f.adapter.homeworkQuery({ _id: 17 }, ['基础班'], '', '课堂');
   const [docs, pages, count] = await f.adapter.studentHomeworkPage('current', 17, query, 1, 1, 'unfinished');
@@ -131,6 +132,23 @@ test('student catalog scopes both reads to current domain/classes and only the r
   const [completed, completedPages] = await f.adapter.studentHomeworkPage('current', 17, query, 1, 1, 'completed');
   assert.deepEqual(completed.map((doc) => doc.docId), ['done']);
   assert.equal(completedPages, 1);
+});
+test('student catalog ordering follows the controlled clock rather than the machine date', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now });
+  for (const [date, expected] of [
+    ['2026-10-20T12:00:00Z', ['first', 'second']],
+    ['2026-10-23T00:00:00Z', ['second', 'first']],
+    ['2030-01-01T00:00:00Z', ['first', 'second']],
+  ]) {
+    t.mock.timers.setTime(new Date(date).getTime());
+    const f = adapterFixture();
+    const query = f.adapter.homeworkQuery({ _id: 17 }, ['基础班'], '', '课堂');
+    const [docs, pages, count] = await f.adapter.studentHomeworkPage('current', 17, query, 1, 20, 'unfinished');
+    assert.deepEqual(docs.map((doc) => doc.docId), expected, date);
+    assert.equal(pages, 1); assert.equal(count, 2);
+    assert.equal(docs.find((doc) => doc.docId === 'first').educationProgress.completed, 0,
+      'Changing the clock must not expose another student\'s scores');
+  }
 });
 test('empty/inaccessible student lists never read user scores and out-of-range pages are empty', async () => {
   const f = adapterFixture();

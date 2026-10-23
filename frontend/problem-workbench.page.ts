@@ -3,6 +3,7 @@ import {
 } from '@hydrooj/ui-default';
 import { EDITOR_FONT_MAX, EDITOR_FONT_MIN, installEditorWheelZoom } from './editor-wheel-zoom';
 import { installPretestFeedback } from './pretest-feedback';
+import { installSampleActions } from './sample-actions';
 import './problem-workbench.css';
 
 const problemPages = ['problem_detail', 'contest_detail_problem', 'homework_detail_problem'];
@@ -628,6 +629,8 @@ function mountScratchpadWorkbench() {
     const store = getScratchpadStore();
     if (!root || !toolbar || !store) return false;
 
+    root.querySelectorAll<HTMLElement>('.problem-content').forEach(installSampleActions);
+
     root.classList.add('oi33-scratchpad-ready');
     removeLegacyScratchpadRail(root, store);
     if (root.dataset.oi33ScratchpadInitialized !== '1') {
@@ -696,6 +699,7 @@ function enhanceActionMenu(root: HTMLElement) {
 }
 
 function mountProblemWorkbench() {
+    document.querySelectorAll<HTMLElement>('.problem-content').forEach(installSampleActions);
     document.querySelectorAll<HTMLElement>('[data-oi33-problem-workbench]').forEach((root) => {
         root.dataset.oi33WorkbenchMounted = '1';
         enhanceActionMenu(root);

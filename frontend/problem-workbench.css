@@ -1,3 +1,146 @@
+/* Sample actions share the statement header, never cover the sample text. */
+.problem-content .code-toolbar.oi33-sample-block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 8px;
+  min-width: 0;
+  margin-top: 8px;
+  margin-bottom: 20px;
+}
+
+.problem-content .oi33-sample-block > h2 {
+  order: 0;
+  flex: 1 1 84px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--oi33-text, #182033);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 30px;
+}
+
+.problem-content .oi33-sample-block > .toolbar {
+  position: static;
+  order: 1;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  top: auto !important;
+  right: auto !important;
+  margin-left: auto;
+  padding: 0;
+  background: transparent;
+  white-space: nowrap;
+  opacity: 1;
+}
+
+.problem-content .oi33-sample-block > .toolbar > .toolbar-item {
+  margin: 0;
+}
+
+.problem-content .oi33-sample-block > .toolbar > .scratchpad-fill-button {
+  display: none;
+}
+
+.mode--scratchpad .problem-content .oi33-sample-block > .toolbar > .scratchpad-fill-button {
+  display: block;
+}
+
+.problem-content .oi33-sample-block > pre {
+  order: 2;
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  border: 1px solid var(--oi33-line, #e3e8f2);
+  border-radius: 10px;
+  color: var(--oi33-text, #182033);
+  background: var(--oi33-surface-2, #f8faff);
+}
+
+.problem-content .oi33-sample-block > pre > code {
+  color: var(--oi33-text, #182033);
+  background: transparent;
+}
+
+/* Paired headers share a row height even when a narrow pane wraps the title. */
+.problem-content .row:has(> .oi33-sample-block) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+
+.problem-content .row:has(> .oi33-sample-block)::before,
+.problem-content .row:has(> .oi33-sample-block)::after {
+  display: none;
+}
+
+.problem-content .row > .oi33-sample-block {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: subgrid;
+  grid-row: span 2;
+  width: auto;
+}
+
+.problem-content .row > .oi33-sample-block > h2 {
+  grid-area: 1 / 1;
+}
+
+.problem-content .row > .oi33-sample-block > .toolbar {
+  grid-area: 1 / 2;
+}
+
+.problem-content .row > .oi33-sample-block > pre {
+  grid-area: 2 / 1 / auto / -1;
+  align-self: start;
+}
+
+.problem-content .oi33-sample-block > .toolbar a.oi33-sample-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--oi33-line-strong, #d5dcea);
+  border-radius: 8px !important;
+  color: var(--oi33-text-2, #526078);
+  background: var(--oi33-surface, #fff) !important;
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 12px !important;
+  font-weight: 650;
+  line-height: 18px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color .15s, border-color .15s, color .15s;
+}
+
+.problem-content .oi33-sample-block > .toolbar a.oi33-sample-action--fill {
+  border-color: color-mix(in srgb, var(--oi33-brand, #5b5ce2) 30%, var(--oi33-line, #e3e8f2));
+  color: var(--oi33-brand-strong, #4546c7);
+  background: var(--oi33-brand-soft, #eeefff) !important;
+}
+
+.problem-content .oi33-sample-block > .toolbar a.oi33-sample-action:hover {
+  border-color: var(--oi33-brand, #5b5ce2);
+  color: var(--oi33-brand-strong, #4546c7);
+  background: var(--oi33-brand-soft, #eeefff) !important;
+}
+
+.problem-content .oi33-sample-block > .toolbar a.oi33-sample-action:focus-visible {
+  outline: 2px solid var(--oi33-brand, #5b5ce2);
+  outline-offset: 2px;
+}
+
 /* Desktop-only problem workspace. Hydro's existing responsive layout remains
    untouched below 1180px. */
 @media (min-width: 1180px) {
