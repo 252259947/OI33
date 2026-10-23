@@ -27,6 +27,10 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and native Hydro highligh
     const bundle = buildSync({
         entryPoints: [helperPath], bundle: true, write: false, format: 'iife', globalName: 'SampleActions',
     }).outputFiles[0].text;
+    const feedbackBundle = buildSync({
+        entryPoints: [path.join(root, 'frontend/pretest-feedback.ts')], bundle: true, write: false,
+        format: 'iife', globalName: 'SampleFeedback',
+    }).outputFiles[0].text;
     const origin = 'http://127.0.0.1:41937';
     const values = {
         input1: '1  2\t3\n\n 4\n', output1: '6\t7 \n', input2: '', output2: '',
@@ -90,10 +94,20 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and native Hydro highligh
             document.querySelector('.page-loader')?.remove();
             window.actions = [];
             window.pretestInput = 'previous input';
-            window.store = { dispatch: (action) => {
-                window.actions.push(action);
-                if (action.type === 'SCRATCHPAD_PRETEST_DATA_CHANGE') window.pretestInput = action.payload.value;
-            } };
+            window.state = { pretest: { input: window.pretestInput }, ui: {}, records: { items: {} } };
+            window.listeners = new Set();
+            window.store = {
+                getState: () => window.state,
+                subscribe: (listener) => { window.listeners.add(listener); return () => window.listeners.delete(listener); },
+                dispatch: (action) => {
+                    window.actions.push(action);
+                    if (action.type === 'SCRATCHPAD_PRETEST_DATA_CHANGE') {
+                        window.pretestInput = action.payload.value;
+                        window.state.pretest.input = action.payload.value;
+                    }
+                    for (const listener of window.listeners) listener();
+                },
+            };
         });
         await page.addStyleTag({ content: [
             'node_modules/@hydrooj/ui-default/public/theme-4.58.4.css',
@@ -103,6 +117,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and native Hydro highligh
             + '.fixture-host{width:min(1000px,calc(100vw - 80px));margin:32px;padding:24px;box-sizing:border-box;background:var(--oi33-surface);border:1px solid var(--oi33-line);border-radius:16px}'
             + '.mode--scratchpad .fixture-host{width:calc(50vw - 40px)}' });
         await page.addScriptTag({ content: bundle });
+        await page.addScriptTag({ content: feedbackBundle });
         // Mount first, then let the real asynchronous highlighter insert its toolbar.
         await page.evaluate(() => {
             window.SampleActions.installSampleActions(document.querySelector('#statement'));
@@ -288,6 +303,85 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and native Hydro highligh
         await fill('input6').click();
         assert.equal(await page.evaluate(() => window.actions.length), beforeFill + 2, 'Repeated fragment events never duplicate the native fill handler');
         assert.deepEqual(unexpectedRequests, []);
+        assert.deepEqual(errors, []);
+
+        // Actual LuoguU719049 structure: the sample is marked by headings and
+        // input/output labels, not Hydro's language-inputN/outputN classes.
+        await page.evaluate(() => {
+            const statement = document.querySelector('#statement');
+            statement.innerHTML = '<h2>样例1</h2><p>输入：</p>'
+                + '<pre><code class="language-text" id="legacy-input1">8\n5 2 -3 7 -3 4 0 -3\n</code></pre>'
+                + '<p>输出：</p><pre><code class="language-text" id="legacy-output1">-3 3\n</code></pre>'
+                + '<h2>样例 2</h2><p>输入：</p><pre><code class="language-text" id="legacy-input2"></code></pre>'
+                + '<p>输出：</p><pre><code class="language-text" id="legacy-output2">empty input\n</code></pre>'
+                + '<h2>样例说明</h2><pre><code class="language-cpp" id="legacy-explanation">int answer = -3;\n</code></pre>'
+                + '<h2>输入格式</h2><pre><code class="language-text" id="legacy-format">n m\n</code></pre>'
+                + '<h2>解题代码</h2><p>这不是样例输入：</p>'
+                + '<pre><code class="language-cpp" id="legacy-ordinary">int main() { return 0; }\n</code></pre>';
+            window.SampleActions.installSampleActions(statement);
+            window.NativeHydro.$(statement).trigger('vjContentNew');
+        });
+        await page.waitForFunction(() => document.querySelectorAll('.oi33-sample-action--copy').length === 4);
+        assert.equal(await page.locator('.oi33-sample-action--fill').count(), 2);
+        assert.equal(await copy('legacy-input1').textContent(), '复制');
+        assert.equal(await fill('legacy-input1').textContent(), '填充到自测');
+        assert.equal(await copy('legacy-output1').getAttribute('aria-label'), '复制样例输出 1');
+        for (const [id, value] of [['legacy-input1', '8\n5 2 -3 7 -3 4 0 -3\n'], ['legacy-output1', '-3 3\n']]) {
+            await copy(id).click();
+            assert.equal(await readClipboard(), value, `${id}: native ClipboardJS still copies the heading-based sample`);
+        }
+        for (const id of ['legacy-explanation', 'legacy-format', 'legacy-ordinary']) {
+            assert.equal(await block(id).locator('.oi33-sample-action').count(), 0, `${id}: descriptive/code blocks are not samples`);
+            assert.equal(await block(id).locator('.toolbar a').first().textContent(), 'Copy');
+        }
+        assert.deepEqual(await page.evaluate(() => window.SampleFeedback.readPublicSamples(document.querySelector('#statement'))), [
+            { id: '1', input: '8\n5 2 -3 7 -3 4 0 -3\n', output: '-3 3\n' },
+            { id: '2', input: '', output: 'empty input\n' },
+        ], 'The dropdown uses the same public sample identity/input/output as the statement actions');
+        await page.evaluate(() => {
+            const nativePanel = document.createElement('div');
+            nativePanel.className = 'splitpane-fill';
+            nativePanel.style.cssText = 'position:relative;height:200px;width:100%;margin-top:24px';
+            nativePanel.innerHTML = '<textarea class="scratchpad__data-input"></textarea>';
+            document.querySelector('.fixture-host').append(nativePanel);
+            window.compatFeedback = window.SampleFeedback.installPretestFeedback(document.querySelector('.fixture-host'), window.store);
+            // This is the public hook invoked by the existing workbench's
+            // delegated .scratchpad-fill-button click listener after dispatch.
+            document.querySelector('#statement').addEventListener('click', (event) => {
+                if (event.target.closest('.scratchpad-fill-button')) setTimeout(() => window.compatFeedback.filledSample());
+            });
+        });
+        const compatActionCount = await page.evaluate(() => window.actions.length);
+        await fill('legacy-input1').click();
+        await page.waitForFunction(() => document.querySelector('[aria-label="选择自测样例"]').value === '1');
+        assert.equal(await page.locator('[aria-label="自测输入"]').inputValue(), '8\n5 2 -3 7 -3 4 0 -3\n');
+        assert.equal(await page.evaluate(() => window.actions.length), compatActionCount + 1);
+        await page.getByRole('tab', { name: '预期输出', exact: true }).click();
+        assert.equal(await page.locator('.oi33-pretest-feedback__expected').textContent(), '-3 3\n');
+        await page.selectOption('[aria-label="选择自测样例"]', '2');
+        assert.equal(await page.locator('[aria-label="自测输入"]').inputValue(), '');
+        assert.equal(await page.locator('.oi33-pretest-feedback__expected').textContent(), 'empty input\n');
+        await fill('legacy-input1').click();
+        await page.waitForFunction(() => document.querySelector('[aria-label="选择自测样例"]').value === '1');
+        const afterSecondFill = await page.evaluate(() => window.actions.length);
+        await page.evaluate(() => {
+            const statement = document.querySelector('#statement');
+            window.savedCompatCopy = document.querySelector('#legacy-input1').closest('.code-toolbar').querySelector('.oi33-sample-action--copy');
+            window.savedCompatFill = document.querySelector('#legacy-input1').closest('.code-toolbar').querySelector('.oi33-sample-action--fill');
+            for (let i = 0; i < 4; ++i) window.SampleActions.installSampleActions(statement);
+            window.NativeHydro.$(statement).trigger('vjContentNew');
+        });
+        await page.waitForFunction(() => document.querySelectorAll('.oi33-sample-action--copy').length === 4);
+        assert.equal(await copy('legacy-input1').evaluate((node) => node === window.savedCompatCopy), true);
+        assert.equal(await fill('legacy-input1').evaluate((node) => node === window.savedCompatFill), true);
+        await fill('legacy-input1').click();
+        assert.equal(await page.evaluate(() => window.actions.length), afterSecondFill + 1, 'New heading-based fill has one handler after re-highlighting');
+        for (const dark of [false, true]) {
+            await settleTheme(dark);
+            await assertGeometry(`heading-based samples in ${dark ? 'dark' : 'light'} theme`);
+        }
+        await page.evaluate(() => window.compatFeedback.dispose());
+        assert.deepEqual(unexpectedRequests, [], 'Heading-based samples never submit or run code');
         assert.deepEqual(errors, []);
     } finally {
         await browser.close();

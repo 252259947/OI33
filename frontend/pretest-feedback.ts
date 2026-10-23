@@ -1,3 +1,5 @@
+import { discoverSampleBlocks } from './problem-samples';
+
 export type PublicSample = { id: string; input: string; output: string | null };
 type Store = { getState: () => any; dispatch: (action: any) => any; subscribe: (listener: () => void) => () => void };
 type Run = { input: string; sample?: PublicSample; rid?: string; error?: string; record?: any };
@@ -13,14 +15,11 @@ const STATUS_LABELS: Record<number, string> = {
 
 export function readPublicSamples(root: ParentNode): PublicSample[] {
     const samples = new Map<string, PublicSample>();
-    root.querySelectorAll<HTMLElement>('pre code[class*="language-input"]').forEach((code) => {
-        const match = code.className.match(/(?:^|\s)language-input(\d*)(?:\s|$)/);
-        if (!match) return;
-        const id = match[1] || '1';
+    const blocks = discoverSampleBlocks(root);
+    blocks.filter((block) => block.kind === 'input').forEach(({ code, id, scope }) => {
         if (samples.has(id)) return;
-        const scope = code.closest('.richmedia') || root;
-        const output = scope.querySelector<HTMLElement>(`pre code.language-output${match[1]}`);
-        samples.set(id, { id, input: code.textContent || '', output: output?.textContent ?? null });
+        const output = blocks.find((block) => block.kind === 'output' && block.id === id && block.scope === scope);
+        samples.set(id, { id, input: code.textContent || '', output: output?.code.textContent ?? null });
     });
     return [...samples.values()].sort((a, b) => Number(a.id) - Number(b.id));
 }

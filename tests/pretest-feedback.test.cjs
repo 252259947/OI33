@@ -6,7 +6,7 @@ const { buildSync, transformSync } = require('esbuild');
 
 const root = path.resolve(__dirname, '..');
 const helperPath = path.join(root, 'frontend/pretest-feedback.ts');
-const compiled = transformSync(fs.readFileSync(helperPath, 'utf8'), { loader: 'ts', format: 'cjs' }).code;
+const compiled = buildSync({ entryPoints: [helperPath], bundle: true, write: false, format: 'cjs' }).outputFiles[0].text;
 const mod = { exports: {} };
 new Function('module', 'exports', compiled)(mod, mod.exports);
 const { compareSampleText, pretestResult } = mod.exports;
