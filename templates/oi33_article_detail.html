@@ -38,7 +38,11 @@
         {{ ddoc.content|markdown|safe }}
       </div>
 
+      {% set articleHasFooterActions = articleIsOwner or ddoc.edited or handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) or handler.user.own(ddoc) or handler.user.hasPerm(perm.PERM_LOCK_DISCUSSION) or handler.user.hasPerm(perm.PERM_ADD_REACTION) %}
+      {% set articleReactions = Object.entries(ddoc.react or {})|sort(true, false, 1)|selectattr(1) %}
+      {% if articleHasFooterActions or articleReactions|length %}
       <footer class="oi33-article-paper__footer">
+        {% if articleHasFooterActions %}
         <ul class="supplementary dot list">
           {% if articleIsOwner %}<li><a href="/article/{{ ddoc.docId }}/edit"><span class="icon icon-edit"></span> 编辑文章</a></li>{% endif %}
           {% if ddoc.edited %}<li data-discussion-history data-raw-url="{{ url('discussion_raw', did=ddoc.docId) }}">{{ _('Edited') }}</li>{% endif %}
@@ -63,17 +67,18 @@
             </button>
           </form></li>
           {% endif %}
-          <li><a href="{{ url('wiki_help', anchor='contact') }}"><span class="icon icon-warning"></span> {{ _('Report') }}</a></li>
           {% if handler.user.hasPerm(perm.PERM_ADD_REACTION) %}
           <li><a href="javascript:;" data-op="react" data-type="discuss" data-form="{{ {operation: 'reaction', nodeType:'did', id: ddoc._id }|json }}"><span class="icon icon-emoji"></span></a></li>
           {% endif %}
         </ul>
+        {% endif %}
         <div class="reactions list" data-type="did" data-did="{{ ddoc._id }}">
-          {% for e in Object.entries(ddoc.react or {})|sort(true, false, 1)|selectattr(1) %}
+          {% for e in articleReactions %}
             <div class="reaction{% if reactions[ddoc.docId][e[0]] %} active{% endif %}"><span class="emoji">{{ e[0] }}</span> {{ e[1] }}</div>
           {% endfor %}
         </div>
       </footer>
+      {% endif %}
     </article>
 
     <section class="section oi33-article-comments">
