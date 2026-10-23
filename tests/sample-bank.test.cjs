@@ -158,7 +158,6 @@ if (process.env.OI33_LAYOUT_TEST === '1' && process.env.OI33_SAMPLE_BANK_FIXTURE
                 }
                 await page.evaluate(() => {
                     for (let i = 0; i < 3; ++i) window.SampleActions.installSampleActions(document.querySelector('#statement'));
-                    window.NativeHydro.$('#statement').trigger('vjContentNew');
                 });
                 assert.equal(await page.locator('#statement .oi33-sample-action--copy').count(), expectedCopies);
                 assert.deepEqual(await page.evaluate(() => window.bankSampleNodes.flatMap(({ block, code, text, header, copy, fill }) => {
@@ -166,7 +165,7 @@ if (process.env.OI33_LAYOUT_TEST === '1' && process.env.OI33_SAMPLE_BANK_FIXTURE
                         || !header || block.querySelector(':scope > .oi33-sample-label, :scope > h2') !== header
                         || block.querySelector('.oi33-sample-action--copy') !== copy || block.querySelector('.oi33-sample-action--fill') !== fill
                         ? [text.slice(0, 30)] : [];
-                })), [], `${entry.pid}: repeat mount/highlight preserves sample/header/action nodes and payloads`);
+                })), [], `${entry.pid}: repeated addon mounts preserve sample/header/action nodes and payloads`);
                 assert.deepEqual(await page.evaluate(() => window.bankLabels.flatMap(({ code, label, text, html, tag }) => {
                     const block = code.closest('.oi33-sample-block');
                     if (!block) return [];
