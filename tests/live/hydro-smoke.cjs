@@ -13,6 +13,8 @@ const { MongoClient, ObjectId } = require('mongodb');
 const { checkLearningUx } = require('./learning-ux-checks.cjs');
 const { checkEditorSettings } = require('./editor-settings-checks.cjs');
 const { checkAccountUsername } = require('./account-username-checks.cjs');
+const { checkPublicStudentIdentity } = require('./public-student-identity-checks.cjs');
+const { checkStudentScoreboardIdentity } = require('./scoreboard-student-identity-checks.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const globalModules = process.env.OI33_QA_GLOBAL_MODULES || '/usr/local/share/.config/yarn/global/node_modules';
@@ -473,10 +475,11 @@ async function main() {
   const ready = path.join(fixture, 'ready.json');
   const seed = `
 const fs = require('fs');
-const { db, UserModel, DomainModel, ProblemModel, ContestModel, TrainingModel, STATUS, PRIV, PERM, SystemModel, SettingModel } = require('hydrooj');
+const { db, UserModel, DomainModel, ProblemModel, ContestModel, TrainingModel, DiscussionModel, STATUS, PRIV, PERM, SystemModel, SettingModel } = require('hydrooj');
 exports.apply = async function(ctx) {
   const base = ${JSON.stringify(root)};
-  for (const name of ['mobile-access', 'theme', 'enrollment', 'education', 'homework-access', 'recent-learning', 'student-picker', 'personal-files', 'account-batch', 'account-username', 'editor-settings', 'homepage', 'homepage-fortune', 'article']) await require(base + '/handler/' + name + '.ts').apply(ctx);
+  require(base + '/handler/patches.ts').applyPatches(ctx);
+  for (const name of ['mobile-access', 'theme', 'enrollment', 'education', 'homework-access', 'recent-learning', 'student-picker', 'personal-files', 'account-batch', 'account-username', 'editor-settings', 'training-access', 'scoreboard-identity', 'homepage', 'article', 'user']) await require(base + '/handler/' + name + '.ts').apply(ctx);
   if (!await DomainModel.get('system')) await DomainModel.add('system', 2, 'Isolated QA', 'Synthetic fixture only');
   const users = {};
   for (const [name, uid, priv] of [['nobody',0,PRIV.PRIV_DEFAULT],['qa_admin',2,PRIV.PRIV_ALL],['qa_coach',3,PRIV.PRIV_DEFAULT],['qa_student',4,PRIV.PRIV_DEFAULT],['qa_outsider',5,PRIV.PRIV_DEFAULT],['qa_new',6,PRIV.PRIV_DEFAULT],['qa_other_coach',7,PRIV.PRIV_DEFAULT],['qa_power_student',8,PRIV.PRIV_DEFAULT],['qa_coach_no_file',9,PRIV.PRIV_DEFAULT & ~PRIV.PRIV_CREATE_FILE],['qa_learning_student',10,PRIV.PRIV_DEFAULT],['qa_name_student',11,PRIV.PRIV_DEFAULT]]) {
@@ -494,6 +497,16 @@ exports.apply = async function(ctx) {
   await UserModel.setById(2, { timeZone: 'Pacific/Kiritimati' });
   await UserModel.setById(3, { timeZone: 'Pacific/Honolulu' });
   for (const uid of [2,3,4,5,7,8,9,10,11]) await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: uid === 2 ? 3 : 1, realname_name: 'QA ' + uid });
+  // Distinct identity markers make accidental real-name/display-name exposure
+  // visible in rendered HTML and JSON. These users exist only in this random DB.
+  for (const [uid, uname, verified] of [[12, 'qa_public_name', true], [13, '', true], [14, 'qa_pending_name', false], [15, 'QA_SAME_NAME', true]]) {
+    await UserModel.create('qa_identity_' + uid + '@example.test', uname, ${JSON.stringify(password)}, uid, '127.0.0.1', PRIV.PRIV_DEFAULT);
+    await UserModel.setById(uid, { avatar: 'gravatar:qa_identity_' + uid + '@example.test' });
+    await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: verified ? 1 : 0,
+      realname_name: uid === 15 ? 'QA_SAME_NAME' : 'QA_PRIVATE_REALNAME_' + uid,
+      atcoder: 'qa_at_' + uid, atcoder_rating: 100 + uid, codeforces: 'qa_cf_' + uid, codeforces_rating: 200 + uid });
+    await DomainModel.setUserInDomain('system', uid, { displayName: 'QA_PRIVATE_DISPLAYNAME_' + uid, rp: 100 + uid, rank: uid, nAccept: 1, join: true });
+  }
   await UserModel.updateGroup('system', '基础班', [4]);
   await UserModel.updateGroup('system', '提高班', [4]);
   await UserModel.updateGroup('system', '仅教师可见班', []);
@@ -511,11 +524,17 @@ exports.apply = async function(ctx) {
   await ContestModel.edit('system', otherTid, { assign: ['仅比赛班'] });
   const articles = require(base + '/model/article.ts');
   const binding = await articles.resolveArticleBinding('system', '', await UserModel.getById('system', 2));
+  const identityBinding = await articles.resolveArticleBinding('system', String(pid), await UserModel.getById('system', 2));
+  const identityArticleId = await articles.addArticle({ domainId: 'system', owner: 12, title: 'QA public identity article',
+    content: 'Synthetic public identity content', visibility: 'public', binding: identityBinding, ip: '127.0.0.1' });
+  const identityReply = await DiscussionModel.addReply('system', identityArticleId, 13, 'Synthetic reply', '127.0.0.1');
+  await DiscussionModel.addTailReply('system', identityReply, 14, 'Synthetic pending-account historical reply', '127.0.0.1');
+  await DiscussionModel.addReply('system', identityArticleId, 15, 'Synthetic name-equality reply', '127.0.0.1');
   const articleContent = ${JSON.stringify('QA excerpt $\\frac{1}{2}$ and $x^2$.')};
   const articleId = await articles.addArticle({ domainId: 'system', owner: 2, title: 'QA formula article',
     content: articleContent, visibility: 'public', binding, ip: '127.0.0.1' });
   fs.writeFileSync(${JSON.stringify(ready)}, JSON.stringify({users,pid,otherPid,lang,articleId:String(articleId),articleContent,tid:String(tid),otherTid:String(otherTid),
-    trainingId:String(trainingId),acceptedStatus:STATUS.STATUS_ACCEPTED,wrongStatus:STATUS.STATUS_WRONG_ANSWER}));
+    identityArticleId:String(identityArticleId),trainingId:String(trainingId),acceptedStatus:STATUS.STATUS_ACCEPTED,wrongStatus:STATUS.STATUS_WRONG_ANSWER}));
 };
 `;
   write(path.join(fixture, 'addon/index.js'), seed);
@@ -649,6 +668,8 @@ exports.apply = async function(ctx) {
     fixtureData, session, login });
   await checkEditorSettings({ db, check, actors: { student, outsider }, fixtureData, session, login });
   await checkAccountUsername({ db, check, session, login, password });
+  await checkPublicStudentIdentity({ db, check, actors: { student, coach, admin }, fixtureData, session, login, report });
+  await checkStudentScoreboardIdentity({ db, check, actors: { student, applicant, admin }, fixtureData });
   const multiple = new URLSearchParams({ users: 'qa_regular,QA Regular,R01', accountType: 'regular' });
   multiple.append('groups', '基础班'); multiple.append('groups', '提高班');
   result = await admin('/oi33/accounts/batch', multiple);

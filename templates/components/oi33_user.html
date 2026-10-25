@@ -3,7 +3,7 @@
 <span class="user-profile-link">
   {% if udoc.oi33_profile_hidden or udoc.realname_flag is undefined %}
     {% if avatar %}<img class="small user-profile-avatar v-center" loading="lazy" src="{{ avatarUrl('') }}" width="20" height="20">{% endif %}
-    <a class="user-profile-name" href="{{ url('user_detail', uid=udoc._id) }}">UID {{ udoc._id }}</a>
+    <a class="user-profile-name" href="{{ url('user_detail', uid=udoc._id) }}">{% if udoc.oi33_public_name %}{{ udoc.oi33_public_name }}{% else %}UID {{ udoc._id }}{% endif %}</a>
   {% else %}
     {% if avatar %}<img class="small user-profile-avatar v-center" loading="lazy" src="{{ avatarUrl(udoc.avatar|default('')) }}" width="20" height="20">{% endif %}
     <a class="user-profile-name uname--lv{{ udoc.level|default(0) }}" href="{{ url('user_detail', uid=udoc._id) }}">
@@ -11,7 +11,7 @@
       {% elif udoc.realname_flag == 2 %}<span class="icon icon-user"></span>
       {% elif udoc.realname_flag == 1 %}<span class="icon icon-star"></span>
       {% elif udoc.realname_flag == 0 %}<span class="icon icon-check"></span>{% endif %}
-      {% if display_name %}{{ display_name }}{% elif (handler.user.realname_flag or 0) >= 2 and udoc.realname_name %}[{{ udoc.realname_name }}]{{ udoc.uname }}{% else %}{{ udoc.uname }}{% endif %}
+      {% if display_name %}{{ display_name }}{% elif udoc.oi33_public_name %}{{ udoc.oi33_public_name }}{% elif (handler.user.realname_flag or 0) >= 2 and udoc.realname_name %}[{{ udoc.realname_name }}]{{ udoc.uname }}{% else %}{{ udoc.uname }}{% endif %}
     </a>
     {% if badge %}
       {% if udoc.badge %}

@@ -26,7 +26,7 @@ const avatar = load('node_modules/hydrooj/src/lib/avatar.ts', {
 const { protectProfileIdentity } = load('handler/patches.ts', {
   hydrooj: {}, 'hydrooj/src/handler/home': {}, 'hydrooj/src/handler/record': {},
   'hydrooj/src/lib/avatar': avatar, '../model': {},
-  '../model/education-auth': education, './homepage-fortune': {},
+  '../model/education-auth': education, './homepage-fortune': {}, './public-student-identity': {},
 });
 const serializer = load('node_modules/@hydrooj/framework/serializer.ts').default;
 const viewer = (_id = 9, extra = {}) => ({ _id, role: 'default', realname_flag: 1,

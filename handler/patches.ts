@@ -8,6 +8,7 @@ import avatar from 'hydrooj/src/lib/avatar';
 import { oi33Model } from '../model';
 import { isEducationCoach } from '../model/education-auth';
 import { apply as applyHomepageFortune } from './homepage-fortune';
+import { apply as applyPublicStudentIdentity } from './public-student-identity';
 
 export function protectProfileIdentity(h: any) {
     const body = h.response?.body;
@@ -32,6 +33,7 @@ export function protectProfileIdentity(h: any) {
 }
 
 export function applyPatches(_ctx: Context) {
+    applyPublicStudentIdentity(_ctx);
     // OI33 fields merged by mergeOi33Fields that should survive Hydro's JSON
     // serialization. Hydro's framework serializer calls User.serialize(), which
     // picks only getFields() (base fields + _publicFields), silently dropping

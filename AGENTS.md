@@ -13,6 +13,7 @@
 - **domainId 注入**：handler 方法有 `@param/@query` 装饰器 → `domainId` 是第一个参数；没有装饰器 → 不注入。
 - **权限**：公开 < 登录（PRIV_USER_PROFILE）< OI33 flag≥2（管理）< flag=3（行政）< PRIV_ALL。`realname_flag` 0 未认证/1 已认证/2 管理员/3 行政管理员。
 - **未认证（flag<1）**：全站匿名化为 `UID <id>`（`mergeOi33Fields`+`anonymizeOi33Identity`）；禁止签到、地图、喂猫、买卖罐头、拍卖、合同、发喵喵、新建/编辑 paste、收猫粮、自动成就。
+- **公共身份展示例外**：按用户要求，学生/访客查看个人主页、排名、讨论及文章列表时，以请求内 `oi33_public_name` 显示原用户名；空用户名回退注册邮箱，再回退 UID。由 `public-student-identity.ts` 的限定 GET hook 实现，待审账号仍隐藏头像/简介，审核及访问权限不变；不改数据库用户名或缓存 User。教师/管理员保留原权限；作业/训练/比赛成绩表继续使用实名，不套用此规则。
 - **用户列表渲染**：必须 `UserModel.getList`（带 `hasPriv()`，`components/user.html` 依赖）+ `getUserDataByUids` + `mergeOi33Fields`；禁用 `getListForRender` 渲染 user.html。
 - **模板**：POST 表单必带 `csrfToken` 隐藏域；难度渲染一律走 `partials/oi33_difficulty.html`（0-8 洛古难度，默认遮罩、前端点击显示）。
 - **审核引擎复用**：`handler/moderate.ts` 的 `runAiVerdict(uid, normalized, hash, cfg)`（规则+AI+缓存+预算熔断，fail-closed），喵喵/讨论区/简介共用；开关 `moderation_enabled`（默认开）。

@@ -6,7 +6,7 @@
     {% if avatar %}
       <img class="small user-profile-avatar v-center" loading="lazy" src="{{ avatarUrl('') }}" width="20" height="20">
     {% endif %}
-    <a class="user-profile-name" href="{{ url('user_detail', uid=udoc._id) }}">UID {{ udoc._id }}</a>
+    <a class="user-profile-name" href="{{ url('user_detail', uid=udoc._id) }}">{% if udoc.oi33_public_name %}{{ udoc.oi33_public_name }}{% else %}UID {{ udoc._id }}{% endif %}</a>
   {% else %}
 
   {% if avatar %}
@@ -24,7 +24,9 @@
     <span class="icon icon-check"></span>
     {% endif %}
 
-    {% if (handler.user.realname_flag or 0) >= 2 and udoc.realname_name %}
+    {% if udoc.oi33_public_name %}
+      {{ udoc.oi33_public_name }}
+    {% elif (handler.user.realname_flag or 0) >= 2 and udoc.realname_name %}
       [{{ udoc.realname_name }}]{{ udoc.uname }}
     {% else %}
       {{ udoc.uname }}

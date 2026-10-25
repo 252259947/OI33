@@ -6,6 +6,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const { transformSync } = require('esbuild');
 const { stringify: toCSV } = require('csv-stringify/sync');
 const root = path.resolve(__dirname, '..');
+const privateInfo = 8n;
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 function compile(source, imports) {
     const mod = { exports: {} };
@@ -47,7 +48,10 @@ function fixture() {
         './user': { userColl: collection(legacy, queries.legacy) },
     });
     const handler = compile(read('handler/scoreboard-identity.ts'), {
-        hydrooj: {}, 'node:async_hooks': { AsyncLocalStorage }, '../model/scoreboard-identity': model,
+        hydrooj: { PERM: { PERM_VIEW_USER_PRIVATE_INFO: privateInfo } }, 'node:async_hooks': { AsyncLocalStorage },
+        'hydrooj/src/lib/avatar': value => `https://avatar.invalid/${require('node:crypto').createHash('md5').update(value).digest('hex')}`,
+        '../model/education-auth': { isEducationCoach: user => user?.role === 'coach' || user?.role === 'root' },
+        '../model/scoreboard-identity': model,
     });
     return { model, handler, queries, enrollment, legacy };
 }
@@ -120,7 +124,7 @@ test('native CSV exporter stays intact, escapes formula names and isolates concu
     // The native method's free identifiers are supplied without modifying its body.
     const csvModule = { exports: {} };
     new Function('contest', 'toCSV', 'PERM', 'module', 'exports', transformSync(`export const view = { ${displaySource} };`, { loader: 'ts', format: 'cjs' }).code)
-        (contest, toCSV, { PERM_VIEW_USER_PRIVATE_INFO: 1 }, csvModule, csvModule.exports);
+        (contest, toCSV, { PERM_VIEW_USER_PRIVATE_INFO: privateInfo }, csvModule, csvModule.exports);
     const view = csvModule.exports.view, original = view.display;
     handler.apply({ on: (name, fn) => { hooks[name] = fn; } });
     let csv, limited = 0;
@@ -147,6 +151,82 @@ test('native CSV exporter stays intact, escapes formula names and isolates concu
     assert.equal(view.display, original, 'Global/native view is never modified');
     h.limitRate = async () => { throw Error('rate limited'); };
     await assert.rejects(() => h.get({ tdoc: h.tdoc }), /rate limited/);
+});
+
+test('native HTML and CSV exports suppress only student private columns and restore request users', async () => {
+    const { handler } = fixture();
+    const source = read('node_modules/hydrooj/src/handler/contest.ts');
+    const cases = [];
+    for (const viewId of ['html', 'csv']) {
+        const viewSource = source.slice(source.indexOf(`scoreboard.addView('${viewId}'`));
+        const display = viewSource.slice(viewSource.indexOf('async display'), viewSource.indexOf('supportedRules')).trim().replace(/,$/, '');
+        const native = compile(`const {contest,toCSV,PERM}=require('native'); export const view={${display}};`, {
+            native: { toCSV, PERM: { PERM_VIEW_USER_PRIVATE_INFO: privateInfo }, contest: {
+                async getScoreboard(_domain, _tid, config) {
+                    const row = ['学生甲', ...(config.showDisplayName ? ['private@example.test', '学校', '别名', '学号'] : []), '73'];
+                    return [{}, [row.map(value => ({ value }))]];
+                },
+            } },
+        });
+        for (const role of ['student', 'coach', 'root']) {
+            const user = Object.freeze({ _id: 17, role, perm: 15n,
+                hasPerm(...permissions) { return permissions.some(permission => (this.perm & permission) === permission); } });
+            let output;
+            const h = { args: { view: viewId }, tdoc: { domainId: 'school', _id: 'tid', title: 'Fixture' }, user,
+                async get() {
+                    await Promise.resolve(); // Exercise concurrent AsyncLocalStorage/request scopes.
+                    assert.equal(this.user.hasPerm(2n), true);
+                    assert.equal(this.user.hasPerm(privateInfo | 2n), role !== 'student');
+                    assert.equal(this.user.hasPerm(privateInfo, 2n), true, 'native OR permission semantics remain intact');
+                    return native.view.display.call(this, { tdoc: this.tdoc });
+                },
+                limitRate: async () => {}, renderHTML: async (_template, data) => JSON.stringify(data.rows),
+                binary: content => { output = content; } };
+            handler.wrapScoreboardRequest(h);
+            cases.push((async () => {
+                await h.get();
+                assert.equal(output.includes('private@example.test'), role !== 'student');
+                assert.equal(output.includes('学生甲'), true);
+                assert.equal(output.includes('73'), true);
+                assert.equal(h.user, user);
+                assert.equal(user.hasPerm(privateInfo), true, 'cached user permissions remain unchanged');
+                h.limitRate = async () => { throw Error('rate limited'); };
+                await assert.rejects(() => h.get(), /rate limited/);
+                assert.equal(h.user, user, 'failure restores the request user');
+            })());
+        }
+    }
+    await Promise.all(cases);
+    for (const view of ['default', 'ghost']) {
+        const user = { _id: 17, role: 'student', hasPerm: () => true };
+        const h = { args: { view }, user, async get() { assert.equal(this.user, user); } };
+        handler.wrapScoreboardRequest(h); await h.get();
+    }
+});
+
+test('student scoreboard and training JSON use private-field-free copies without losing verified score labels', () => {
+    const { handler } = fixture();
+    const original = { _id: 17, uname: 'student_login', mail: 'private@example.test', school: '学校', studentId: '学号',
+        displayName: '别名', realname_name: '学生甲', avatar: 'gravatar:private@example.test', realname_flag: 1 };
+    const before = JSON.stringify(original);
+    const rows = scoreboard([17]); rows[1][1].oi33RealName = '学生甲';
+    const names = { 17: '学生甲' };
+    const body = { tdoc: { domainId: 'school' }, udict: { 17: original }, udoc: original, rows, oi33TrainingNames: names };
+    handler.sanitizeStudentScoreboardUsers({ user: { _id: 18, role: 'student' }, domain: { _id: 'school' }, response: { body } });
+    for (const user of [body.udict[17], body.udoc]) {
+        assert.notEqual(user, original);
+        assert.equal(user.uname, 'student_login'); assert.equal(user._id, 17); assert.equal(user.realname_flag, 1);
+        for (const key of ['mail', 'school', 'studentId', 'displayName', 'realname_name']) assert.equal(user[key], '');
+        assert.equal(JSON.stringify(user).includes('private@example.test'), false);
+        assert.match(user.avatar, /^url:https:\/\/avatar.invalid\//);
+    }
+    assert.equal(body.rows, rows); assert.equal(rows[1][1].oi33RealName, '学生甲'); assert.equal(body.oi33TrainingNames, names);
+    assert.equal(JSON.stringify(original), before);
+    for (const role of ['coach', 'root']) {
+        const body = { tdoc: { domainId: 'school' }, udict: { 17: original } };
+        handler.sanitizeStudentScoreboardUsers({ user: { _id: 18, role }, domain: { _id: 'school' }, response: { body } });
+        assert.equal(body.udict[17], original); assert.equal(body.udict[17].mail, 'private@example.test');
+    }
 });
 
 test('native hidden-scoreboard check still rejects before the name lookup event', async () => {

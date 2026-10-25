@@ -9,7 +9,7 @@
 {% set _canSeeHiddenIdentity = (handler.user.realname_flag or 0) >= 2 %}
 {% set _showCustomIdentity = not _profileHidden or _canSeeHiddenIdentity %}
 {% if _profileHidden %}
-  {% set _safeProfileName = (udoc.oi33_original_uname or udoc.uname) if _showCustomIdentity else 'UID ' + udoc._id %}
+  {% set _safeProfileName = udoc.oi33_public_name or ((udoc.oi33_original_uname or udoc.uname) if _showCustomIdentity else 'UID ' + udoc._id) %}
   {% set _safeProfileAvatar = (udoc.oi33_original_avatar or udoc.avatar) if _showCustomIdentity else '' %}
   {{ set(UiContext, 'udoc', { _id: udoc._id, uname: _safeProfileName, avatar: _safeProfileAvatar }) }}
   {{ set(UiContext, 'extraTitleContent', _safeProfileName) }}
@@ -61,7 +61,9 @@
                 {% endif %}
                 {% endif %}
 
-                {% if _profileHidden and _showCustomIdentity %}
+                {% if udoc.oi33_public_name %}
+                  {{ udoc.oi33_public_name }}
+                {% elif _profileHidden and _showCustomIdentity %}
                   {{ udoc.oi33_original_uname or udoc.uname }}
                 {% elif _profileHidden %}
                   UID {{ udoc._id }}
