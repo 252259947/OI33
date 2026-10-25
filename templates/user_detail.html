@@ -67,7 +67,7 @@
                   UID {{ udoc._id }}
                 {% elif (handler.user.realname_flag or 0) >= 2 and udoc.realname_name %}
                   [{{ udoc.realname_name }}]{{ udoc.uname }}
-                {% elif handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and udoc.displayName %}
+                {% elif oi33CanViewProfilePrivateIdentity and handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and udoc.displayName %}
                   ({{ udoc.displayName }}){{ udoc.uname }}
                 {% else %}
                   {{ udoc.uname }}
@@ -128,7 +128,7 @@
                   target="_blank" data-tooltip="{{ _('Send Message') }}">
                   <span class="icon icon-comment--multiple"></span>
                 </a>
-                {% if udoc['mail'] %}
+                {% if oi33CanViewProfilePrivateIdentity and udoc['mail'] %}
                 <a class="profile-header__contact-item" href="javascript:;"
                   data-copy="{{ udoc['mail'] | base64_encode }}" data-tooltip="{{ _('Copy Email') }}">
                   <span class="icon icon-mail"></span>

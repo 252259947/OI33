@@ -28,6 +28,8 @@ import { apply as applyEnrollment } from './handler/enrollment';
 import { apply as applyEducation } from './handler/education';
 import { apply as applyHomeworkAccess } from './handler/homework-access';
 import { apply as applyRecentLearning } from './handler/recent-learning';
+import { apply as applyEditorSettings } from './handler/editor-settings';
+import { apply as applyAccountUsername } from './handler/account-username';
 import { apply as applyStudentPicker } from './handler/student-picker';
 import { apply as applyPersonalFiles } from './handler/personal-files';
 import { apply as applyTrainingAccess } from './handler/training-access';
@@ -87,6 +89,8 @@ export async function apply(ctx: Context) {
     await applyEducation(ctx);
     applyHomeworkAccess(ctx);
     await applyRecentLearning(ctx);
+    applyEditorSettings(ctx);
+    applyAccountUsername(ctx);
     applyStudentPicker(ctx);
     applyPersonalFiles(ctx);
     applyTrainingAccess(ctx);

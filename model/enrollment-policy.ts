@@ -50,7 +50,7 @@ export function matchesContestScope(doc: EnrollmentAccess, domainId: string, con
 
 function isAccountMaintenance(c: EnrollmentRequestContext): boolean {
     if (['UserLogin', 'UserLogout', 'UserLostPass', 'UserLostPassWithCode', 'UserSudo', 'UserTFA',
-        'UserWebauthn', 'HomeSecurity', 'UserChangemailWithCode', 'Oi33Enrollment'].includes(c.handler)) return true;
+        'UserWebauthn', 'HomeSecurity', 'UserChangemailWithCode', 'Oi33Enrollment', 'Oi33AccountUsername'].includes(c.handler)) return true;
     return c.handler === 'HomeSettings' && ['preference', 'code'].includes(c.category || '');
 }
 

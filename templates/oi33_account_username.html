@@ -1,0 +1,19 @@
+{% set page_name = 'oi33_account_username' %}
+{% extends 'layout/home_base.html' %}
+{% block home_content %}
+<section class="section oi33-enrollment oi33-account-username">
+  <div class="section__header"><h1 class="section__title">登录用户名</h1></div>
+  <div class="section__body">
+    <p class="oi33-enrollment__muted">用户名用于登录和公开显示，不是实名认证姓名。忘记邮箱时，可以用用户名和密码登录。</p>
+    <dl class="oi33-enrollment__details"><dt>当前用户名</dt><dd>{{ currentUsername }}</dd></dl>
+    <div class="oi33-enrollment__notice">请设置容易记住的用户名，避免使用真实姓名。修改后邮箱、密码、实名认证和历史成绩均不变；旧用户名将不能用于登录。</div>
+    <form method="post" action="{{ url('oi33_account_username') }}" class="oi33-enrollment__form">
+      <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
+      <input type="hidden" name="expectedUid" value="{{ currentUid }}">
+      <label>新用户名<input class="textbox" type="text" name="username" required minlength="3" maxlength="31" pattern="[A-Za-z][A-Za-z0-9_]{2,30}" autocomplete="username" autocapitalize="none" spellcheck="false" aria-describedby="oi33-username-hint"></label>
+      <p class="oi33-enrollment__muted" id="oi33-username-hint">3–31 位，以英文字母开头，只能包含字母、数字和下划线；登录时不区分大小写。保存时可能需要再次验证密码。</p>
+      <button type="submit" class="primary button">保存用户名</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

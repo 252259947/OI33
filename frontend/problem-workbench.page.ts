@@ -1,9 +1,11 @@
+import { EDITOR_BUILTIN_THEMES as BUILTIN_EDITOR_THEMES, EDITOR_CUSTOM_THEMES as CUSTOM_EDITOR_THEMES, isEditorTheme } from '../model/editor-settings-policy';
 import {
     $, addPage, ctx, i18n, loadMonaco, NamedPage, Notification, request,
 } from '@hydrooj/ui-default';
 import { EDITOR_FONT_MAX, EDITOR_FONT_MIN, installEditorWheelZoom } from './editor-wheel-zoom';
 import { installPretestFeedback } from './pretest-feedback';
 import { installSampleActions } from './sample-actions';
+import { createEditorSettingsSync } from './editor-account-settings';
 import './problem-workbench.css';
 
 const problemPages = ['problem_detail', 'contest_detail_problem', 'homework_detail_problem'];
@@ -51,68 +53,82 @@ const STATUS_TEXTS: Record<number, string> = {
 };
 
 const EDITOR_THEME_STORAGE_KEY = 'oi33/editor-theme';
-const BUILTIN_EDITOR_THEMES: Array<[string, string]> = [
-    ['vs', 'VS'],
-    ['vs-dark', 'VS Dark'],
-    ['hc-black', 'High Contrast (Dark)'],
-];
-const CUSTOM_EDITOR_THEMES: Record<string, string> = {
-    active4d: 'Active4D',
-    'all-hallows-eve': 'All Hallows Eve',
-    amy: 'Amy',
-    'birds-of-paradise': 'Birds of Paradise',
-    blackboard: 'Blackboard',
-    'brilliance-black': 'Brilliance Black',
-    'brilliance-dull': 'Brilliance Dull',
-    'chrome-devtools': 'Chrome DevTools',
-    'clouds-midnight': 'Clouds Midnight',
-    clouds: 'Clouds',
-    cobalt: 'Cobalt',
-    cobalt2: 'Cobalt2',
-    dawn: 'Dawn',
-    dracula: 'Dracula',
-    dreamweaver: 'Dreamweaver',
-    eiffel: 'Eiffel',
-    'espresso-libre': 'Espresso Libre',
-    'github-dark': 'GitHub Dark',
-    'github-light': 'GitHub Light',
-    github: 'GitHub',
-    idle: 'IDLE',
-    katzenmilch: 'Katzenmilch',
-    'kuroir-theme': 'Kuroir Theme',
-    lazy: 'LAZY',
-    'magicwb--amiga-': 'MagicWB (Amiga)',
-    'merbivore-soft': 'Merbivore Soft',
-    merbivore: 'Merbivore',
-    'monokai-bright': 'Monokai Bright',
-    monokai: 'Monokai',
-    'night-owl': 'Night Owl',
-    nord: 'Nord',
-    'oceanic-next': 'Oceanic Next',
-    'pastels-on-dark': 'Pastels on Dark',
-    'slush-and-poppies': 'Slush and Poppies',
-    'solarized-dark': 'Solarized-dark',
-    'solarized-light': 'Solarized-light',
-    spacecadet: 'SpaceCadet',
-    sunburst: 'Sunburst',
-    'textmate--mac-classic-': 'Textmate (Mac Classic)',
-    'tomorrow-night-blue': 'Tomorrow-Night-Blue',
-    'tomorrow-night-bright': 'Tomorrow-Night-Bright',
-    'tomorrow-night-eighties': 'Tomorrow-Night-Eighties',
-    'tomorrow-night': 'Tomorrow-Night',
-    tomorrow: 'Tomorrow',
-    twilight: 'Twilight',
-    'upstream-sunburst': 'Upstream Sunburst',
-    'vibrant-ink': 'Vibrant Ink',
-    'xcode-default': 'Xcode_default',
-    zenburnesque: 'Zenburnesque',
-    iplastic: 'iPlastic',
-    idlefingers: 'idleFingers',
-    krtheme: 'krTheme',
-    monoindustrial: 'monoindustrial',
-};
+function readEditorStorage(key: string): string | null {
+    try { return localStorage.getItem(key); } catch { return null; }
+}
+function writeEditorStorage(key: string, value: string) {
+    try { localStorage.setItem(key, value); return true; } catch { return false; }
+}
 const loadedEditorThemes = new Set<string>();
 const configuredScratchpadEditors = new WeakSet<object>();
+let accountSettings: ReturnType<typeof createEditorSettingsSync> | undefined;
+let accountSettingsUid = 0;
+let accountSettingsStatus = 'local';
+let accountSettingsRestore: Promise<void> = Promise.resolve();
+let accountSettingsUpdateUi = () => {};
+
+function displaySettingsSyncStatus() {
+    document.querySelectorAll<HTMLButtonElement>('[data-editor-sync-status]').forEach((element) => {
+        element.textContent = ({ local: '设置保存在当前浏览器', saving: '正在同步到账号…',
+            saved: '已同步到账号', failed: '同步失败，点击重试' })[accountSettingsStatus];
+        element.disabled = accountSettingsStatus !== 'failed';
+        element.dataset.state = accountSettingsStatus;
+    });
+}
+
+function initializeAccountSettings(toolbar: HTMLElement, store: ScratchpadStore) {
+    const snapshot = (window as any).UiContext?.oi33EditorSettings;
+    if (!snapshot || !Number.isSafeInteger(snapshot.uid) || snapshot.uid <= 0) return;
+    const dark = document.documentElement.classList.contains('theme--dark')
+        || document.body.classList.contains('theme--dark');
+    const restore = () => {
+        accountSettingsRestore = accountSettingsRestore.catch(() => {}).then(async () => {
+            if (!toolbar.isConnected || accountSettingsUid !== snapshot.uid) return;
+            const { customOptions } = await loadMonaco([]);
+            if (accountSettingsUid !== snapshot.uid) return;
+            const settings = accountSettings!.get();
+            commitEditorSetting(store, customOptions, 'fontSize', settings.fontSize, false);
+            commitEditorSetting(store, customOptions, 'tabSize', settings.tabSize, false);
+            const font = toolbar.querySelector<HTMLSelectElement>('[data-oi33-editor-font-size]');
+            const tab = toolbar.querySelector<HTMLSelectElement>('[data-oi33-editor-tab-size]');
+            const theme = toolbar.querySelector<HTMLSelectElement>('[data-oi33-editor-theme]');
+            if (font) font.value = String(settings.fontSize);
+            if (tab) tab.value = String(settings.tabSize);
+            if (theme) theme.value = settings.theme;
+            await applyEditorTheme(store, settings.theme, false,
+                () => accountSettingsUid === snapshot.uid && accountSettings!.get().theme === settings.theme);
+        }).catch(() => {
+            if (accountSettingsUid !== snapshot.uid || !toolbar.isConnected) return;
+            accountSettingsStatus = 'failed';
+            displaySettingsSyncStatus();
+        });
+    };
+    accountSettingsUpdateUi = restore;
+    if (!accountSettings || accountSettingsUid !== snapshot.uid) {
+        accountSettings?.dispose();
+        accountSettingsUid = snapshot.uid;
+        accountSettings = createEditorSettingsSync({
+            snapshot, storage: localStorage, defaultTheme: dark ? 'vs-dark' : 'vs',
+            load: () => request.get('/oi33/editor-settings'),
+            save: async (patch, initialize) => {
+                const response = await fetch('/oi33/editor-settings', {
+                    method: 'POST', credentials: 'same-origin', keepalive: true,
+                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    body: JSON.stringify({ expectedUid: snapshot.uid, ...(initialize ? { initialize: true } : {}), ...patch }),
+                });
+                if (!response.ok) throw new Error('编辑器设置同步失败');
+                return response.json();
+            },
+            onChange: () => accountSettingsUpdateUi(),
+            onStatus: (state) => {
+                if (accountSettingsUid !== snapshot.uid) return;
+                accountSettingsStatus = state;
+                displaySettingsSyncStatus();
+            },
+        });
+    } else void accountSettings.reload();
+    restore();
+}
 
 type ScratchpadStore = {
     dispatch: (action: any) => any;
@@ -355,22 +371,33 @@ function mountProblemTabs(root: ScratchpadRoot, store: ScratchpadStore) {
     });
 }
 
-function commitEditorSetting(store: ScratchpadStore, customOptions: any, setting: string, value: unknown) {
+function dispatchEditorAppearance(store: ScratchpadStore, setting: string, value: unknown) {
+    const config = store.getState().ui?.settings?.config;
+    if (config && !writeEditorStorage('editor.config', JSON.stringify({ ...config, [setting]: value }))) {
+        // Hydro's reducer writes localStorage before returning its state. If
+        // that cache is unavailable, keep the existing live config reference
+        // current so a later code edit cannot restore the old appearance.
+        config[setting] = value;
+        (ctx as any).scratchpad?.editor?.updateOptions(config);
+        return;
+    }
+    store.dispatch({ type: 'SCRATCHPAD_SETTING_UPDATE', payload: { setting, value } });
+}
+
+function commitEditorSetting(store: ScratchpadStore, customOptions: any, setting: string, value: unknown, sync = true) {
     const liveTheme = customOptions.theme ?? null;
     const stateTheme = store.getState().ui?.settings?.config?.theme ?? null;
     if (setting !== 'theme' && liveTheme !== stateTheme) {
-        store.dispatch({
-            type: 'SCRATCHPAD_SETTING_UPDATE',
-            payload: { setting: 'theme', value: liveTheme },
-        });
+        dispatchEditorAppearance(store, 'theme', liveTheme);
     }
     if (value === null || value === undefined) delete customOptions[setting];
     else customOptions[setting] = value;
-    localStorage.setItem('editor.config', JSON.stringify(customOptions));
-    store.dispatch({
-        type: 'SCRATCHPAD_SETTING_UPDATE',
-        payload: { setting, value },
-    });
+    writeEditorStorage('editor.config', JSON.stringify(customOptions));
+    dispatchEditorAppearance(store, setting, value);
+    if (setting === 'tabSize' && [2, 4, 8].includes(Number(value))) {
+        (ctx as any).scratchpad?.editor?.getModel()?.updateOptions({ tabSize: Number(value) });
+    }
+    if (sync && (setting === 'fontSize' || setting === 'tabSize')) accountSettings?.update({ [setting]: value });
 }
 
 async function updateEditorSetting(store: ScratchpadStore, setting: string, value: unknown) {
@@ -379,7 +406,7 @@ async function updateEditorSetting(store: ScratchpadStore, setting: string, valu
 }
 
 function isKnownEditorTheme(theme: string) {
-    return BUILTIN_EDITOR_THEMES.some(([id]) => id === theme) || !!CUSTOM_EDITOR_THEMES[theme];
+    return isEditorTheme(theme);
 }
 
 async function getScratchpadMonaco() {
@@ -389,6 +416,7 @@ async function getScratchpadMonaco() {
 }
 
 async function configureScratchpadEditor(root: HTMLElement, store: ScratchpadStore) {
+    await accountSettingsRestore;
     const scratchpad = (ctx as any).scratchpad;
     if (!scratchpad?.editor && scratchpad?.load) await scratchpad.load;
     const editor = scratchpad?.editor;
@@ -403,6 +431,13 @@ async function configureScratchpadEditor(root: HTMLElement, store: ScratchpadSto
         glyphMargin: false,
         lineNumbersMinChars: 3,
     });
+    const restoreTabSize = () => {
+        const tabSize = accountSettings?.get().tabSize || store.getState().ui?.settings?.config?.tabSize;
+        if ([2, 4, 8].includes(tabSize)) editor.getModel()?.updateOptions({ tabSize });
+    };
+    restoreTabSize();
+    const modelChanged = editor.onDidChangeModel(restoreTabSize);
+    editor.onDidDispose(() => modelChanged.dispose());
     installEditorWheelZoom(editor, container, monaco.editor.EditorOption.fontSize, (size) => {
         commitEditorSetting(store, customOptions, 'fontSize', size);
         const select = root.querySelector<HTMLSelectElement>('[data-oi33-editor-font-size]');
@@ -410,7 +445,7 @@ async function configureScratchpadEditor(root: HTMLElement, store: ScratchpadSto
     });
 }
 
-async function applyEditorTheme(store: ScratchpadStore, theme: string) {
+async function applyEditorTheme(store: ScratchpadStore, theme: string, sync = true, current = () => true) {
     const monaco = await getScratchpadMonaco();
     if (!monaco?.editor || !isKnownEditorTheme(theme)) throw new Error('编辑器主题不可用');
 
@@ -423,9 +458,12 @@ async function applyEditorTheme(store: ScratchpadStore, theme: string) {
         loadedEditorThemes.add(theme);
     }
 
-    localStorage.setItem(EDITOR_THEME_STORAGE_KEY, theme);
-    await updateEditorSetting(store, 'theme', customLabel ? theme : null);
+    const { customOptions } = await loadMonaco([]);
+    if (!current()) return;
+    writeEditorStorage(EDITOR_THEME_STORAGE_KEY, theme);
+    commitEditorSetting(store, customOptions, 'theme', customLabel ? theme : null, false);
     monaco.editor.setTheme(theme);
+    if (sync) accountSettings?.update({ theme });
 }
 
 function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
@@ -482,6 +520,7 @@ function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
     const tabLabel = createElement('label', 'oi33-scratchpad-settings__field');
     tabLabel.append(createElement('span', '', 'Tab 宽度'));
     const tabSelect = createElement('select', 'select') as HTMLSelectElement;
+    tabSelect.setAttribute('data-oi33-editor-tab-size', '');
     [2, 4, 8].forEach((tabSize) => {
         const option = createElement('option') as HTMLOptionElement;
         option.value = String(tabSize);
@@ -495,6 +534,7 @@ function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
     const themeLabel = createElement('label', 'oi33-scratchpad-settings__field oi33-scratchpad-settings__field--theme');
     themeLabel.append(createElement('span', '', '编辑器主题'));
     const themeSelect = createElement('select', 'select') as HTMLSelectElement;
+    themeSelect.setAttribute('data-oi33-editor-theme', '');
     const builtinGroup = createElement('optgroup') as HTMLOptGroupElement;
     builtinGroup.label = '基础主题';
     BUILTIN_EDITOR_THEMES.forEach(([id, label]) => {
@@ -512,7 +552,7 @@ function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
         customGroup.append(option);
     });
     themeSelect.append(builtinGroup, customGroup);
-    const storedTheme = localStorage.getItem(EDITOR_THEME_STORAGE_KEY);
+    const storedTheme = readEditorStorage(EDITOR_THEME_STORAGE_KEY);
     const configTheme = store.getState().ui?.settings?.config?.theme;
     const darkInterface = document.documentElement.classList.contains('theme--dark')
         || document.body.classList.contains('theme--dark')
@@ -523,7 +563,7 @@ function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
         : (isKnownEditorTheme(configTheme) ? configTheme : defaultTheme);
     themeSelect.value = initialTheme;
     themeSelect.addEventListener('change', async () => {
-        const previousTheme = localStorage.getItem(EDITOR_THEME_STORAGE_KEY) || initialTheme;
+        const previousTheme = readEditorStorage(EDITOR_THEME_STORAGE_KEY) || initialTheme;
         themeSelect.disabled = true;
         try {
             await applyEditorTheme(store, themeSelect.value);
@@ -535,12 +575,22 @@ function mountEditorSettings(toolbar: HTMLElement, store: ScratchpadStore) {
         }
     });
     themeLabel.append(themeSelect);
-    popover.append(title, fontLabel, tabLabel, themeLabel);
+    const syncStatus = createElement('button', 'oi33-scratchpad-settings__sync');
+    syncStatus.type = 'button';
+    syncStatus.setAttribute('data-editor-sync-status', '');
+    syncStatus.setAttribute('aria-live', 'polite');
+    syncStatus.addEventListener('click', async () => {
+        await accountSettings?.flush();
+        accountSettingsUpdateUi();
+    });
+    popover.append(title, fontLabel, tabLabel, themeLabel, syncStatus);
     wrap.append(button, popover);
     toolbar.append(wrap);
 
+    initializeAccountSettings(toolbar, store);
+    displaySettingsSyncStatus();
     themeSelect.disabled = true;
-    applyEditorTheme(store, initialTheme)
+    (accountSettings ? accountSettingsRestore : applyEditorTheme(store, initialTheme, false))
         .catch((error) => {
             Notification.error(error instanceof Error ? error.message : '编辑器主题加载失败');
         })
@@ -719,4 +769,8 @@ addPage(new NamedPage(problemPages, () => {
         mountProblemWorkbench();
         scheduleScratchpadWorkbench();
     });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') void accountSettings?.flush();
+    });
+    window.addEventListener('pagehide', () => void accountSettings?.flush());
 }));

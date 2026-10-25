@@ -10,6 +10,7 @@
     {% endif %}
     <li class="menu__seperator"></li>
     {{ sidemenu.render_item('wrench', 'home_settings', {category:'account'}, label='Account Settings', menu_item='home_account') }}
+    {{ sidemenu.render_item('account--circle', 'oi33_account_username', label='登录用户名') }}
     {{ sidemenu.render_item('sliders', 'home_settings', {category:'preference'}, label='Preference Settings', menu_item='home_preference') }}
     {{ sidemenu.render_item('security', 'home_security') }}
   </ol>

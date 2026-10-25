@@ -11,6 +11,8 @@ const net = require('node:net');
 const { spawn, execFileSync } = require('node:child_process');
 const { MongoClient, ObjectId } = require('mongodb');
 const { checkLearningUx } = require('./learning-ux-checks.cjs');
+const { checkEditorSettings } = require('./editor-settings-checks.cjs');
+const { checkAccountUsername } = require('./account-username-checks.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const globalModules = process.env.OI33_QA_GLOBAL_MODULES || '/usr/local/share/.config/yarn/global/node_modules';
@@ -63,10 +65,10 @@ function session() {
       method: form ? 'POST' : 'GET', redirect: 'manual',
       headers: { Accept: options.html ? 'text/html' : 'application/json', Referer: options.referer || `${base}${route}`, Origin: base,
         Cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; '),
-        ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+        ...(form ? { 'Content-Type': options.json ? 'application/json' : 'application/x-www-form-urlencoded' } : {}),
         ...(options.headers || {}),
       },
-      body: form ? new URLSearchParams(form) : undefined,
+      body: form ? (options.json ? JSON.stringify(form) : new URLSearchParams(form)) : undefined,
     });
     for (const cookie of response.headers.getSetCookie()) {
       const [pair] = cookie.split(';');
@@ -474,10 +476,10 @@ const fs = require('fs');
 const { db, UserModel, DomainModel, ProblemModel, ContestModel, TrainingModel, STATUS, PRIV, PERM, SystemModel, SettingModel } = require('hydrooj');
 exports.apply = async function(ctx) {
   const base = ${JSON.stringify(root)};
-  for (const name of ['mobile-access', 'theme', 'enrollment', 'education', 'homework-access', 'recent-learning', 'student-picker', 'personal-files', 'account-batch', 'homepage', 'homepage-fortune', 'article']) await require(base + '/handler/' + name + '.ts').apply(ctx);
+  for (const name of ['mobile-access', 'theme', 'enrollment', 'education', 'homework-access', 'recent-learning', 'student-picker', 'personal-files', 'account-batch', 'account-username', 'editor-settings', 'homepage', 'homepage-fortune', 'article']) await require(base + '/handler/' + name + '.ts').apply(ctx);
   if (!await DomainModel.get('system')) await DomainModel.add('system', 2, 'Isolated QA', 'Synthetic fixture only');
   const users = {};
-  for (const [name, uid, priv] of [['nobody',0,PRIV.PRIV_DEFAULT],['qa_admin',2,PRIV.PRIV_ALL],['qa_coach',3,PRIV.PRIV_DEFAULT],['qa_student',4,PRIV.PRIV_DEFAULT],['qa_outsider',5,PRIV.PRIV_DEFAULT],['qa_new',6,PRIV.PRIV_DEFAULT],['qa_other_coach',7,PRIV.PRIV_DEFAULT],['qa_power_student',8,PRIV.PRIV_DEFAULT],['qa_coach_no_file',9,PRIV.PRIV_DEFAULT & ~PRIV.PRIV_CREATE_FILE],['qa_learning_student',10,PRIV.PRIV_DEFAULT]]) {
+  for (const [name, uid, priv] of [['nobody',0,PRIV.PRIV_DEFAULT],['qa_admin',2,PRIV.PRIV_ALL],['qa_coach',3,PRIV.PRIV_DEFAULT],['qa_student',4,PRIV.PRIV_DEFAULT],['qa_outsider',5,PRIV.PRIV_DEFAULT],['qa_new',6,PRIV.PRIV_DEFAULT],['qa_other_coach',7,PRIV.PRIV_DEFAULT],['qa_power_student',8,PRIV.PRIV_DEFAULT],['qa_coach_no_file',9,PRIV.PRIV_DEFAULT & ~PRIV.PRIV_CREATE_FILE],['qa_learning_student',10,PRIV.PRIV_DEFAULT],['qa_name_student',11,PRIV.PRIV_DEFAULT]]) {
     users[name] = await UserModel.create(name + '@fixture.invalid', name, ${JSON.stringify(password)}, uid, '127.0.0.1', priv);
   }
   await DomainModel.addRole('system', 'coach', PERM.PERM_DEFAULT | PERM.PERM_CREATE_HOMEWORK | PERM.PERM_EDIT_HOMEWORK_SELF);
@@ -491,7 +493,7 @@ exports.apply = async function(ctx) {
   await DomainModel.setUserRole('system', 8, 'qa_power_student', true);
   await UserModel.setById(2, { timeZone: 'Pacific/Kiritimati' });
   await UserModel.setById(3, { timeZone: 'Pacific/Honolulu' });
-  for (const uid of [2,3,4,5,7,8,9,10]) await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: uid === 2 ? 3 : 1, realname_name: 'QA ' + uid });
+  for (const uid of [2,3,4,5,7,8,9,10,11]) await db.collection('oi33_user').insertOne({ _id: uid, realname_flag: uid === 2 ? 3 : 1, realname_name: 'QA ' + uid });
   await UserModel.updateGroup('system', '基础班', [4]);
   await UserModel.updateGroup('system', '提高班', [4]);
   await UserModel.updateGroup('system', '仅教师可见班', []);
@@ -536,6 +538,7 @@ exports.apply = async function(ctx) {
   // index setup. Reproduce required native indexes only in this random DB:
   // discussion uses an explicit hint, and attendance relies on unique status.
   await db.collection('document').createIndex({ domainId: 1, docType: 1, docId: 1 }, { name: 'basic', unique: true });
+  await db.collection('user').createIndex({ unameLower: 1 }, { name: 'uname', unique: true });
   await db.collection('document.status').createIndex({ domainId: 1, docType: 1, docId: 1, uid: 1 }, { name: 'basic', unique: true });
   await db.collection('document').createIndex({ docType: 1, domainId: 1, hidden: 1, pin: -1, docId: -1 },
     { name: 'discussionSort', partialFilterExpression: { docType: 21 } });
@@ -644,6 +647,8 @@ exports.apply = async function(ctx) {
   await login(learningStudent, 'qa_learning_student');
   await checkLearningUx({ db, check, actors: { admin, coach, otherCoach, student, applicant, outsider, learningStudent },
     fixtureData, session, login });
+  await checkEditorSettings({ db, check, actors: { student, outsider }, fixtureData, session, login });
+  await checkAccountUsername({ db, check, session, login, password });
   const multiple = new URLSearchParams({ users: 'qa_regular,QA Regular,R01', accountType: 'regular' });
   multiple.append('groups', '基础班'); multiple.append('groups', '提高班');
   result = await admin('/oi33/accounts/batch', multiple);

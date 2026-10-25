@@ -4,8 +4,32 @@ import fs from 'fs';
 import path from 'path';
 import { HomeHandler } from 'hydrooj/src/handler/home';
 import { RecordListHandler, RecordMainConnectionHandler } from 'hydrooj/src/handler/record';
+import avatar from 'hydrooj/src/lib/avatar';
 import { oi33Model } from '../model';
+import { isEducationCoach } from '../model/education-auth';
 import { apply as applyHomepageFortune } from './homepage-fortune';
+
+export function protectProfileIdentity(h: any) {
+    const body = h.response?.body;
+    const original = body?.udoc;
+    if (!original) return;
+    h.response.addHeader('Cache-Control', 'private, no-store');
+    const canView = !!h.user?._id && (h.user._id === original._id || isEducationCoach(h.user));
+    body.oi33CanViewProfilePrivateIdentity = canView;
+    if (canView) return;
+    // Work on a request-owned copy. Never alter a cached/login User or its uname,
+    // even when an existing account chose its email address as its username.
+    const udoc = Object.create(Object.getPrototypeOf(original), Object.getOwnPropertyDescriptors(original));
+    udoc.mail = '';
+    udoc.displayName = '';
+    udoc.realname_name = '';
+    // Hydro stores a raw email in gravatar: addresses. Preserve the rendered
+    // avatar while ensuring the profile's JSON/UI context cannot expose it.
+    if (typeof udoc.avatar === 'string' && udoc.avatar.startsWith('gravatar:')) {
+        udoc.avatar = `url:${avatar(udoc.avatar, 128)}`;
+    }
+    body.udoc = udoc;
+}
 
 export function applyPatches(_ctx: Context) {
     // OI33 fields merged by mergeOi33Fields that should survive Hydro's JSON
@@ -247,6 +271,7 @@ export function applyPatches(_ctx: Context) {
     // Keep user-detail JSON/template data anonymous. The original username/avatar
     // are stored as non-enumerable fields for the OI33 manager template exception.
     _ctx.on('handler/after/UserDetail', (h: any) => {
+        protectProfileIdentity(h);
         const udoc = h.response?.body?.udoc;
         if (udoc?.oi33_profile_hidden) oi33Model.anonymizeOi33Identity(udoc);
         // Unapproved/unreviewed bios must not leak through the template OR the

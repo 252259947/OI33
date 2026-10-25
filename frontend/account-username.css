@@ -1,0 +1,4 @@
+.oi33-account-username .textbox { color: var(--oi33-text, #182033); -webkit-text-fill-color: var(--oi33-text, #182033); background-color: var(--oi33-surface, #fff); }
+.oi33-account-username label { color: var(--oi33-text-2, #526078); -webkit-text-fill-color: var(--oi33-text-2, #526078); }
+.oi33-account-username .primary.button { color: #fff; -webkit-text-fill-color: #fff; }
+:is(.theme--dark, [data-mantine-color-scheme="dark"]) .oi33-account-username .primary.button { color: #182033; -webkit-text-fill-color: #182033; }

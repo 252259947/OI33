@@ -1230,6 +1230,24 @@
   }
 }
 
+.oi33-scratchpad-settings__sync {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 7px 0 0;
+  border: 0;
+  border-top: 1px solid var(--oi33-border, #dfe5f3);
+  background: transparent;
+  color: var(--oi33-text-2, #64748b);
+  font-size: 12px;
+  text-align: left;
+}
+
+.oi33-scratchpad-settings__sync[data-state="failed"] {
+  color: #d97706;
+  cursor: pointer;
+}
+
 @media (max-width: 560px) {
   .mode--scratchpad #scratchpad.oi33-scratchpad-ready .scratchpad__toolbar__button {
     padding-right: 8px;
