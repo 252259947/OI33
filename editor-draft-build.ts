@@ -28,6 +28,18 @@ export function createEditorDraftBuildPlugin(packagePath = require.resolve('@hyd
                 // ancestor. Redux is an explicit addon runtime dependency.
                 return { path: require.resolve(args.path, { paths: args.path === 'redux' ? [__dirname] : [uiRoot, __dirname] }) };
             });
+            build.onLoad({ filter: /[\\/]reducers[\\/](editor|ui)\.ts$/ }, (args) => {
+                if (!isNativeReducer(args.path)) return undefined;
+                // combineReducers probes initial state while importing. Read
+                // failures after the native editor mounted must not stop the
+                // protection reducer from being installed. Do not mask writes:
+                // the wrapper below owns their status and in-memory fallback.
+                const source = readFileSync(args.path, 'utf8').replace(/\blocalStorage\b/g, 'oi33ScratchpadStorage');
+                return { contents: `const oi33ScratchpadStorage = {
+                    getItem(key) { try { return window.localStorage.getItem(key); } catch { return null; } },
+                    setItem(key, value) { return window.localStorage.setItem(key, value); }
+                };\n${source}`, loader: 'ts' };
+            });
             build.onResolve({ filter: /^vj\// }, (args) => {
                 if (!isNativeReducer(args.importer)) return undefined;
                 if (!['vj/components/notification', 'vj/utils'].includes(args.path)) {

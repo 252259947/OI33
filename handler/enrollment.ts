@@ -8,6 +8,8 @@ import {
 import { decideEnrollmentAccess, enrollmentActivity, matchesContestScope } from '../model/enrollment-policy';
 import { reviewEnrollmentName, NameReviewResult } from './enrollment-name-review';
 import { isAccountAdmin, canResetStudentPassword, resetStudentPassword, acquirePasswordChange, releasePasswordChange, isOrdinaryStudentAccount } from '../model/account-password';
+import { installRecordQueueDelivery } from './record-delivery';
+import { applyLoginFeedback } from './login-feedback';
 
 interface EnrollmentPretest { _id: ObjectId; uid: number; domainId: string; contestId: string; createdAt: Date }
 declare module 'hydrooj' { interface Collections { oi33_enrollment_pretest: EnrollmentPretest } }
@@ -149,6 +151,7 @@ export async function enforceEnrollment(h: any, websocket = false): Promise<'cle
 
 // WS has no before-prepare lifecycle event. Wrap its request-owned methods, not shared prototypes.
 export function protectEnrollmentConnection(h: any) {
+    installRecordQueueDelivery(h);
     const gateway = nameOf(h) === 'WebsocketEventsConnectionManager';
     // create/ws runs after Hydro authenticates the handshake. Never obtain this identity
     // from args, headers or later payloads: baseLayer's session inherits the token document.
@@ -456,6 +459,7 @@ export class Oi33EnrollmentReviewHandler extends Handler {
 }
 
 export async function apply(ctx: Context) {
+    applyLoginFeedback(ctx);
     await ensureEnrollmentIndexes();
     await pretestColl.createIndex({ uid: 1, domainId: 1, contestId: 1 });
     ctx.Route('oi33_enrollment', '/oi33/enrollment', Oi33EnrollmentHandler, PRIV.PRIV_USER_PROFILE);

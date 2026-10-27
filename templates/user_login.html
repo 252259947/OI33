@@ -15,17 +15,18 @@
       <p class="oi33-auth__lead">使用用户名或注册邮箱和密码登录 huaji OJ。</p>
       <form method="POST">
         <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
+        {% if loginError %}<p class="oi33-auth__error" role="alert" id="oi33-login-error">{{ loginError }}</p>{% endif %}
         {% if model.system.get('server.login') %}
           <label class="oi33-field">
             用户名或邮箱
-            <input name="uname" type="text" autofocus autocomplete="username webauthn" required>
+            <input name="uname" type="text" value="{{ loginUsername }}" {% if not loginError %}autofocus{% endif %} autocomplete="username webauthn" required {% if loginError %}aria-describedby="oi33-login-error"{% endif %}>
           </label>
           <label class="oi33-field">
             {{ _('Password') }}
-            <input name="password" type="password" autocomplete="current-password" required>
+            <input name="password" type="password" autocomplete="current-password" required {% if loginError %}autofocus aria-invalid="true" aria-describedby="oi33-login-error"{% endif %}>
           </label>
           <div class="oi33-auth__options">
-            <label class="oi33-auth__remember"><input type="checkbox" name="rememberme" class="checkbox"> <span>{{ _('Remember me') }}</span></label>
+            <label class="oi33-auth__remember"><input type="checkbox" name="rememberme" class="checkbox" {% if loginRemember %}checked{% endif %}> <span>{{ _('Remember me') }}</span></label>
             <a href="{{ url('user_lostpass') }}">{{ _('Forgot password or username?') }}</a>
           </div>
           <input type="hidden" name="tfa" value="">

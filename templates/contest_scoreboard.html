@@ -41,6 +41,7 @@
         </select>
       </div>
     </div>
+    {% if tdoc.rule == 'homework' %}{% include "partials/oi33_homework_scoring.html" %}{% endif %}
     <div class="oi33-scoreboard-tools" role="search" aria-label="查找成绩">
       <label for="oi33-scoreboard-query">查找学生</label>
       <input id="oi33-scoreboard-query" type="search" class="textbox" placeholder="输入姓名或 UID" autocomplete="off">

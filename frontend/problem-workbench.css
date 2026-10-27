@@ -1,3 +1,10 @@
+/* Statement headings must follow either supported site dark-theme marker.
+   Keep this scoped to the statement; Monaco has its own selected theme. */
+:root:is(.theme--dark, [data-mantine-color-scheme="dark"]) .problem-content :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--oi33-text, #eef1f8);
+  border-color: var(--oi33-line, #333b50);
+}
+
 /* Sample actions share the statement header, never cover the sample text. */
 .problem-content .code-toolbar.oi33-sample-block {
   display: flex;
@@ -1287,7 +1294,8 @@
     display: none;
   }
 }
-.oi33-editor-draft-warning {
+.oi33-editor-draft-warning,
+.oi33-record-recovery-warning {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1299,9 +1307,11 @@
     font-size: 12px;
     line-height: 1.5;
 }
-.oi33-editor-draft-warning[hidden] { display: none; }
+.oi33-editor-draft-warning[hidden],
+.oi33-record-recovery-warning[hidden] { display: none; }
 .oi33-editor-draft-warning > span { flex: 1; }
-.oi33-editor-draft-warning button {
+.oi33-editor-draft-warning button,
+.oi33-record-recovery-warning button {
     flex-shrink: 0;
     padding: 4px 8px;
     border: 1px solid currentColor;
@@ -1310,7 +1320,8 @@
     color: inherit;
     cursor: pointer;
 }
-.theme--dark .oi33-editor-draft-warning {
+.theme--dark .oi33-editor-draft-warning,
+.theme--dark .oi33-record-recovery-warning {
     background: #382e1b;
     color: #f3d59b;
     border-color: #665538;

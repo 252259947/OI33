@@ -8,7 +8,6 @@ type InputDrafts = { sampleId: string; customChosen: boolean; values: Map<string
 // its panel remounts, without leaking them into a different page's store.
 const inputDrafts = new WeakMap<Store, InputDrafts>();
 const RUNNING = new Set([0, 20, 21, 22]);
-const MAX_COMPARE_LENGTH = 200000;
 const MAX_DISPLAY_LENGTH = 32000;
 let feedbackId = 0;
 const STATUS_LABELS: Record<number, string> = {
@@ -28,25 +27,6 @@ export function readPublicSamples(root: ParentNode): PublicSample[] {
     return [...samples.values()].sort((a, b) => Number(a.id) - Number(b.id));
 }
 
-export function compareSampleText(expected: string, actual: string) {
-    if (expected.length > MAX_COMPARE_LENGTH || actual.length > MAX_COMPARE_LENGTH) {
-        return { kind: 'large', message: '输出较长，请下载或查看完整记录后自行核对。' };
-    }
-    const left = expected.replace(/\r\n?/g, '\n');
-    const right = actual.replace(/\r\n?/g, '\n');
-    if (left === right) return { kind: 'same', message: '与本次样例输出文本一致；不代表整题通过。' };
-    if (left.trim().split(/\s+/).join(' ') === right.trim().split(/\s+/).join(' ')) {
-        return { kind: 'whitespace', message: '仅空白字符不同，请核对空格与换行；是否通过以正式评测为准。' };
-    }
-    let index = 0;
-    while (index < Math.min(left.length, right.length) && left[index] === right[index]) index += 1;
-    const prefix = left.slice(0, index).split('\n');
-    return {
-        kind: 'different',
-        message: `文本不同：首个差异约在第 ${prefix.length} 行、第 ${prefix[prefix.length - 1].length + 1} 列。多解或特殊判题不能据此判断错误。`,
-    };
-}
-
 function plainOutput(value: unknown) {
     // Judge messages may contain ANSI colors. Render all remaining content as text, never HTML.
     return String(value ?? '').replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
@@ -63,15 +43,19 @@ export function pretestResult(record: any, sample?: PublicSample) {
         actual: [record.compilerTexts?.join('\n'), actual].filter(Boolean).map(plainOutput).join('\n'),
         comparison: '本次未运行成功，不进行样例输出对照。',
     };
-    const compared = sample?.output !== null && sample?.output !== undefined && record.testCases?.length
-        ? compareSampleText(sample.output, actual) : null;
+    // HydroJudge's message is stdout + a separator + stderr, not pure stdout.
+    // That boundary cannot be recovered (even empty stderr adds a newline).
+    // Preserve the diagnostics and offer the public sample for manual reference;
+    // neither trimming the message nor comparing it can establish an answer match.
+    const hasExpected = sample?.output !== null && sample?.output !== undefined;
     return {
         status: '运行成功，不代表整题通过',
-        kind: compared?.kind || 'custom',
+        kind: 'output',
         actual,
-        comparison: compared?.message || (sample
-            ? '没有可对照的公开输出或运行输出，请自行核对。'
-            : '自定义输入没有标准输出，请自行核对运行结果。'),
+        comparison: !record.testCases?.length ? '未收到运行输出，请查看运行详情。'
+            : hasExpected ? '输出可能包含调试信息，请切换“预期”自行对照；是否通过以正式评测为准。'
+                : sample ? '本题没有可对照的公开输出；下方可能包含调试信息，请自行核对。'
+                    : '自定义输入没有标准输出；下方可能包含调试信息，请自行核对。',
     };
 }
 
@@ -87,7 +71,7 @@ function displayed(value: string) {
         ? `${value.slice(0, MAX_DISPLAY_LENGTH)}\n…显示已截断，请查看完整运行记录。` : value;
 }
 
-/** UI-only sample comparison. Nothing here changes a judge result or a submission score. */
+/** Public samples beside native run diagnostics; never changes a judge result or score. */
 export function installPretestFeedback(root: HTMLElement, store: Store, recordUrl?: (rid: string) => string) {
     const samples = readPublicSamples(root.querySelector('.problem-content') || root);
     let drafts = inputDrafts.get(store);
@@ -240,6 +224,7 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
             tab.setAttribute('role', 'tab');
         });
         actualTab.setAttribute('aria-label', '实际输出');
+        actualTab.title = '程序输出与运行信息，可能包含调试输出';
         expectedTab.setAttribute('aria-label', '预期输出');
         actualTab.id = `${outputId}-actual-tab`;
         expectedTab.id = `${outputId}-expected-tab`;
@@ -265,7 +250,7 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
         recordLink.rel = 'noopener';
         recordLink.hidden = true;
         const heading = element('strong', 'oi33-pretest-feedback__heading', '运行结果');
-        heading.title = '自测仅核对当前输入；运行成功不代表整题通过，多解或特殊判题以正式评测为准。';
+        heading.title = '运行成功不代表整题通过；结果可能包含调试信息，请对照预期输出核对，是否通过以正式评测为准。';
         resultHeader.append(heading, tabs, recordLink);
         status = element('div', 'oi33-pretest-feedback__status');
         status.setAttribute('role', 'status');

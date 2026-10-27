@@ -12,27 +12,45 @@ export function editorDraftKey(user: any, context: any): string | null {
     return context.tdoc?._id ? `${key}@${context.tdoc._id}` : key;
 }
 
-/** Only editor persistence is best effort; all other native reducers stay intact. */
+/** Scratchpad caches are best effort; requests and in-memory editing remain native. */
 export function createEditorDraftReducer(nativeReducer: NativeReducer, key: string, storage: DraftStorage,
     onStatus: (status: DraftStatus) => void = () => {}) {
     const failures = new Set<string>();
-    const persist = (field: 'code' | 'lang', value: string) => {
+    const cached = new Map<string, { value: string; field: string }>();
+    const persistCache = (cacheKey: string, value: string, field: string) => {
+        cached.set(cacheKey, { value, field });
         try {
-            storage.setItem(field === 'code' ? key : `${key}#lang`, value);
+            storage.setItem(cacheKey, value);
             failures.delete(field);
         } catch {
             failures.add(field);
         }
         onStatus({ failed: failures.size > 0, fields: Array.from(failures) });
     };
+    const persist = (field: 'code' | 'lang', value: string) =>
+        persistCache(field === 'code' ? key : `${key}#lang`, value, field);
     return {
         reducer(state: any, action: any) {
             const field = action.type === 'SCRATCHPAD_EDITOR_UPDATE_CODE' ? 'code'
                 : action.type === 'SCRATCHPAD_EDITOR_SET_LANG' ? 'lang' : null;
-            if (!field) return nativeReducer(state, action);
+            if (!field && !['SCRATCHPAD_UI_SET_VISIBILITY', 'SCRATCHPAD_UI_TOGGLE_VISIBILITY',
+                'SCRATCHPAD_SETTING_UPDATE'].includes(action.type)) return nativeReducer(state, action);
             // React's handlers already captured dispatch. replaceReducer fixes
             // that actual dispatch chain, rather than wrapping store.dispatch.
             const next = nativeReducer(state, { type: 'OI33_EDITOR_DRAFT_IN_MEMORY' });
+            if (action.type === 'SCRATCHPAD_SETTING_UPDATE') {
+                const { setting, value } = action.payload;
+                const config = { ...next.ui.settings.config, [setting]: value };
+                persistCache('editor.config', JSON.stringify(config), 'settings');
+                return { ...next, ui: { ...next.ui, settings: { ...next.ui.settings, config } } };
+            }
+            if (!field) {
+                const { uiElement } = action.payload;
+                const visible = action.type === 'SCRATCHPAD_UI_TOGGLE_VISIBILITY'
+                    ? !next.ui[uiElement].visible : action.payload.visibility;
+                persistCache(`scratchpad/${uiElement}`, String(visible), uiElement);
+                return { ...next, ui: { ...next.ui, [uiElement]: { ...next.ui[uiElement], visible } } };
+            }
             const result = { ...next, editor: { ...next.editor, [field]: action.payload } };
             persist(field, String(action.payload ?? ''));
             return result;
@@ -40,6 +58,9 @@ export function createEditorDraftReducer(nativeReducer: NativeReducer, key: stri
         save(editor: { code?: string; lang?: string }) {
             persist('code', String(editor.code ?? ''));
             persist('lang', String(editor.lang ?? ''));
+            for (const [cacheKey, entry] of cached) {
+                if (entry.field !== 'code' && entry.field !== 'lang') persistCache(cacheKey, entry.value, entry.field);
+            }
         },
         isFailed: () => failures.size > 0,
     };
@@ -81,7 +102,7 @@ export async function installEditorDraftGuard(root: HTMLElement, store: DraftSto
                     warning.hidden = !guard.isFailed();
                     warning.setAttribute('role', 'status');
                     const text = document.createElement('span');
-                    text.textContent = '草稿未保存到此浏览器；当前代码仍可运行和提交，离开前请下载备份。';
+                    text.textContent = '草稿或编辑器设置未完整保存到此浏览器；当前代码仍可运行和提交，离开前请下载备份。';
                     const backup = document.createElement('button');
                     backup.type = 'button';
                     backup.textContent = '下载代码';

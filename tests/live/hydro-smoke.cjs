@@ -480,7 +480,7 @@ const { db, UserModel, DomainModel, ProblemModel, ContestModel, TrainingModel, D
 exports.apply = async function(ctx) {
   const base = ${JSON.stringify(root)};
   require(base + '/handler/patches.ts').applyPatches(ctx);
-  for (const name of ['mobile-access', 'theme', 'enrollment', 'education', 'homework-access', 'recent-learning', 'student-picker', 'personal-files', 'account-batch', 'account-username', 'editor-settings', 'training-access', 'scoreboard-identity', 'homepage', 'article', 'user']) await require(base + '/handler/' + name + '.ts').apply(ctx);
+  for (const name of ['mobile-access', 'theme', 'enrollment', 'education', 'homework-access', 'recent-learning', 'student-picker', 'personal-files', 'account-batch', 'account-username', 'editor-settings', 'training-access', 'training-progress', 'scoreboard-identity', 'homepage', 'article', 'user']) await require(base + '/handler/' + name + '.ts').apply(ctx);
   if (!await DomainModel.get('system')) await DomainModel.add('system', 2, 'Isolated QA', 'Synthetic fixture only');
   const users = {};
   for (const [name, uid, priv] of [['nobody',0,PRIV.PRIV_DEFAULT],['qa_admin',2,PRIV.PRIV_ALL],['qa_coach',3,PRIV.PRIV_DEFAULT],['qa_student',4,PRIV.PRIV_DEFAULT],['qa_outsider',5,PRIV.PRIV_DEFAULT],['qa_new',6,PRIV.PRIV_DEFAULT],['qa_other_coach',7,PRIV.PRIV_DEFAULT],['qa_power_student',8,PRIV.PRIV_DEFAULT],['qa_coach_no_file',9,PRIV.PRIV_DEFAULT & ~PRIV.PRIV_CREATE_FILE],['qa_learning_student',10,PRIV.PRIV_DEFAULT],['qa_name_student',11,PRIV.PRIV_DEFAULT]]) {

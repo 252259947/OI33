@@ -159,6 +159,8 @@ function harness() {
         return descriptor;
     };
     const api = loadTs('handler/enrollment.ts', {
+        './record-delivery': loadTs('handler/record-delivery.ts'),
+        './login-feedback': loadTs('handler/login-feedback.ts'),
         hydrooj: { Handler, PRIV: { PRIV_USER_PROFILE: 1, PRIV_JUDGE: 2, PRIV_ALL: 4 }, Types: {}, param: () => (target, key, descriptor) => descriptor, requireSudo,
             ForbiddenError, ValidationError, ObjectId: FakeObjectId, db: { collection },
             RecordModel: { get: async (domainId, rid) => collection('record').findOne({ _id: rid, domainId }) },
@@ -200,6 +202,51 @@ function deferred() {
     const promise = new Promise((done) => { resolve = done; });
     return { promise, resolve };
 }
+
+test('installed native record handler composes queue delivery with enrollment and session checks', async () => {
+    const env = harness();
+    await env.userColl.insertOne({ _id: 10, realname_flag: 1 });
+    const source = fs.readFileSync(path.join(root, 'node_modules/hydrooj/src/handler/record.ts'), 'utf8');
+    const nativeClass = source.slice(source.indexOf('export class RecordMainConnectionHandler'), source.indexOf('export class RecordDetailConnectionHandler'));
+    const deps = { ConnectionHandler: class {}, param: () => () => {}, subscribe: () => () => {}, Types: {},
+        ObjectId: FakeObjectId, PERM: {}, PRIV: {}, throttle: require('lodash/throttle'), omit: require('lodash/omit'),
+        user: { getById: async (_, uid) => ({ _id: uid }) }, problem: { get: async (_, pid) => ({ docId: pid }) } };
+    const code = esbuild.transformSync(`const {${Object.keys(deps).join(',')}} = deps;\n${nativeClass}`, {
+        loader: 'ts', format: 'cjs', tsconfigRaw: { compilerOptions: { experimentalDecorators: true } },
+    }).code;
+    const mod = { exports: {} };
+    new Function('deps', 'module', 'exports', code)(deps, mod, mod.exports);
+    const h = new mod.exports.RecordMainConnectionHandler();
+    const base = env.handler('RecordMainConnection', 'ws');
+    delete base.constructor;
+    Object.assign(h, base);
+    const first = deferred(), entered = deferred(), received = [];
+    h.send = async payload => {
+        if (payload.rdoc.status === 21) { entered.resolve(); await first.promise; }
+        received.push(payload.rdoc.status);
+    };
+    env.api.protectEnrollmentConnection(h);
+    await h.prepare('system', undefined, undefined, undefined, undefined, true, false, false, true);
+    const rdoc = { _id: new FakeObjectId(cid), uid: 10, domainId: 'system', pid: 1,
+        contest: new FakeObjectId('0'.repeat(24)), input: '', code: 'private', status: 21 };
+    try {
+        await h.onRecordChange(rdoc);
+        await entered.promise;
+        await h.onRecordChange({ ...rdoc, status: 1 });
+        const done = h.queueClear();
+        first.resolve();
+        await done;
+        assert.deepEqual(received, [21, 1]);
+        assert.equal(h.queue.size, 0);
+        env.collection('session').docs.length = 0;
+        await h.onRecordChange({ ...rdoc, status: 2 });
+        assert.equal(h.closed, 4003);
+        assert.deepEqual(received, [21, 1], 'revoked credentials never send another record');
+    } finally {
+        first.resolve();
+        h.throttleQueueClear.cancel();
+    }
+});
 
 async function applicant(h, extra = {}) {
     await h.collection('core_user').insertOne({ _id: 10, role: 'default', ...extra });

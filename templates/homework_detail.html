@@ -11,6 +11,7 @@
         <h1 class="section__title">{{ tdoc.title }}</h1>
       </div>
     </div>
+    {% include "partials/oi33_homework_scoring.html" %}
     {% if tdoc.content|default('', true)|trim %}
     <div class="section" data-homework-introduction>
       <div class="section__header">

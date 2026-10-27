@@ -4,6 +4,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 
+function loadFlowHelper(name) {
+    const source = fs.readFileSync(path.join(__dirname, '../handler', name + '.ts'), 'utf8');
+    const code = esbuild.transformSync(source, { loader: 'ts', format: 'cjs' }).code;
+    const module = { exports: {} };
+    new Function('module', 'exports', code)(module, module.exports);
+    return module.exports;
+}
+
 function harness() {
     const calls = [];
     class ForbiddenError extends Error {}
@@ -15,6 +23,8 @@ function harness() {
         '../model/enrollment': { getEnrollment: async () => { calls.push('enrollment'); return null; } },
         '../model/enrollment-policy': {}, './enrollment-name-review': {},
         '../model/account-password': { isAccountAdmin: () => true },
+        './record-delivery': loadFlowHelper('record-delivery'),
+        './login-feedback': loadFlowHelper('login-feedback'),
     };
     const source = fs.readFileSync(path.join(__dirname, '../handler/enrollment.ts'), 'utf8');
     const code = esbuild.transformSync(source, { loader: 'ts', format: 'cjs',

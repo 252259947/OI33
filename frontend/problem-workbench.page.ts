@@ -7,6 +7,7 @@ import { installPretestFeedback } from './pretest-feedback';
 import { installSampleActions } from './sample-actions';
 import { createEditorSettingsSync } from './editor-account-settings';
 import { installEditorDraftGuard } from './editor-draft-guard';
+import { createRecordResultRecovery } from './record-result-recovery';
 import './problem-workbench.css';
 
 const problemPages = ['problem_detail', 'contest_detail_problem', 'homework_detail_problem'];
@@ -109,7 +110,10 @@ function initializeAccountSettings(toolbar: HTMLElement, store: ScratchpadStore)
         accountSettings?.dispose();
         accountSettingsUid = snapshot.uid;
         accountSettings = createEditorSettingsSync({
-            snapshot, storage: localStorage, defaultTheme: dark ? 'vs-dark' : 'vs',
+            snapshot, storage: {
+                getItem: (key) => window.localStorage.getItem(key),
+                setItem: (key, value) => window.localStorage.setItem(key, value),
+            }, defaultTheme: dark ? 'vs-dark' : 'vs',
             load: () => request.get('/oi33/editor-settings'),
             save: async (patch, initialize) => {
                 const response = await fetch('/oi33/editor-settings', {
@@ -140,6 +144,7 @@ type ScratchpadStore = {
 
 type ScratchpadRoot = HTMLElement & {
     oi33Unsubscribe?: () => void;
+    oi33ModeObserver?: MutationObserver;
     oi33Pretest?: ReturnType<typeof installPretestFeedback>;
 };
 
@@ -287,6 +292,56 @@ function loadScratchpadRecords(store: ScratchpadStore) {
     });
 }
 
+let activeResultRecovery: { root: HTMLElement; dispose: () => void } | undefined;
+function installRecordResultRecovery(root: ScratchpadRoot, store: ScratchpadStore) {
+    if (activeResultRecovery?.root === root) return;
+    activeResultRecovery?.dispose();
+    const user = (window as any).UserContext;
+    const problem = (window as any).UiContext?.pdoc;
+    if (!Number.isSafeInteger(user?._id) || !problem?.domainId || problem.docId == null) return;
+    const notice = createElement('div', 'oi33-record-recovery-warning');
+    notice.hidden = true;
+    notice.setAttribute('role', 'status');
+    notice.append(document.createTextNode('评测结果同步暂时中断；无需重复提交，可刷新结果或打开运行详情。'));
+    const retry = createElement('button', '', '刷新评测结果');
+    retry.type = 'button';
+    notice.append(retry);
+    root.querySelector('.scratchpad__toolbar')?.after(notice);
+    const recovery = createRecordResultRecovery({
+        getState: () => store.getState(),
+        isActive: () => root.isConnected && document.body.classList.contains('mode--scratchpad')
+            && document.visibilityState !== 'hidden',
+        load: async (rid) => {
+            const url = recordDetailUrl(rid);
+            if (!url) throw new Error('Record URL unavailable');
+            const response = await request.get(url, {}, { timeout: 10000 });
+            const record = response.rdoc;
+            if (record?.uid !== user._id || record?.pid !== problem.docId || record?.domainId !== problem.domainId) {
+                throw new Error('Record scope unavailable');
+            }
+            return { ...record, compilerTexts: record.compilerTexts || [], testCases: record.testCases || [] };
+        },
+        apply: (rdoc) => store.dispatch({ type: 'SCRATCHPAD_RECORDS_PUSH', payload: { rdoc } }),
+        onStalled: (stalled) => { notice.hidden = !stalled; },
+    });
+    const unsubscribe = store.subscribe(() => recovery.update());
+    const resume = () => recovery.retry();
+    retry.addEventListener('click', resume);
+    window.addEventListener('online', resume);
+    document.addEventListener('visibilitychange', resume);
+    const modeObserver = new MutationObserver(() => recovery.update());
+    modeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    const dispose = () => {
+        unsubscribe(); recovery.dispose(); modeObserver.disconnect(); notice.remove();
+        window.removeEventListener('online', resume);
+        document.removeEventListener('visibilitychange', resume);
+        window.removeEventListener('pagehide', dispose);
+    };
+    window.addEventListener('pagehide', dispose, { once: true });
+    activeResultRecovery = { root, dispose };
+    recovery.update();
+}
+
 function mountProblemTabs(root: ScratchpadRoot, store: ScratchpadStore) {
     const problemContent = root.querySelector<HTMLElement>('.problem-content');
     if (!problemContent || problemContent.dataset.oi33ScratchpadTabs === '1') return;
@@ -358,6 +413,12 @@ function mountProblemTabs(root: ScratchpadRoot, store: ScratchpadStore) {
     problemContent.prepend(tabs);
     problemContent.append(statement, recordsPanel);
     renderScratchpadRecords(recordsPanel, store);
+    root.oi33ModeObserver?.disconnect();
+    root.oi33ModeObserver = new MutationObserver(() => {
+        if (!problemContent.isConnected) { root.oi33ModeObserver?.disconnect(); return; }
+        if (!document.body.classList.contains('mode--scratchpad')) setActiveTab('description');
+    });
+    root.oi33ModeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
     root.oi33Unsubscribe?.();
     root.oi33Unsubscribe = store.subscribe(() => {
@@ -646,14 +707,18 @@ function installPretestFlow(root: ScratchpadRoot, store: ScratchpadStore) {
         if (!button || button.classList.contains('disabled')) return;
         const state = store.getState();
         if (state.ui?.isPosting || state.ui?.pretestWaitSec > 0 || state.pretest?.isRunning) return;
-
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        if (!String(state.editor?.code || '').trim()) {
+            Notification.error('请先输入代码，再运行自测。');
+            (ctx as any).scratchpad?.editor?.focus();
+            return;
+        }
         store.dispatch({
             type: 'SCRATCHPAD_UI_SET_VISIBILITY',
             payload: { uiElement: 'pretest', visibility: true },
         });
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
         feedback.autofill();
         const latest = store.getState();
         const snapshot = feedback.start(latest.pretest.input);
@@ -676,16 +741,9 @@ function installPretestFlow(root: ScratchpadRoot, store: ScratchpadStore) {
     }, true);
 }
 
-function mountScratchpadWorkbench() {
-    const root = document.querySelector<ScratchpadRoot>('#scratchpad');
-    const toolbar = root?.querySelector<HTMLElement>('.scratchpad__toolbar');
-    const store = getScratchpadStore();
-    if (!root || !toolbar || !store) return false;
-
-    void installEditorDraftGuard(root, store, (window as any).UserContext, (window as any).UiContext);
-
+function finishScratchpadWorkbench(root: ScratchpadRoot, toolbar: HTMLElement, store: ScratchpadStore) {
+    if (!root.isConnected) return;
     root.querySelectorAll<HTMLElement>('.problem-content').forEach(installSampleActions);
-
     root.classList.add('oi33-scratchpad-ready');
     removeLegacyScratchpadRail(root, store);
     if (root.dataset.oi33ScratchpadInitialized !== '1') {
@@ -705,7 +763,22 @@ function mountScratchpadWorkbench() {
     mountEditorSettings(toolbar, store);
     void configureScratchpadEditor(root, store);
     installPretestFlow(root, store);
+    installRecordResultRecovery(root, store);
     installScratchpadObserver(root, store);
+}
+
+function mountScratchpadWorkbench() {
+    const root = document.querySelector<ScratchpadRoot>('#scratchpad');
+    const toolbar = root?.querySelector<HTMLElement>('.scratchpad__toolbar');
+    const store = getScratchpadStore();
+    if (!root || !toolbar || !store) return false;
+
+    if (root.dataset.oi33WorkbenchBooting === '1') return true;
+    root.dataset.oi33WorkbenchBooting = '1';
+    void installEditorDraftGuard(root, store, (window as any).UserContext, (window as any).UiContext).then(() => {
+        delete root.dataset.oi33WorkbenchBooting;
+        finishScratchpadWorkbench(root, toolbar, store);
+    });
     return true;
 }
 
@@ -754,6 +827,10 @@ function enhanceActionMenu(root: HTMLElement) {
 }
 
 function mountProblemWorkbench() {
+    if (activeResultRecovery && !activeResultRecovery.root.isConnected) {
+        activeResultRecovery.dispose();
+        activeResultRecovery = undefined;
+    }
     document.querySelectorAll<HTMLElement>('.problem-content').forEach(installSampleActions);
     document.querySelectorAll<HTMLElement>('[data-oi33-problem-workbench]').forEach((root) => {
         root.dataset.oi33WorkbenchMounted = '1';

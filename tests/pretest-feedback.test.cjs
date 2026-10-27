@@ -9,37 +9,42 @@ const helperPath = path.join(root, 'frontend/pretest-feedback.ts');
 const compiled = buildSync({ entryPoints: [helperPath], bundle: true, write: false, format: 'cjs' }).outputFiles[0].text;
 const mod = { exports: {} };
 new Function('module', 'exports', compiled)(mod, mod.exports);
-const { compareSampleText, pretestResult } = mod.exports;
+const { pretestResult } = mod.exports;
 const sample = { id: '1', input: '1 2\n', output: '3\n' };
 const record = (status, message, compilerTexts = []) => ({
     status, testCases: [{ message }], compilerTexts, time: 1, memory: 128,
 });
 
-test('sample comparison distinguishes exact, line-ending and whitespace differences without judging AC/WA', () => {
-    assert.equal(compareSampleText('1\n2\n', '1\r\n2\r\n').kind, 'same');
-    assert.equal(compareSampleText('1 2\n', ' 1\t2 \n\n').kind, 'whitespace');
-    assert.equal(compareSampleText('', '\n').kind, 'whitespace');
-    const diff = compareSampleText('1\n2\n', '1\n3\n');
-    assert.equal(diff.kind, 'different');
-    assert.match(diff.message, /第 2 行、第 1 列/);
-    assert.match(diff.message, /多解或特殊判题不能据此判断错误/);
-    assert.match(compareSampleText('', '').message, /不代表整题通过/);
-    assert.equal(compareSampleText('a'.repeat(200001), 'a').kind, 'large');
+test('native merged stdout/stderr never produces a false answer or whitespace verdict', () => {
+    // Real HydroJudge sends "3\n\n" for stdout="3\n", stderr="".
+    // Nonempty stderr and formatting are equally ambiguous: retain them verbatim.
+    for (const message of ['3\n\n', '3\n\ndebug\n', ' 3 \n\n', 'wrong\n', '\n', '']) {
+        const source = record(1, message);
+        const before = JSON.stringify(source);
+        const result = pretestResult(source, sample);
+        assert.equal(result.kind, 'output');
+        assert.equal(result.actual, message);
+        assert.match(result.comparison, /可能包含调试信息.*预期.*自行对照/);
+        assert.doesNotMatch(result.comparison, /文本一致|空白字符不同|首个差异/);
+        assert.equal(JSON.stringify(source), before);
+    }
+    // Unknown future fields are not an established transport contract and must
+    // not cause the UI to claim that it received independently captured stdout.
+    assert.equal(pretestResult({ ...record(1, '3\n\ndebug'), stdout: '3\n', stderr: 'debug' }, sample).actual, '3\n\ndebug');
 });
 
 test('successful pretests are runtime success only, including custom and empty-output cases', () => {
     const source = record(1, '3\n');
     const before = JSON.stringify(source);
     const result = pretestResult(source, sample);
-    assert.equal(result.kind, 'same');
+    assert.equal(result.kind, 'output');
     assert.match(result.status, /运行成功，不代表整题通过/);
     assert.equal(JSON.stringify(source), before);
-    assert.equal(pretestResult(record(1, ''), { id: '1', input: '', output: '' }).kind, 'same');
-    assert.equal(pretestResult(record(1, 'wrong'), sample).kind, 'different');
-    assert.equal(pretestResult(record(1, '3\n')).kind, 'custom');
+    assert.match(pretestResult(record(1, ''), { id: '1', input: '', output: '' }).comparison, /切换“预期”/);
+    assert.equal(pretestResult(record(1, '3\n')).kind, 'output');
     assert.match(pretestResult(record(1, '3\n')).comparison, /自定义输入没有标准输出/);
-    assert.equal(pretestResult(record(1, '3\n'), { ...sample, output: null }).kind, 'custom');
-    assert.equal(pretestResult({ status: 1, testCases: [] }, sample).kind, 'custom');
+    assert.match(pretestResult(record(1, '3\n'), { ...sample, output: null }).comparison, /没有可对照的公开输出/);
+    assert.match(pretestResult({ status: 1, testCases: [] }, sample).comparison, /未收到运行输出/);
 });
 
 test('waiting and failed runs never perform sample comparison and ANSI output is plain text', () => {
@@ -119,7 +124,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         await page.goto('http://pretest.fixture.invalid/fixture');
         await page.evaluate(() => {
             window.UiContext = JSON.stringify({ cdn_prefix: 'http://pretest.fixture.invalid/', postSubmitUrl: '/p/fixture/submit',
-                getRecordDetailUrl: '/record/{rid}',
+                getRecordDetailUrl: '/record/{rid}', canViewRecord: true, getSubmissionsUrl: '/p/fixture/records',
                 pdoc: { pid: 'Fixture', config: { type: 'default' } } });
             window.UserContext = JSON.stringify({ viewLang: 'en', codeFontFamily: 'monospace' });
             window.UiContextNew = '{}';
@@ -192,7 +197,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
             window.fixtureCtx = { scratchpad: { store: window.store, editor: window.fixtureEditor, monaco } };
             window.require = () => ({
                 ...window.NativeHydro, ctx: window.fixtureCtx, addPage: (value) => window.registeredPages.push(value),
-                request: { post: (url, body) => {
+                request: { get: () => Promise.resolve({ rdocs: [] }), post: (url, body) => {
                     window.posts.push({ url, body });
                     return new Promise((resolve, reject) => window.requests.push({ resolve, reject }));
                 } },
@@ -391,6 +396,15 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         assert.equal(await page.evaluate(() => window.posts.length), 0);
         assert.deepEqual(await page.locator('[aria-label="选择自测样例"] option').allTextContents(), ['自定义输入', '样例 1', '样例 2', '样例 3']);
         assert.equal(await page.locator('.native-result').isVisible(), false);
+        // Empty code must be stopped before a native request or cooldown begins.
+        await page.evaluate(() => { window.state.editor.code = ' \n\t'; });
+        await page.keyboard.press('F9');
+        assert.equal(await page.evaluate(() => window.posts.length), 0);
+        assert.equal(await page.evaluate(() => window.nativePretests), 0);
+        assert.equal(await page.evaluate(() => window.state.ui.isPosting), false);
+        assert.equal(await page.evaluate(() => window.fixtureEditor.hasTextFocus()), true);
+        assert.match(await page.locator('body').innerText(), /请先输入代码，再运行自测/);
+        await page.evaluate(code => { window.state.editor.code = code; }, initial.code);
         await runButton.click();
         assert.equal(await page.inputValue('[aria-label="自测输入"]'), '1 2\n');
         assert.equal(await page.evaluate(() => window.posts.length), 1);
@@ -403,7 +417,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         await page.keyboard.press('F9');
         assert.equal(await page.evaluate(() => window.posts.length), 1, 'Pending repeated button/hotkey does not submit twice');
         await page.evaluate(() => window.requests[0].resolve({ rid: 'run1' }));
-        await page.evaluate(() => window.complete('run1', 1, '3\n'));
+        await page.evaluate(() => window.complete('run1', 1, '3\n\n'));
         assert.equal(await runButton.isDisabled(), true, 'Native cooldown also disables the local button');
         await runButton.evaluate(button => button.click());
         await page.keyboard.press('F9');
@@ -413,7 +427,8 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         assert.equal(await page.getAttribute('.oi33-pretest-feedback__record', 'href'), '/record/run1');
         assert.match(await page.textContent('.oi33-pretest-feedback__status'), /运行成功，不代表整题通过/);
         assert.equal(await page.textContent('.oi33-pretest-feedback__resources'), '1 ms · 128 KiB');
-        assert.match(await page.textContent('.oi33-pretest-feedback__comparison'), /文本一致/);
+        assert.match(await page.textContent('.oi33-pretest-feedback__comparison'), /可能包含调试信息.*自行对照/);
+        assert.equal(await page.textContent('.oi33-pretest-feedback__actual'), '3\n\n');
         assert.equal(await page.getByRole('tab', { name: '预期输出', exact: true }).isDisabled(), false);
         await page.getByRole('tab', { name: '预期输出', exact: true }).click();
         assert.equal(await page.locator('.oi33-pretest-feedback__expected').isVisible(), true);
@@ -480,7 +495,7 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         // A result may reach the websocket before the HTTP response assigns rid.
         await page.evaluate(() => window.complete('run2', 1, '9 \n'));
         await page.evaluate(() => window.requests[1].resolve({ rid: 'run2' }));
-        assert.match(await page.textContent('.oi33-pretest-feedback__comparison'), /仅空白字符不同/);
+        assert.match(await page.textContent('.oi33-pretest-feedback__comparison'), /可能包含调试信息.*自行对照/);
         assert.equal(await page.locator('.oi33-pretest-feedback__stale').isVisible(), false);
         await page.evaluate(() => window.clearCooldown());
         assert.equal(await page.locator('.oi33-pretest-feedback__actual').isVisible(), true, 'Starting a new run returns to actual output tab');
@@ -491,8 +506,9 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         await page.keyboard.press('F9');
         assert.deepEqual(await page.evaluate(() => window.posts[2].body.input), ['']);
         await page.evaluate(() => window.requests[2].resolve({ rid: 'run3' }));
-        await page.evaluate(() => window.complete('run3', 1, 'alternative valid output\n'));
-        assert.match(await page.textContent('.oi33-pretest-feedback__comparison'), /多解或特殊判题不能据此判断错误/);
+        await page.evaluate(() => window.complete('run3', 1, 'hello\n\ndebug\n'));
+        assert.match(await page.textContent('.oi33-pretest-feedback__comparison'), /是否通过以正式评测为准/);
+        assert.equal(await page.textContent('.oi33-pretest-feedback__actual'), 'hello\n\ndebug\n');
         await page.evaluate(() => window.clearCooldown());
 
         await page.selectOption('[aria-label="选择自测样例"]', '');
@@ -608,6 +624,16 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         await page.evaluate(() => document.querySelector('.scratchpad__toolbar').prepend(window.detachedPretest));
         await page.waitForFunction(() => !document.querySelector('.oi33-pretest-feedback__run').disabled);
         assert.match(await runButton.getAttribute('title'), /运行当前输入/);
+        // Native exit moves the same problem-content node back to the page.
+        await page.locator('.oi33-scratchpad-problem-tab').filter({ hasText: '提交记录' }).evaluate(button => button.click());
+        assert.equal(await page.locator('.oi33-scratchpad-statement').evaluate(node => node.hidden), true);
+        await page.evaluate(() => {
+            document.body.classList.remove('mode--scratchpad');
+            document.body.append(document.querySelector('.problem-content'));
+        });
+        await page.waitForFunction(() => !document.querySelector('.oi33-scratchpad-statement').hidden);
+        assert.equal(await page.locator('.oi33-scratchpad-records').evaluate(node => node.hidden), true);
+        assert.equal(await page.locator('.oi33-scratchpad-statement .language-input1').textContent(), '1 2\n');
         assert.deepEqual(errors, []);
     } finally {
         await browser.close();

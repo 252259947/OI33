@@ -33,6 +33,9 @@
 .oi33-homework-empty h2 { margin:0; font-size:18px; font-weight:600; color:var(--oi33-text,#182033); }
 .oi33-homework-empty p { margin:0; color:var(--oi33-text-2,#526078); line-height:1.7; }
 .oi33-homework-empty .button { margin:4px 0 0; }
+.oi33-homework-scoring { display:flex; align-items:baseline; gap:12px; padding:16px 20px; margin:0 0 20px; border:1px solid var(--oi33-line,#dfe3f0); border-radius:12px; background:var(--oi33-brand-soft,#f1efff); color:var(--oi33-text-2,#526078); font-size:14px; line-height:1.7; }
+.oi33-homework-scoring > strong { flex:none; color:var(--oi33-text,#182033); }
+.scoreboard--homework .oi33-homework-scoring { margin:16px 20px 0; }
 /* Keep the light palette, but pair dark text/surface tokens for teaching UI.
    These small components otherwise inherit white text over fixed pale fills. */
 :is(.theme--dark, [data-mantine-color-scheme="dark"]) .education-members span,

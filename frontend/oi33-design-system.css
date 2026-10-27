@@ -1008,6 +1008,16 @@ table {
   color: var(--oi33-text-2);
 }
 
+.oi33-auth__error {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--oi33-danger);
+  border-radius: 10px;
+  color: var(--oi33-danger);
+  background: var(--oi33-surface);
+  line-height: 1.6;
+}
+
 .oi33-field {
   display: block;
   margin-bottom: 18px;

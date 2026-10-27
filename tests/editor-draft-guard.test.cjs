@@ -68,6 +68,45 @@ test('draft cache keys retain native account/domain/problem/contest isolation', 
     assert.equal(editorDraftKey({ _id: 42 }, {}), null);
 });
 
+test('actual native UI reducer keeps panels, preferences and posting gates usable when every cache write fails', () => {
+    let blocked = false;
+    const saved = new Map(), notices = [];
+    const storage = { getItem: key => saved.get(key), setItem: (key, value) => {
+        if (blocked) throw new DOMException('Storage unavailable', 'SecurityError');
+        saved.set(key, value);
+    } };
+    const nativeModule = { exports: {} };
+    new Function('module', 'exports', 'require', 'UiContext', 'localStorage', transformSync(fs.readFileSync(
+        path.join(uiRoot, 'components/scratchpad/reducers/ui.ts'), 'utf8'), { loader: 'ts', format: 'cjs' }).code)(
+        nativeModule, nativeModule.exports, name => name === 'vj/utils' ? { i18n: text => text }
+            : { success: text => notices.push(text), error: text => notices.push(text) },
+        { pdoc: { config: { type: 'default' } }, canViewRecord: true }, storage);
+    const native = combineReducers({ ui: nativeModule.exports.default, editor: (state = { code: 'code', lang: 'cpp' }) => state });
+    const store = createStore(native), guard = createEditorDraftReducer(native, '42/system/88', storage);
+    store.replaceReducer(guard.reducer); blocked = true;
+    store.dispatch({ type: 'SCRATCHPAD_UI_SET_VISIBILITY', payload: { uiElement: 'pretest', visibility: true } });
+    store.dispatch({ type: 'SCRATCHPAD_UI_TOGGLE_VISIBILITY', payload: { uiElement: 'records' } });
+    store.dispatch({ type: 'SCRATCHPAD_SETTING_UPDATE', payload: { setting: 'fontSize', value: 23 } });
+    assert.equal(store.getState().ui.pretest.visible, true);
+    assert.equal(store.getState().ui.records.visible, true);
+    assert.equal(store.getState().ui.settings.config.fontSize, 23);
+    assert.equal(guard.isFailed(), true);
+    store.dispatch({ type: 'SCRATCHPAD_POST_PRETEST_PENDING' });
+    assert.equal(store.getState().ui.isPosting, true);
+    store.dispatch({ type: 'SCRATCHPAD_POST_PRETEST_FULFILLED' });
+    assert.equal(store.getState().ui.pretestWaitSec, 5);
+    store.dispatch({ type: 'SCRATCHPAD_POST_SUBMIT_PENDING' });
+    store.dispatch({ type: 'SCRATCHPAD_POST_SUBMIT_FULFILLED' });
+    assert.equal(store.getState().ui.submitWaitSec, 8);
+    assert.equal(store.getState().ui.isPosting, false);
+    assert.deepEqual(notices, ['Submitted.', 'Submitted.']);
+    blocked = false; guard.save(store.getState().editor);
+    assert.equal(guard.isFailed(), false);
+    assert.equal(saved.get('scratchpad/pretest'), 'true');
+    assert.equal(saved.get('scratchpad/records'), 'true');
+    assert.deepEqual(JSON.parse(saved.get('editor.config')), { fontSize: 23 });
+});
+
 test('production resolver bundles installed reducers before federation and rejects another importer', async () => {
     const federation = { name: 'fixture-hydro-federation', setup(builder) {
         builder.onResolve({ filter: /^@hydrooj\/ui-default/ }, () => ({ path: 'api', namespace: 'fixture-api' }));
@@ -175,22 +214,32 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('real Monaco, native React Redux 
             + '#scratchpad{position:relative!important;inset:auto!important;width:1000px;height:600px;margin:30px auto}' });
         await page.evaluate(() => window.setupNativeFixture());
         await page.waitForFunction(() => !!window.fixtureCtx.scratchpad.editor);
-        await page.evaluate(() => window.installGuard());
+        await page.evaluate(async () => {
+            // Storage may become unavailable after Monaco has opened but
+            // before the lazily bundled replacement reducer initializes.
+            const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+            Object.defineProperty(window, 'localStorage', { configurable: true,
+                get() { throw new DOMException('fixture storage blocked', 'SecurityError'); } });
+            try { await window.installGuard(); } finally { Object.defineProperty(window, 'localStorage', descriptor); }
+        });
         assert.equal(await page.getAttribute('#scratchpad', 'data-oi33-draft-guard'), '1');
         await page.evaluate(() => {
             window.originalSetItem = Storage.prototype.setItem;
             Storage.prototype.setItem = function(key, value) {
-                if (key.startsWith('42/system/88@contest-A')) throw new DOMException('fixture quota', 'QuotaExceededError');
-                return window.originalSetItem.call(this, key, value);
+                throw new DOMException('fixture quota', 'QuotaExceededError');
             };
             window.fixtureCtx.scratchpad.editor.setValue('int main() { return 42; }');
         });
         await page.waitForFunction(() => window.store.getState().editor.code.includes('return 42'));
         assert.equal(await page.locator('.oi33-editor-draft-warning').isVisible(), true);
-        assert.match(await page.textContent('.oi33-editor-draft-warning'), /草稿未保存/);
+        assert.match(await page.textContent('.oi33-editor-draft-warning'), /草稿或编辑器设置未完整保存/);
         await page.selectOption('.scratchpad__toolbar select', 'cc.cc17');
         await page.waitForFunction(() => window.store.getState().editor.lang === 'cc.cc17');
         assert.equal(await page.evaluate(() => window.fixtureCtx.scratchpad.editor.getValue()), 'int main() { return 42; }');
+        await page.evaluate(() => {
+            window.store.dispatch({ type: 'SCRATCHPAD_UI_SET_VISIBILITY', payload: { uiElement: 'pretest', visibility: true } });
+        });
+        assert.equal(await page.evaluate(() => window.store.getState().ui.pretest.visible), true);
         await page.locator('.scratchpad__toolbar__submit').click();
         assert.deepEqual(await page.evaluate(() => window.posts[0]), { url: '/p/88/submit?tid=contest-A',
             body: { code: 'int main() { return 42; }', lang: 'cc.cc17' } });

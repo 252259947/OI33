@@ -1,4 +1,5 @@
 import { parseTrainingChapters, TrainingChapter } from './bulk-problem-paste';
+import { validateTrainingDependencies } from './training-progress';
 
 export type ChapterAction = { type: 'add' } | { type: 'rename'; id: number; title: string }
     | { type: 'move'; id: number; direction: -1 | 1 } | { type: 'remove'; id: number };
@@ -39,5 +40,6 @@ export function validateTrainingPlan(source: string): TrainingChapter[] {
         if (!chapter.pids.length) throw new Error(`“${chapter.title}”还没有题目，请先加入题目再保存训练。`);
         if (!Array.isArray(chapter.requireNids) || chapter.requireNids.some((id) => !ids.has(id))) throw new Error(`“${chapter.title}”的先修章节无效，请在高级模式中修正。`);
     }
+    validateTrainingDependencies(chapters);
     return chapters;
 }
