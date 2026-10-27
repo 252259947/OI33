@@ -16,6 +16,7 @@ import type {
 } from '../model/types';
 import { checkOi33Admin, checkUserFlag } from './utils';
 import { calcCost, callChatCompletion, resolveChatConfig } from './ai';
+import { isBioModerationExempt } from '../model/bio-policy';
 import {
     moderationTargetMatches, readModerationTarget, updateModerationTarget,
 } from '../model/moderation-target';
@@ -716,6 +717,11 @@ class Ai33ModerationHandler extends Handler {
             // edit of the bio is never clobbered by a stale queue decision.
             if (entry.kind === 'bio') {
                 const currentUser = await UserModel.getById(domainId, entry.uid);
+                if (isBioModerationExempt(currentUser)) {
+                    await oi33Model.modSetStatus(id, 'done', this.user._id);
+                    this.response.redirect = this.url('oi33_ai_moderation');
+                    return;
+                }
                 if (!currentUser
                     || !bioHashMatches(entry.contentHash, String(currentUser.bio || ''))) {
                     throw new ValidationError('该个人简介已被修改，不能处理旧审核记录。请刷新后处理最新记录。');

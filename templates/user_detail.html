@@ -179,38 +179,6 @@
         </div>
       </div>
     </div>
-    {% if oi33AchievementPanel %}
-    <div class="section oi33-achievements">
-      <div class="section__header">
-        <h2 class="section__title">成就展示柜</h2>
-        <div class="section__tools">
-          {% if oi33AchievementPanel.isSelf %}
-          <a href="{{ url('oi33_achievement_showcase') }}" class="rounded button">编辑展示柜</a>
-          {% endif %}
-          {% if oi33AchievementPanel.canManage %}
-          <a href="{{ url('oi33_achievement_manage', query={uid:udoc._id}) }}" class="rounded button">管理成就</a>
-          {% endif %}
-        </div>
-      </div>
-      <div class="section__body">
-        {% if oi33AchievementPanel.showcaseAwards.length %}
-        <div class="oi33-showcase-grid">
-          {% for award in oi33AchievementPanel.showcaseAwards %}
-          <div class="oi33-showcase-badge" title="{{ award.achievement.name }}：{{ award.achievement.description }}">
-            <img class="oi33-showcase-pixel" src="{{ award.achievement.imageData }}" width="64" height="64"
-              alt="{{ award.achievement.name }}">
-            <span class="oi33-showcase-name">{{ award.achievement.name }}</span>
-          </div>
-          {% endfor %}
-        </div>
-        {% elif oi33AchievementPanel.isSelf %}
-        <p class="oi33-achievement-empty">还没有布置成就展示柜，<a href="{{ url('oi33_achievement_showcase') }}">去编辑</a>选择要展示的徽章（最多 16 个）。</p>
-        {% else %}
-        <p class="oi33-achievement-empty">TA 还没有布置成就展示柜。</p>
-        {% endif %}
-      </div>
-    </div>
-    {% endif %}
     {% if not _profileHidden %}
     <div class="section">
       <div class="profile-content">
@@ -231,33 +199,6 @@
                 </div>
               </div>
             </li>
-            {% if oi33AchievementPanel %}
-            <li class="section__tab-item">
-              <h1 class="section__tab-title">成就（{{ oi33AchievementPanel.awards.length }}）</h1>
-              <div class="section__tab-main">
-                <div class="typo section__body no-media">
-                  {% if oi33AchievementPanel.awards.length %}
-                  <ul class="oi33-achievement-list">
-                    {% for award in oi33AchievementPanel.awards.slice(0, 50) %}
-                    <li class="oi33-achievement-list__row">
-                      <img class="oi33-achievement-list__icon" src="{{ award.achievement.imageData }}"
-                        alt="{{ award.achievement.name }}">
-                      <span class="oi33-achievement-list__name">{{ award.achievement.name }}</span>
-                      <span class="oi33-achievement-list__desc"
-                        title="{{ award.achievement.description }}">{{ award.achievement.description }}</span>
-                    </li>
-                    {% endfor %}
-                  </ul>
-                  {% if oi33AchievementPanel.awards.length > 50 %}
-                  <p><a href="{{ url('oi33_achievement_user', uid=udoc._id) }}">查看所有成就（共 {{ oi33AchievementPanel.awards.length }} 个）</a></p>
-                  {% endif %}
-                  {% else %}
-                  <p>还没有获得成就。</p>
-                  {% endif %}
-                </div>
-              </div>
-            </li>
-            {% endif %}
             {% for page in _udmods %}{% if 'activity.html' in page %}{% include page %}{% endif %}{% endfor %}
             {% if pdocs.length %}
             <li class="section__tab-item">
@@ -288,7 +229,16 @@
           </ul>
         </div>
       </div>
-    </div>{% endif %}
+    </div>
+    {% elif udoc.bio_visible and udoc.bio %}
+    {# Trusted site-admin bio remains visible without exposing other hidden profile data. #}
+    <div class="section">
+      <div class="section__header">
+        <h2 class="section__title">{{ _('Bio') }}</h2>
+      </div>
+      <div class="typo section__body richmedia">{{ udoc.bio|markdown|safe }}</div>
+    </div>
+    {% endif %}
     {% if (handler.user.realname_flag or 0) >= 2 %}
     {# 管理员可见的注册信息（包括未认证用户），用于识别小号。IP 可点击反查同 IP 账号。 #}
     <div class="section">
@@ -363,42 +313,9 @@
   </div>
 </div>
 <style>
-  .oi33-showcase-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; }
-  .oi33-showcase-badge {
-    display:flex; flex-direction:column; align-items:center; min-width:0;
-    padding:.8rem; border:1px solid rgba(127,127,127,.2); border-radius:8px;
-  }
-  .oi33-showcase-pixel {
-    width:64px; height:64px; object-fit:fill;
-    image-rendering:crisp-edges; image-rendering:pixelated;
-  }
-  .oi33-showcase-name {
-    margin-top:.5rem; font-size:.85rem; max-width:100%;
-    overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
-  }
-  .oi33-achievement-list { list-style:none; margin:0; padding:0; }
-  .oi33-achievement-list__row {
-    display:flex; align-items:baseline; gap:.6rem; padding:.25rem 0; min-width:0;
-    border-bottom:1px dashed rgba(127,127,127,.15);
-  }
-  .oi33-achievement-list__row:last-child { border-bottom:none; }
-  .oi33-achievement-list__icon {
-    width:1em; height:1em; flex:0 0 1em; align-self:center; object-fit:fill;
-    image-rendering:crisp-edges; image-rendering:pixelated;
-  }
-  .oi33-achievement-list__name { flex:0 0 auto; font-weight:600; }
-  .oi33-achievement-list__desc {
-    flex:1 1 auto; min-width:0; color:#777; font-size:.85em;
-    overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
-  }
-  .oi33-achievement-empty { color:#777; font-size:.85em; }
   .oi33-bio-hint { color:#777; font-size:.85em; margin:0; }
   .theme--dark .oi33-bio-hint,
   [data-mantine-color-scheme=dark] .oi33-bio-hint { color:#aaa; }
-  .theme--dark .oi33-achievement-list__desc,
-  [data-mantine-color-scheme=dark] .oi33-achievement-list__desc { color:#aaa; }
-  .theme--dark .oi33-achievement-empty,
-  [data-mantine-color-scheme=dark] .oi33-achievement-empty { color:#aaa; }
   /* The tab panel is its own section now (no profile-header image behind it):
      undo the stock negative margin that used to pull the tabs up over the
      profile header image, and give the immersive strip a real bar. */
@@ -408,7 +325,7 @@
     background: #f7f7f7;
     border-bottom: 1px solid #e8e8e8;
   }
-  /* Join the main-column sections (profile header / showcase / tab panel)
+  /* Join the main-column sections (profile header / tab panel)
      into one continuous card. */
   .page--user_detail .oi33-user-main > .section { margin-bottom: 0; }
   .page--user_detail .oi33-user-main > .section:last-child { margin-bottom: 20px; }
@@ -450,9 +367,6 @@
     box-shadow: none;
     border-color: #2b2b2b;
     border-bottom-color: #323334;
-  }
-  @media (max-width:500px) {
-    .oi33-showcase-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   }
 </style>
 {% endblock %}

@@ -16,7 +16,7 @@
             <a class="rounded primary button" style="margin-left:1rem;padding:0.4rem 1.2rem;font-size:1rem;" href="{{ url('oi33_ai_moderation') }}">内容审核</a>
           </p>
         {% endif %}
-        <p class="bio33-desc">对所有个人简介非空的用户执行一次 AI 审核：通过后公开展示，未通过则隐藏直到本人下次修改。已有最终审核结果且简介未变的用户会被跳过，可安全重复执行。</p>
+        <p class="bio33-desc">对普通账号的非空个人简介执行一次审核，OJ 管理员账号免审核并自动跳过。通过后公开展示，未通过则隐藏直到本人下次修改。已有最终审核结果且简介未变的用户会被跳过。</p>
 
         <form method="post" class="bio33-batch-form">
           <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">

@@ -2,6 +2,7 @@ import { db } from 'hydrooj';
 import { Oi33User } from './types';
 import { addLog } from './log';
 import { bioHashMatches } from './moderate';
+import { isBioModerationExempt } from './bio-policy';
 
 export const userColl = db.collection('oi33_user');
 // Read only the verification result, never private enrollment names or review notes.
@@ -164,9 +165,11 @@ export function mergeOi33Fields(udoc: any, oi33: Oi33User | undefined, fields?: 
     // profile must be verified, the bio AI-approved, and the current normalized
     // text the reviewed version. The matcher also recognizes the legacy
     // edit-path hash that ignored leading/trailing whitespace.
-    udoc.bio_visible = !profileHidden && !!oi33 && oi33.bio_status === 'approved'
-        && !!String(udoc.bio || '').trim()
-        && bioHashMatches(oi33.bio_hash, String(udoc.bio));
+    // Administrator bios are trusted, including old pending/rejected versions.
+    // Keep ordinary-user verification and exact-version approval unchanged.
+    udoc.bio_visible = !!String(udoc.bio || '').trim() && (isBioModerationExempt(udoc, oi33)
+        || (!profileHidden && !!oi33 && oi33.bio_status === 'approved'
+            && bioHashMatches(oi33.bio_hash, String(udoc.bio))));
     if (!profileHidden) restoreOi33Identity(udoc);
     if (profileHidden) {
         if (udoc.oi33_original_uname === undefined) setPrivateDisplayField(udoc, 'oi33_original_uname', udoc.uname || '');

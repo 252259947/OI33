@@ -23,6 +23,8 @@
 
 ## 个人简介（bio）AI 审核
 
+OJ 站点管理员（OI33 flag≥2 或 Hydro PRIV_ALL）个人简介免审核，也免除简介修改冷却；仅有 domain root/coach 不豁免。统一判断见 `model/bio-policy.ts`。保存、后台异步与批量审查、人工队列和 `bio_visible` 显示均须遵守；旧 rejected/pending 管理员简介直接恢复显示，不重写简介或删除历史消息。免审不能写入可复用的 AI 通过缓存，普通账号仍保留身份、状态与哈希校验。个人主页的成就展示柜、成就标签页及相关入口已隐藏，后台数据保留。
+
 bio 是 Hydro 核心字段，编辑走 core `/home/settings/account`，本插件用 `handler/before|after/HomeSettings#post` 钩子介入（`handler/bio.ts`）：改动有 **2 小时冷却**（`bio_edited_at`）；变更后写 `bio_status:'pending'`+`bio_hash` 并后台 AI 审核：pass→approved；block/review/出错→rejected 隐藏并私信通知本人（含分类与理由；人工驳回只发「人工审核未通过」）。所有判定记入 `oi33_ai_moderation`（`kind:'bio'`，见 `/oi33/ai/moderation` 结果列表），review/出错进人工队列，管理员 approve/reject 直接翻转 bio 状态（哈希守卫，不会覆盖更新的编辑）。**显示规则**（`mergeOi33Fields` 算 `udoc.bio_visible`）：flag≥1 且 `bio_status==='approved'` 且 `bio_hash===bioHashOf(当前 bio)`——哈希不符（如 OAuth 回写）自动隐藏。展示点：user_detail tab 面板第一项「Bio」（未过审时本人见提示，`after/UserDetail` 钩子同时清空 JSON 里的 bio）、首页 ranking partial。初始批量审查：管理页 `/oi33/ai/bio-review`（flag≥2，幂等可重跑，进度存 `oi33_ai_batch` 的 `_id:'bio_review'`）。
 
 ## patches.ts 清单

@@ -62,6 +62,7 @@ function fixture() {
   };
   const moderate = load('handler/moderate.ts', {
     hydrooj: hydro, '../model': { oi33Model: model }, '../model/moderate': hashing,
+    '../model/bio-policy': load('model/bio-policy.ts', { hydrooj: { PRIV: { PRIV_ALL: -1 } } }),
     '../model/moderation-target': targetModel, './utils': { checkUserFlag: async () => 1, checkOi33Admin: async () => {} },
     './ai': { resolveChatConfig: async () => ({ apiKey: 'fixture-only', model: 'fixture' }), calcCost: () => 0,
       callChatCompletion: async () => ({ content: JSON.stringify({ verdict: await nextVerdict(), category: '隐私' }) }) },

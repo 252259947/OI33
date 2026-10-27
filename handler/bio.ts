@@ -4,6 +4,7 @@ import {
 import { oi33Model } from '../model';
 import { checkOi33Admin } from './utils';
 import { bioHashOf, normalizeText, runAiVerdict } from './moderate';
+import { isBioModerationExempt } from '../model/bio-policy';
 
 // Bio edits go through Hydro core's HomeSettingsHandler (no content review
 // there), so everything here hangs off its lifecycle hooks: the before-hook
@@ -18,6 +19,21 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // Bound concurrent background reviews; edits are rare so a small cap suffices.
 let activeBioReviews = 0;
 const MAX_CONCURRENT_BIO_REVIEWS = 3;
+
+async function isExempt(uid: number): Promise<boolean> {
+    // Read current global privileges, not a cached/domain-specific role.
+    const [user, identities] = await Promise.all([
+        UserModel.coll.findOne({ _id: uid }, { projection: { _id: 1, priv: 1 } }),
+        oi33Model.getUserDataByUids([uid]),
+    ]);
+    return isBioModerationExempt(user, identities[uid]);
+}
+
+async function approveExemptReview(uid: number, hash: string): Promise<boolean> {
+    if (!await isExempt(uid)) return false;
+    await oi33Model.bioSetStatus(uid, hash, 'approved');
+    return true;
+}
 
 // Record every bio verdict in the shared moderation log so admins can see
 // results on /oi33/ai/moderation; 'review' verdicts enter the human queue
@@ -69,12 +85,13 @@ async function notifyBioRejected(
 // resolves it: pass -> approved (visible), block/review -> rejected (hidden
 // until an admin approves in the queue or the user edits again). Never throws;
 // any error fails closed to rejected + queued for a human.
-async function moderateBioAsync(uid: number, bio: string, hash: string) {
+export async function moderateBioAsync(uid: number, bio: string, hash: string) {
     while (activeBioReviews >= MAX_CONCURRENT_BIO_REVIEWS) {
         await sleep(250);
     }
     activeBioReviews++;
     try {
+        if (await approveExemptReview(uid, hash)) return;
         const cfg = await oi33Model.aiGetConfig();
         // Moderation explicitly switched off by an admin: auto-approve.
         if ((cfg.moderation_enabled ?? '1') !== '1') {
@@ -82,6 +99,9 @@ async function moderateBioAsync(uid: number, bio: string, hash: string) {
             return;
         }
         const result = await runAiVerdict(uid, normalizeText(bio), hash, cfg);
+        // A promotion while AI is running must not hide the new admin's bio
+        // or send a rejection message. Exemptions never enter verdict caches.
+        if (await approveExemptReview(uid, hash)) return;
         const applied = await oi33Model.bioSetStatus(
             uid, hash, result.verdict === 'pass' ? 'approved' : 'rejected',
         );
@@ -89,6 +109,7 @@ async function moderateBioAsync(uid: number, bio: string, hash: string) {
         if (applied && result.verdict !== 'pass') await notifyBioRejected(uid, result);
     } catch (e: any) {
         console.error('[oi33] bio moderation failed:', e);
+        if (await approveExemptReview(uid, hash).catch(() => false)) return;
         const applied = await oi33Model.bioSetStatus(uid, hash, 'rejected').catch(() => false);
         const fallback = {
             verdict: 'review' as const, source: 'error', category: '其他',
@@ -105,7 +126,7 @@ async function moderateBioAsync(uid: number, bio: string, hash: string) {
 
 let bioReviewBatchRunning = false;
 
-async function runBioReviewBatch(users: { _id: number, bio: string }[]) {
+export async function runBioReviewBatch(users: { _id: number, bio: string }[]) {
     const counters = {
         done: 0, generated: 0, applied: 0, skipped: 0, failed: 0,
     };
@@ -115,6 +136,12 @@ async function runBioReviewBatch(users: { _id: number, bio: string }[]) {
         const oi33Dict = await oi33Model.getUserDataByUids(users.map((u) => u._id));
         for (const u of users) {
             try {
+                if (await isExempt(u._id)) {
+                    counters.skipped++;
+                    counters.done++;
+                    await oi33Model.aiBatchSaveStatus({ ...counters, currentSort: `UID ${u._id}` }, BIO_REVIEW_BATCH_ID);
+                    continue;
+                }
                 const bio = String(u.bio || '');
                 const hash = bioHashOf(bio);
                 const cur = oi33Dict[u._id];
@@ -127,6 +154,12 @@ async function runBioReviewBatch(users: { _id: number, bio: string }[]) {
                     let approved = true;
                     if (enabled) {
                         const result = await runAiVerdict(u._id, normalizeText(bio), hash, cfg);
+                        if (await isExempt(u._id)) {
+                            counters.skipped++;
+                            counters.done++;
+                            await oi33Model.aiBatchSaveStatus({ ...counters, currentSort: `UID ${u._id}` }, BIO_REVIEW_BATCH_ID);
+                            continue;
+                        }
                         approved = result.verdict === 'pass';
                         await oi33Model.bioSetReviewed(u._id, hash, approved ? 'approved' : 'rejected');
                         await recordBioVerdict(u._id, bio, hash, result);
@@ -204,6 +237,7 @@ export async function apply(ctx: Context) {
         if (typeof h.args.bio !== 'string') return;
         const uid = Number(h.user?._id) || 0;
         if (!uid) return;
+        if (await isExempt(uid)) return;
         if (h.args.bio === String(h.user.bio || '')) return;
         const oi33 = (await oi33Model.getUserDataByUids([uid]))[uid];
         const editedAt = oi33?.bio_edited_at ? new Date(oi33.bio_edited_at).getTime() : 0;
@@ -223,8 +257,14 @@ export async function apply(ctx: Context) {
         if (!uid) return;
         try {
             const bio = h.args.bio;
-            if (bio === String(h.user.bio || '')) return;
             const hash = bioHashOf(bio);
+            if (await isExempt(uid)) {
+                // No pending state, model call, cooldown or moderation notice.
+                // Existing rejected bios also recover through the display rule.
+                if (bio !== String(h.user.bio || '')) await oi33Model.bioSetReviewed(uid, hash, 'approved');
+                return;
+            }
+            if (bio === String(h.user.bio || '')) return;
             const oi33 = (await oi33Model.getUserDataByUids([uid]))[uid];
             if (oi33?.bio_hash === hash) return; // unchanged or already reviewed
             await oi33Model.bioMarkEdited(uid, hash);

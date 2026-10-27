@@ -106,6 +106,7 @@ function harness() {
     const userModel = loadTs('model/user.ts', {
         hydrooj: { db: { collection } }, './log': { addLog: async (entry) => logs.push(entry) },
         './moderate': { bioHashMatches: (a, b) => a === b },
+        './bio-policy': loadTs('model/bio-policy.ts', { hydrooj: { PRIV: { PRIV_ALL: -1 } } }),
     });
     const model = loadTs('model/enrollment.ts', {
         hydrooj: { db: { collection } }, './log': { addLog: async (entry) => logs.push(entry) },
