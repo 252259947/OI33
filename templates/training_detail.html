@@ -113,7 +113,7 @@
               <option value="all" selected>{{ _('All') }}</option>
               {% for group in groups %}<option value="{{ group.uids.join(',') }}">{{ group.name }}</option>{% endfor %}
             </select>
-            <input name="uid" type="text" class="search__input textbox" placeholder="{{ _('Select User') }}" aria-label="{{ _('Select User') }}">
+            <input name="uid" type="text" class="search__input textbox" placeholder="输入姓名或用户名" aria-label="按姓名或用户名查找学生">
           </form>
           <ol class="enroll_user_menu oi33-training-member-list">
             {%- for uid, member in udict -%}

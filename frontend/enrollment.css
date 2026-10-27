@@ -29,6 +29,7 @@
 .oi33-enrollment__filter-count { flex: none; padding-bottom: 10px; }
 .oi33-enrollment__filter-hint { margin: 12px 0 0; }
 .oi33-enrollment__history { margin-top: 20px; font-size: 13px; line-height: 1.8; }
+.oi33-enrollment__action-notice { position: sticky; top: 72px; z-index: 10; box-shadow: 0 6px 20px #0001; }
 .oi33-enrollment__history summary { cursor: pointer; color: #64748b; }
 .oi33-enrollment__account-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 16px 0; }
 .oi33-enrollment__account-actions > form { margin: 0; }

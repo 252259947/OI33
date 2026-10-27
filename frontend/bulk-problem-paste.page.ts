@@ -4,6 +4,7 @@ import {
     resolveProblemTokens, updateTrainingChapter,
 } from './bulk-problem-paste';
 import './bulk-problem-paste.css';
+import { trainingPlanSource } from './training-plan-source';
 
 const pages = ['homework_create', 'homework_edit', 'contest_create', 'contest_edit', 'training_create', 'training_edit'];
 const pendingForms = new Set<HTMLFormElement>();
@@ -97,17 +98,14 @@ export function attachTrainingPaste(textarea: HTMLTextAreaElement) {
     panel.querySelector('.oi33-bulk-training__help')!.textContent = BULK_PROBLEM_HELP;
     // Avoid placing interactive controls inside the native Plan label.
     const label = textarea.closest('label');
-    (label || textarea).before(panel);
+    const mount = textarea.form.querySelector('[data-training-bulk-mount]');
+    if (mount) mount.append(panel); else (label || textarea).before(panel);
     const status = statusNode(panel);
     const select = panel.querySelector('select')!;
     const paste = panel.querySelector('textarea')!;
     const button = panel.querySelector<HTMLButtonElement>('[data-import]')!;
     const refresh = panel.querySelector<HTMLButtonElement>('[data-refresh]')!;
-    const getEditor = () => {
-        const editor = $(textarea).data('vjEditorInstance');
-        if (!editor?.isValid || typeof editor.value !== 'function') throw new Error('训练编辑器尚未就绪，请稍后点击“刷新章节”。');
-        return editor;
-    };
+    const getEditor = () => trainingPlanSource(textarea);
     const refreshChapters = () => {
         try {
             const selected = select.value;
@@ -126,6 +124,7 @@ export function attachTrainingPaste(textarea: HTMLTextAreaElement) {
         }
     };
     refresh.addEventListener('click', refreshChapters);
+    textarea.addEventListener('oi33:training-plan-change', refreshChapters);
     select.addEventListener('focus', refreshChapters);
     button.addEventListener('click', async () => {
         const form = textarea.form;
@@ -165,15 +164,7 @@ export function attachTrainingPaste(textarea: HTMLTextAreaElement) {
             panel.removeAttribute('aria-busy');
         }
     });
-    // The JSON editor is lazy-loaded. Do not show an error during normal startup.
-    let attempts = 0;
-    const initializeChapters = () => {
-        if (!panel.isConnected) return;
-        if ($(textarea).data('vjEditorInstance')?.isValid) refreshChapters();
-        else if (attempts++ < 40) setTimeout(initializeChapters, 500);
-    };
-    message(status, '训练编辑器正在加载，稍候也可点击“刷新章节”。');
-    initializeChapters();
+    refreshChapters();
 }
 
 export function installBulkProblemPaste() {

@@ -1,0 +1,14 @@
+.oi33-training-chapters { margin: 12px 0 20px; }
+.oi33-training-chapters__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.oi33-training-chapters__header h2 { font-size: 18px; margin: 0; }
+.oi33-training-chapter { display: flex; gap: 12px; align-items: center; padding: 12px; margin-bottom: 8px; border: 1px solid var(--oi33-border, #dce1ef); border-radius: 12px; background: var(--oi33-surface-soft, #f8f9fe); }
+.oi33-training-chapter .textbox { flex: 1; min-width: 140px; margin: 0; color: var(--oi33-text, #182033); background: var(--oi33-surface, #fff); -webkit-text-fill-color: var(--oi33-text, #182033); }
+.oi33-training-chapter__count { flex: none; color: var(--oi33-text-2, #526078); font-size: 13px; }
+.oi33-training-chapter__actions { display: flex; gap: 6px; flex: none; }
+.oi33-training-chapters .button { margin: 0; border-radius: 8px; }
+.oi33-training-chapter__actions .button { padding: 0 12px; }
+.oi33-training-chapters [data-chapter-status] { margin: 10px 0 0; color: var(--oi33-text-2, #526078); }
+.oi33-training-chapters [data-chapter-status].is-error { color: #d93448; }
+.oi33-training-advanced { margin: 20px 0; color: var(--oi33-text-2, #526078); }
+.oi33-training-advanced summary { cursor: pointer; padding: 10px 0; }
+.oi33-training-advanced > label { margin-top: 8px; }

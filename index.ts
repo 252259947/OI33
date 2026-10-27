@@ -1,4 +1,5 @@
 import { Context } from 'hydrooj';
+import { installEditorDraftBuildPlugin } from './editor-draft-build';
 import { applyPatches } from './handler/patches';
 import { apply as applyUser } from './handler/user';
 import { apply as applyContent } from './handler/content';
@@ -82,6 +83,7 @@ async function maintainSchoolCatRewards() {
 }
 
 export async function apply(ctx: Context) {
+    installEditorDraftBuildPlugin();
     applyMobileAccess(ctx);
     applyPatches(ctx);
     applyTheme(ctx);

@@ -28,7 +28,7 @@ test('teaching membership requires a joined domain row or same-domain enrollment
     assert.deepEqual(plain(scope.missing), [6]);
 });
 
-function scopedModelHarness() {
+function scopedModelHarness(indexFails = false) {
     const writes = [];
     const identityQueries = [];
     const users = [1, 2, 3, 4, 5].map((_id) => ({ _id, uname: `user${_id}` }));
@@ -52,7 +52,25 @@ function scopedModelHarness() {
         UserModel: { coll: { find: (filter) => cursor(users, filter) }, listGroup: async () => groups,
             getById: async (_, uid) => users.find((user) => user._id === uid),
             getList: async (_, uids) => Object.fromEntries(users.filter((user) => uids.includes(user._id)).map((user) => [user._id, user])),
-            updateGroup: async (...args) => writes.push(args), collGroup: { updateOne: async (...args) => writes.push(args) }, _deleteUserCache() {},
+            collGroup: {
+                async createIndex(key, options) {
+                    assert.equal(JSON.stringify(key), JSON.stringify({ domainId: 1, name: 1 }));
+                    assert.equal(options.name, 'name'); assert.equal(options.unique, true);
+                    if (indexFails) throw new Error('fixture index failure');
+                    return 'name';
+                },
+                async insertOne(doc) {
+                    if (groups.some((group) => group.name === doc.name)) throw Object.assign(new Error('duplicate'), { code: 11000 });
+                    groups.push(structuredClone(doc)); writes.push(doc); return { insertedId: doc.name };
+                },
+                async updateOne(filter, update, options) {
+                    const group = groups.find((entry) => entry.name === filter.name);
+                    if (!group || filter.uids && (group.uids.length !== filter.uids.$size
+                        || (filter.uids.$all || []).some((uid) => !group.uids.includes(uid)))) return { matchedCount: 0 };
+                    if (update.$set) group.uids = [...update.$set.uids];
+                    writes.push([filter, update, options]); return { matchedCount: 1 };
+                },
+            }, _deleteUserCache() {},
         },
     };
     const compile = (file, require) => {
@@ -78,7 +96,7 @@ function scopedModelHarness() {
         if (name.endsWith('user')) return { userColl };
         throw new Error(name);
     });
-    return { model, handler, writes, identityQueries };
+    return { model, handler, writes, identityQueries, groups };
 }
 
 test('class edits reject global-only/guest users and temporary students before any writes', async () => {
@@ -87,8 +105,40 @@ test('class edits reject global-only/guest users and temporary students before a
     await assert.rejects(h.model.setClassStudents('system', 'A', [5], 10), /不是本域/);
     await assert.rejects(h.model.setClassStudents('system', 'A', [4], 10), /临时比赛/);
     assert.equal(h.writes.length, 0);
-    await h.model.setClassStudents('system', 'A', [1, 3], 10);
+    await h.model.setClassStudents('system', '正常班', [1, 3], 10, [1, 3]);
     assert.equal(h.writes.length, 1);
+});
+
+test('class creation refuses to write if its unique index cannot be established', async () => {
+    const h = scopedModelHarness(true);
+    await assert.rejects(h.model.createClassStudents('system', '新班型', [1, 3], 10), /无法保证班型名称唯一/);
+    assert.equal(h.writes.length, 0);
+});
+
+test('duplicate and concurrent class creation never overwrite a roster, including empty submitted rosters', async () => {
+    const h = scopedModelHarness();
+    for (const uids of [[], [1]]) await assert.rejects(h.model.createClassStudents('system', ' 正常班 ', uids, 10), /同名班型/);
+    assert.deepEqual(h.groups.find((group) => group.name === '正常班').uids, [1, 3]);
+    assert.equal(h.writes.length, 0);
+    const result = await Promise.allSettled([h.model.createClassStudents('system', '新班', [1], 10), h.model.createClassStudents('system', '新班', [3], 10)]);
+    assert.equal(result.filter((entry) => entry.status === 'fulfilled').length, 1);
+    assert.equal(h.groups.filter((group) => group.name === '新班').length, 1);
+    assert.equal(h.writes.length, 1);
+    assert.deepEqual(h.groups.find((group) => group.name === '新班').uids, [1]);
+});
+
+test('class editing requires a current roster, cannot create missing classes, and explicitly confirms clearing', async () => {
+    const h = scopedModelHarness();
+    await assert.rejects(h.model.setClassStudents('system', '正常班', [], 10, [1, 3]), /清空名单/);
+    await assert.rejects(h.model.setClassStudents('system', '正常班', [1], 10), /刷新/);
+    await assert.rejects(h.model.setClassStudents('system', '不存在', [1], 10, []), /已删除/);
+    assert.equal(h.writes.length, 0);
+    const changes = await Promise.allSettled([h.model.setClassStudents('system', '正常班', [1], 10, [1, 3]),
+        h.model.setClassStudents('system', '正常班', [3], 10, [1, 3])]);
+    assert.equal(changes.filter((entry) => entry.status === 'fulfilled').length, 1);
+    assert.deepEqual(h.groups.find((group) => group.name === '正常班').uids, [1]);
+    await h.model.setClassStudents('system', '正常班', [], 10, [1], true);
+    assert.deepEqual(h.groups.find((group) => group.name === '正常班').uids, []);
 });
 
 test('existing unsafe groups block homework targeting with explicit cleanup errors', async () => {

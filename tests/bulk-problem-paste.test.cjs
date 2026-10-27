@@ -93,7 +93,8 @@ test('integration is restricted to editor page names and native component/editor
     assert.match(page, /form input\[name="pids"\]/);
     assert.match(page, /form textarea\[name="dag"\]\[data-json\]/);
     assert.match(page, /instance\.ref\.setSelectedKeys/);
-    assert.match(page, /data\('vjEditorInstance'\)/);
+    assert.match(page, /trainingPlanSource\(textarea\)/);
+    assert.match(fs.readFileSync(path.join(root, 'frontend/training-plan-source.ts'), 'utf8'), /data\('vjEditorInstance'\)/);
     assert.match(page, /editor\.value\(value\)/);
     assert.doesNotMatch(page, /window\.editor|window\.model|request\.post|\.val\(/);
     assert.match(page, /pendingForms\.has\(event\.target/);

@@ -1151,17 +1151,33 @@ test('review pagination is clamped to real results, 30 profiles per page, with a
     assert.equal((await reviewList(h, { name: '不存在', page: '2' })).response.body.page, 1);
 });
 
-test('review POST returns to the affected student by real name instead of the removed UID filter', async () => {
+test('review POST preserves the selected status, name and page and records a one-use success notice', async () => {
     const h = harness();
     await h.model.submitEnrollment(10, 'system', { realName: '张三' }, 0);
-    const req = h.handler('Oi33EnrollmentReview', 'post', {}, 1);
+    const req = h.handler('Oi33EnrollmentReview', 'post', { returnStatus: 'unapproved', returnName: '张', returnPage: '2' }, 1);
     req.user.privAll = true;
     const urls = [];
     req.url = (...args) => { urls.push(args); return '/oi33/enrollment/review?name=student'; };
     await h.api.Oi33EnrollmentReviewHandler.prototype.post.call(req, 'system', 10, 1, 'approve');
-    assert.deepEqual(urls, [['oi33_enrollment_review', { query: { name: '张三' } }]]);
+    assert.deepEqual(urls, [['oi33_enrollment_review', { query: { status: 'unapproved', name: '张', page: 2 } }]]);
+    assert.equal(req.session.oi33EnrollmentNotice.uid, 10);
+    assert.equal(req.session.oi33EnrollmentNotice.action, 'approve');
     assert.equal(req.response.redirect, '/oi33/enrollment/review?name=student');
     assert.equal((await h.model.getEnrollment(10)).status, 'approved');
+    req.args = {};
+    await h.api.Oi33EnrollmentReviewHandler.prototype.get.call(req);
+    assert.match(req.response.body.actionNotice, /张三.*UID 10.*审核通过成功/);
+    await h.api.Oi33EnrollmentReviewHandler.prototype.get.call(req);
+    assert.equal(req.response.body.actionNotice, '', 'Success notice is consumed once');
+});
+
+test('account return navigation only accepts bounded local filter values', () => {
+    const h = harness();
+    assert.deepEqual(h.api.enrollmentReturnQuery({ returnStatus: 'pending', returnName: { $ne: '' }, returnPage: '99999', returnUrl: 'https://evil.invalid' }),
+        { status: '', name: '', page: 10000 });
+    assert.deepEqual(h.api.enrollmentReturnQuery({ returnStatus: 'approved', returnName: ' 张 ', returnPage: '-8' }),
+        { status: 'approved', name: '张', page: 1 });
+    assert.equal(h.api.enrollmentReturnQuery({ returnName: '张\n三' }).name, '');
 });
 
 test('review GET and every management POST require OJ administrator authority, not coach or domain ownership', async () => {

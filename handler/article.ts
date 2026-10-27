@@ -14,6 +14,9 @@ import {
 import type { Oi33ArticleVisibility } from '../model/types';
 import { checkUserFlag } from './utils';
 import { articleExcerpt } from './article-excerpt';
+import { applyArticleFeedback } from './article-feedback';
+import { canUploadPersonalFiles } from './personal-files';
+import { consumeArticleDraftReceipt, saveArticleDraftReceipt } from './article-draft-receipt';
 
 type ArticlePreset = 'article' | 'paste';
 const ARTICLE_VISIBILITIES: Oi33ArticleVisibility[] = ['public', 'private', 'unlisted'];
@@ -236,6 +239,7 @@ class DiscussionCreateHandler extends Handler {
         this.response.template = 'oi33_article_edit.html';
         this.response.body = {
             articleMode: 'create',
+            articleCanUpload: canUploadPersonalFiles(this),
             articleVisibility,
             articleProblemId: binding.problem?.pid || (binding.problemId ? String(binding.problemId) : ''),
             articlePreset: preset,
@@ -277,6 +281,7 @@ class DiscussionCreateHandler extends Handler {
             pin,
         });
         this.response.body = { did };
+        saveArticleDraftReceipt(this, 'new', String(did), { title, content, problemId, visibility });
         this.response.redirect = this.url('discussion_detail', { did });
     }
 }
@@ -302,6 +307,7 @@ class DiscussionEditHandler extends Handler {
         this.response.body = {
             ddoc: safeDdoc,
             articleMode: 'edit',
+            articleCanUpload: canUploadPersonalFiles(this),
             articleVisibility: this.ddoc.oi33Visibility,
             articleProblemId: await articleProblemInput(this.domain._id, this.ddoc),
             articlePreset: 'article',
@@ -359,6 +365,7 @@ class DiscussionEditHandler extends Handler {
             OplogModel.log(this, 'discussion.edit', articleForLog(this.ddoc)),
         ]);
         this.response.body = { did };
+        saveArticleDraftReceipt(this, String(did), String(did), { title, content, problemId, visibility });
         this.response.redirect = this.url('discussion_detail', { did });
     }
 
@@ -381,6 +388,7 @@ class DiscussionEditHandler extends Handler {
             DiscussionModel.del(domainId, did),
         ]);
         this.response.body = { did };
+        saveArticleDraftReceipt(this, String(did), 'mine', this.request.body);
         this.response.redirect = this.url('oi33_article_mine');
     }
 }
@@ -401,6 +409,7 @@ class ArticleMineHandler extends Handler {
         this.response.template = 'oi33_article_mine.html';
         this.response.body = {
             ddocs, page, dpcount, vndict, udict, articlePdict,
+            articleSavedDraft: consumeArticleDraftReceipt(this, 'mine'),
             page_name: 'oi33_article_mine',
         };
         addPrivateArticleHeaders(this);
@@ -509,6 +518,7 @@ async function rebuildDiscussionNode(handler: any) {
 }
 
 export async function apply(ctx: Context) {
+    applyArticleFeedback(ctx);
     ctx.on('handler/create', (handler: any) => {
         handler.oi33ArticleExcerpt = articleExcerpt;
     });
@@ -593,6 +603,7 @@ export async function apply(ctx: Context) {
                 hidden: !!(safeDdoc.hidden || safeDdoc.oi33ModerationPending),
             },
             articleVisibility: ddoc.oi33Visibility,
+            articleSavedDraft: consumeArticleDraftReceipt(handler, String(ddoc.docId)),
             articleShareUrl: isOwner && ddoc.oi33Visibility === 'unlisted'
                 ? handler.url('oi33_article_share', { did: ddoc.docId, token: ddoc.oi33ShareToken }) : null,
             articleCanManage: canManage,
@@ -600,7 +611,7 @@ export async function apply(ctx: Context) {
             articleAccessViaShare: !!handler.oi33ArticleAccessViaShare,
             page_name: 'oi33_article_detail',
         };
-        if (ddoc.oi33Visibility !== 'public' || ddoc.hidden || ddoc.oi33ModerationPending) {
+        if (ddoc.oi33Visibility !== 'public' || ddoc.hidden || ddoc.oi33ModerationPending || handler.response.body.articleSavedDraft) {
             addPrivateArticleHeaders(handler);
         }
     });

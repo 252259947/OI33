@@ -11,6 +11,7 @@
   "dependencies": {
     "html-to-text": "10.0.1",
     "nunjucks": "3.2.4",
+    "redux": "5.0.1",
     "schemastery": "3.18.0"
   },
   "devDependencies": {

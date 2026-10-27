@@ -1,0 +1,27 @@
+{% extends "layout/immersive.html" %}
+{% block content %}
+<div class="row"><div class="columns">
+  <section class="oi33-auth" aria-labelledby="oi33-lostpass-title">
+    <div class="oi33-auth__intro">
+      <a class="oi33-auth__brand" href="/"><span class="oi33-brand__mark" aria-hidden="true">HJ</span><span>huaji OJ</span></a>
+      <h1>找回账号<br>继续练习</h1>
+      <p>忘记用户名时，也可以使用注册邮箱登录。</p>
+    </div>
+    <div class="oi33-auth__form">
+      <h2 id="oi33-lostpass-title">找回密码</h2>
+      {% if model.system.get('smtp.user') %}
+      <p class="oi33-auth__lead">填写注册邮箱，我们会发送重置密码邮件。</p>
+      <form method="POST">
+        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
+        <label class="oi33-field">注册邮箱<input name="mail" type="email" autofocus autocomplete="email" required></label>
+        <input type="submit" value="{{ _('Send Password Reset Email') }}" class="oi33-auth__submit">
+      </form>
+      {% else %}
+      <p class="oi33-auth__lead">请联系你的课程老师或 OJ 管理员，并提供用户名或 UID。老师核对身份后，可请 OJ 管理员为你重置密码。</p>
+      <p class="oi33-auth__lead">重置后，使用管理员告知的临时密码登录，页面会引导你设置新密码。</p>
+      {% endif %}
+      <a href="{{ url('user_login') }}" class="oi33-auth__secondary">返回登录</a>
+    </div>
+  </section>
+</div></div>
+{% endblock %}

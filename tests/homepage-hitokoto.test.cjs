@@ -42,7 +42,7 @@ function fixture({ loggedIn = true, hitokotoPresent = true } = {}) {
         src: '{% macro render_time(time) %}{{ time }}{% endmacro %}{% macro render_duration(doc) %}1{% endmacro %}', path: name,
       };
       if (name === 'components/problem.html') return { src: '', path: name };
-      if (name === 'partials/discussion_list.html') return { src: '<p>讨论 fixture</p>', path: name };
+      if (['partials/discussion_list.html', 'partials/oi33_discussion_list.html'].includes(name)) return { src: '<p>讨论 fixture</p>', path: name };
       if (name === hitokotoTemplate && !hitokotoPresent) throw new Error('Removed hitokoto must not be loaded');
       return super.getSource(name);
     }

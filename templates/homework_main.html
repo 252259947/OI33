@@ -13,6 +13,14 @@
   </header>
   {% if oi33RecentLearningNotice %}<p class="oi33-homework-resume-notice" role="status">{{ oi33RecentLearningNotice }}</p>{% endif %}
   <div class="oi33-training-catalog">
+    {% if not handler.user._id or not handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+    <section class="oi33-learning-empty">
+      <span class="oi33-learning-empty__icon icon icon-calendar" aria-hidden="true"></span>
+      <h2>登录后查看你的作业</h2>
+      <p>登录后会显示开放给你所在班型的作业和完成进度。</p>
+      <a class="primary button" href="{{ url('user_login', query={redirect: url('homework_main')}) }}">登录查看作业</a>
+    </section>
+    {% else %}
     <section class="oi33-training-toolbar oi33-homework-toolbar" aria-label="筛选作业">
       <form method="get" action="{{ url('homework_main') }}" class="oi33-homework-search filter-form" name="filter-form" role="search">
         {% if not educationIsCoach and progress and progress != 'all' %}<input type="hidden" name="progress" value="{{ progress }}">{% endif %}
@@ -78,6 +86,7 @@
           {% else %}<p>开放给你的作业会出现在这里，现在可以先从题库开始练习。</p><a class="primary button" href="{{ url('problem_main') }}">去题库练习</a>{% endif %}
         {% endif %}
       </section>
+    {% endif %}
     {% endif %}
   </div>
 </div></div>

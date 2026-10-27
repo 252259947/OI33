@@ -1,0 +1,30 @@
+{% extends "layout/basic.html" %}
+{% block content %}
+<div class="row"><div class="columns"><section class="section">
+  <div class="section__header"><h1 class="section__title">发布反馈</h1></div>
+  <div class="section__body">
+    <p>这里仅你自己可见。未通过或审核中的内容不会公开展示；修改后仍需重新审核。</p>
+    <p><a class="rounded button" href="{{ url('oi33_article_mine') }}">我的文章</a> <a class="rounded button" href="{{ url('discussion_main') }}">返回讨论</a></p>
+    {% if feedback %}
+      <h2>{{ feedback.status }}{% if feedback.category %} · {{ feedback.category }}{% endif %}</h2>
+      {% if feedback.editable %}
+        <form method="post">
+          <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
+          <input type="hidden" name="revision" value="{{ feedback.revision }}">
+          <label>修改回复<textarea name="content" class="textbox" rows="12" required>{{ feedback.content }}</textarea></label>
+          <button type="submit" class="primary rounded button">修改并重新审核</button>
+        </form>
+      {% else %}
+        <pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{ feedback.content }}</pre>
+        {% if feedback.editUrl %}<a class="primary rounded button" href="{{ feedback.editUrl }}">修改文章并重新审核</a>
+        {% else %}<p>这是历史提交记录；若内容已更新，请查看最新记录。</p>{% endif %}
+      {% endif %}
+      <a href="{{ url('oi33_article_feedback') }}">返回全部反馈</a>
+    {% else %}
+      {% for entry in feedbackEntries %}
+        <div class="section__body"><strong>{{ entry.kind }} · {{ entry.status }}</strong> {{ datetimeSpan(entry.createdAt)|safe }} <a class="rounded button" href="{{ url('oi33_article_feedback_detail', id=entry.id) }}">查看结果</a></div>
+      {% else %}<p>暂无审核记录。提交后如正在审核，请稍后刷新此页。</p>{% endfor %}
+    {% endif %}
+  </div>
+</section></div></div>
+{% endblock %}

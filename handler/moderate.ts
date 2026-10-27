@@ -16,6 +16,9 @@ import type {
 } from '../model/types';
 import { checkOi33Admin, checkUserFlag } from './utils';
 import { calcCost, callChatCompletion, resolveChatConfig } from './ai';
+import {
+    moderationTargetMatches, readModerationTarget, updateModerationTarget,
+} from '../model/moderation-target';
 
 // Only the first N chars are sent to the AI; longer posts are still fully
 // rule-checked and stored, but the AI verdict is based on this prefix.
@@ -104,7 +107,7 @@ export function configReviewWords(cfg: any): string[] {
 // Only cheap, deterministic checks happen here — the AI verdict is always
 // computed in the background after the content is published hidden.
 
-async function syncPrecheck(h: any, kind: Oi33ModerationKind, text: string): Promise<void> {
+export async function syncPrecheck(h: any, kind: Oi33ModerationKind, text: string): Promise<void> {
     const flag = await checkUserFlag(h.user._id);
     if (flag < 1) throw new ForbiddenError('完成实名认证后才能参与讨论。');
     // Teachers/admins post freely; their content is trusted.
@@ -151,7 +154,15 @@ async function targetExists(target: Oi33ModerationTarget): Promise<boolean> {
     return false;
 }
 
-async function hideTarget(target: Oi33ModerationTarget) {
+async function hideTarget(target: Oi33ModerationTarget, expectedText?: string) {
+    if (expectedText !== undefined) {
+        const snapshot = await readModerationTarget(target);
+        if (!moderationTargetMatches(target, snapshot, {
+            contentHash: hashOf(normalizeText(expectedText)), content: expectedText,
+            targetRevision: snapshot?.oi33ModerationRevision,
+        })) return false;
+        return updateModerationTarget(target, snapshot, { hidden: true, oi33ModerationPending: true });
+    }
     if (target.drrid && target.drid) {
         await DocumentModel.setSub(
             target.domainId, DocumentModel.TYPE_DISCUSSION_REPLY,
@@ -168,41 +179,7 @@ async function hideTarget(target: Oi33ModerationTarget) {
             hidden: true, oi33ModerationPending: true,
         } as any);
     }
-}
-
-async function unhideTarget(target: Oi33ModerationTarget) {
-    // Already gone: nothing to restore. Skipping also avoids document.set's
-    // upsert:true re-creating a phantom empty topic/reply.
-    if (!await targetExists(target)) return;
-    if (target.drrid && target.drid) {
-        await DocumentModel.setSub(
-            target.domainId, DocumentModel.TYPE_DISCUSSION_REPLY,
-            target.drid, 'reply', target.drrid,
-            { hidden: false, oi33ModerationPending: false } as any,
-        );
-    } else if (target.drid) {
-        await DocumentModel.set(
-            target.domainId, DocumentModel.TYPE_DISCUSSION_REPLY, target.drid,
-            { hidden: false, oi33ModerationPending: false } as any,
-        );
-    } else if (target.did) {
-        await DiscussionModel.edit(target.domainId, target.did, {
-            hidden: false, oi33ModerationPending: false,
-        } as any);
-    }
-}
-
-async function deleteTarget(target: Oi33ModerationTarget) {
-    // Already gone: nothing to delete. Avoids delReply throwing
-    // DocumentNotFoundError when the reply was removed in the meantime.
-    if (!await targetExists(target)) return;
-    if (target.drrid && target.drid) {
-        await DiscussionModel.delTailReply(target.domainId, target.drid, target.drrid);
-    } else if (target.drid) {
-        await DiscussionModel.delReply(target.domainId, target.drid);
-    } else if (target.did) {
-        await DiscussionModel.del(target.domainId, target.did);
-    }
+    return true;
 }
 
 // --- Background AI verdict ---
@@ -305,6 +282,15 @@ async function moderateAsync(
 ) {
     const normalized = normalizeText(text);
     const hash = hashOf(normalized);
+    const snapshot = await readModerationTarget(target);
+    if (!moderationTargetMatches(target, snapshot, { contentHash: hash, content: text, targetRevision: snapshot?.oi33ModerationRevision })) return;
+    const targetRevision = new ObjectId().toHexString();
+    if (!await updateModerationTarget(target, snapshot, {
+        hidden: true, oi33ModerationPending: true, oi33ModerationRejected: false,
+        oi33ModerationRevision: targetRevision,
+        oi33ModerationHistoryPrivate: true,
+    })) return;
+    snapshot.oi33ModerationRevision = targetRevision;
     let result: AiVerdict;
     try {
         const cfg = await oi33Model.aiGetConfig();
@@ -322,12 +308,12 @@ async function moderateAsync(
     if (result.verdict === 'block' && isEdit) result.verdict = 'review';
 
     try {
-        if (result.verdict === 'pass') {
-            await unhideTarget(target);
-        } else if (result.verdict === 'block') {
-            // Silent removal — no站内信, so no "received a message" popup.
-            await deleteTarget(target);
-        }
+        const applied = await updateModerationTarget(target, snapshot, {
+            hidden: result.verdict !== 'pass',
+            oi33ModerationPending: result.verdict !== 'pass',
+            oi33ModerationRejected: result.verdict === 'block',
+        });
+        if (!applied) return; // A newer edit owns the current visibility.
         // review → stays hidden, waits in the admin queue
     } catch (e: any) {
         // Action failed (e.g. deleted in the meantime) — fail closed.
@@ -344,6 +330,7 @@ async function moderateAsync(
         preview: normalized.slice(0, 120),
         content: text,
         target,
+        targetRevision,
         verdict: result.verdict,
         source: result.source,
         category: result.category,
@@ -351,10 +338,10 @@ async function moderateAsync(
         model: result.model,
         cost: result.cost,
         status: result.verdict === 'review' ? 'pending' : 'done',
-    }).catch((e) => console.error('[oi33] failed to log moderation entry:', e));
+    } as any).catch((e) => console.error('[oi33] failed to log moderation entry:', e));
 }
 
-function kickModeration(kind: Oi33ModerationKind, uid: number, text: string, target: Oi33ModerationTarget) {
+export function kickModeration(kind: Oi33ModerationKind, uid: number, text: string, target: Oi33ModerationTarget) {
     moderateAsync(kind, uid, text, target).catch((e) => console.error('[oi33] moderateAsync failed:', e));
 }
 
@@ -366,7 +353,7 @@ function hookDomain(h: any): string {
 
 // Never throws: on a DB/config error, fail closed (moderate) rather than
 // letting content through unmoderated. Teachers bypass as usual.
-async function shouldModerate(uid: number): Promise<boolean> {
+export async function shouldModerate(uid: number): Promise<boolean> {
     try {
         const flag = await checkUserFlag(uid);
         if (flag !== 1) return false; // teachers bypass; unverified were rejected in pre-check
@@ -393,6 +380,7 @@ function applyDiscussionHooks(ctx: Context) {
             if (await shouldModerate(payload.owner)) {
                 payload.hidden = true;
                 payload.oi33ModerationPending = true;
+                payload.oi33ModerationHistoryPrivate = true;
             }
         } catch (e) {
             // Safety net (shouldModerate never throws): keep student content
@@ -514,7 +502,7 @@ function applyDiscussionHooks(ctx: Context) {
             if (target && kind) {
                 if (!(op === 'tail_reply' && h.oi33ModerationTailReplyHidden)) {
                     try {
-                        await hideTarget(target);
+                        if (!await hideTarget(target, content)) return;
                     } catch (e) {
                         // Content is already written; still run the AI verdict
                         // so it lands in the queue. Tail replies are hidden
@@ -550,7 +538,7 @@ function applyDiscussionHooks(ctx: Context) {
             const text = [title, content].filter((s) => typeof s === 'string' && s.trim()).join('\n');
             const target = { domainId: hookDomain(h), did: new ObjectId(String(did)) };
             try {
-                await hideTarget(target);
+                if (!await hideTarget(target, text)) return;
             } catch (e) {
                 console.error('[oi33] hideTarget failed:', e);
             }
@@ -564,6 +552,12 @@ function applyDiscussionHooks(ctx: Context) {
     // Keep this independent from `hidden`: Hydro rewrites topic.hidden when a
     // bound problem changes visibility, which must not clear an AI review.
     const guardPendingTopic = async (h: any) => {
+        // Native Hydro checks this for replies, but its tail-reply branch does
+        // not bind drid back to the URL did. Do not let a public topic ID be
+        // paired with a private topic's reply/history identifiers.
+        if (h.drdoc && h.ddoc && String(h.drdoc.parentId) !== String(h.ddoc.docId || h.ddoc._id)) {
+            throw new NotFoundError('Discussion');
+        }
         const did = h.ddoc?.docId;
         if (!did) return;
         const state = await DocumentModel.get(
@@ -583,12 +577,33 @@ function applyDiscussionHooks(ctx: Context) {
     });
     ctx.on('handler/before/DiscussionRaw', async (h: any) => {
         await guardPendingTopic(h);
-        const pendingReply = h.drdoc && (h.drdoc.hidden || h.drdoc.oi33ModerationPending);
-        const pendingTailReply = h.drrdoc && (h.drrdoc.hidden || h.drrdoc.oi33ModerationPending);
-        if (!pendingReply && !pendingTailReply) return;
         const uid = h.user?._id || 0;
         const flag = uid ? await checkUserFlag(uid) : 0;
         const privileged = flag >= 2 || !!h.user?.hasPerm?.(PERM.PERM_EDIT_DISCUSSION);
+        const target = {
+            domainId: hookDomain(h), did: h.ddoc?.docId,
+            drid: h.drdoc?.docId, drrid: h.drrdoc?._id,
+        };
+        const current = target.did ? await readModerationTarget(target) : null;
+        if (current?.oi33ModerationHistoryPrivate && !privileged && current.owner !== uid) {
+            if (current.hidden || current.oi33ModerationPending) throw new NotFoundError('Discussion');
+            // Native raw reads its history collection even without `all`.
+            // A previously blocked revision must never reappear after a later
+            // edit passes: public readers receive only the approved current text.
+            h.get = async () => {
+                if (h.args.time) throw new NotFoundError('Discussion');
+                if (h.args.all) {
+                    h.response.body = { history: [{ content: current.content, uid: current.editor || current.owner,
+                        time: current.updateAt || current.docId?.getTimestamp?.() || new Date() }] };
+                } else {
+                    h.response.type = 'text/markdown';
+                    h.response.body = current.content;
+                }
+            };
+        }
+        const pendingReply = h.drdoc && (h.drdoc.hidden || h.drdoc.oi33ModerationPending);
+        const pendingTailReply = h.drrdoc && (h.drrdoc.hidden || h.drrdoc.oi33ModerationPending);
+        if (!pendingReply && !pendingTailReply) return;
         // Detail pages replace pending replies with a neutral notice. Raw and
         // history endpoints have no such safe representation, so only staff
         // may read them while moderation is pending (including the author).
@@ -613,8 +628,11 @@ function applyDiscussionHooks(ctx: Context) {
             throw new NotFoundError('Discussion');
         }
         const maskReply = (doc: any) => {
-            if (!doc.hidden) return doc;
+            if (!doc.hidden && !doc.oi33ModerationPending) return doc;
             if (privileged) return { ...doc, content: `${PENDING_PREFIX} ${doc.content}` };
+            if (doc.owner === uid) return { ...doc, content: doc.oi33ModerationRejected
+                ? `（未通过审核，仅自己可查看结果。请到 [发布反馈](${h.url('oi33_article_feedback')}) 修改后重新提交。）`
+                : `（审核中，仅自己可到 [发布反馈](${h.url('oi33_article_feedback')}) 查看结果。）` };
             return { ...doc, content: PENDING_NOTICE };
         };
         if (Array.isArray(body.drdocs)) {
@@ -728,15 +746,23 @@ class Ai33ModerationHandler extends Handler {
                 this.response.redirect = this.url('oi33_ai_moderation');
                 return;
             }
+            const snapshot = await readModerationTarget(entry.target);
+            if (!moderationTargetMatches(entry.target, snapshot, entry)) {
+                throw new ValidationError('内容已被修改，请刷新后处理最新审核记录。');
+            }
+            const applied = await updateModerationTarget(entry.target, snapshot, {
+                hidden: action !== 'approve', oi33ModerationPending: action !== 'approve',
+                oi33ModerationRejected: action === 'reject',
+                oi33ModerationHistoryPrivate: true,
+            }, true);
+            if (!applied) throw new ValidationError('内容已被修改，请刷新后处理最新审核记录。');
             if (action === 'approve') {
                 // Approved content simply becomes visible again; deliberately
                 // no站内信, so no "received a message" popup.
-                await unhideTarget(entry.target);
                 await oi33Model.modSetStatus(id, 'approved', this.user._id);
             } else {
-                // Reject is deliberately silent: content is removed with no
-                // notification (the standard richtext message didn't render).
-                await deleteTarget(entry.target);
+                // Keep the rejected revision private and recoverable by its
+                // author; do not send a station message or disclose the text.
                 await oi33Model.modSetStatus(id, 'rejected', this.user._id);
             }
         }

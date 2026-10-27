@@ -362,6 +362,19 @@ export class Oi33EnrollmentHandler extends Handler {
     }
 }
 
+export function enrollmentReturnQuery(args: Record<string, unknown> = {}) {
+    const status = ['approved', 'unapproved'].includes(String(args.returnStatus)) ? String(args.returnStatus) : '';
+    const rawName = args.returnName;
+    const name = typeof rawName === 'string' && rawName.length <= 80 && !/[\u0000-\u001f\u007f]/.test(rawName) ? rawName.trim() : '';
+    const page = Math.max(1, Math.min(10000, Number.parseInt(String(args.returnPage), 10) || 1));
+    return { status, name, page };
+}
+
+function returnToReview(h: Handler, uid: number, action: string, realName: string) {
+    if (h.session) (h.session as any).oi33EnrollmentNotice = { uid, action, realName, domainId: domainOf(h), at: Date.now() };
+    h.response.redirect = h.url('oi33_enrollment_review', { query: enrollmentReturnQuery(h.args) });
+}
+
 export class Oi33EnrollmentReviewHandler extends Handler {
     async get() {
         assertAccountAdmin(this.user);
@@ -390,7 +403,13 @@ export class Oi33EnrollmentReviewHandler extends Handler {
         const passwordResetAllowedUids = (await Promise.all(enrollments.map(async (entry) =>
             await canResetStudentPassword(domainOf(this), entry._id, this.user) ? entry._id : null)))
             .filter((uid) => uid !== null);
-        this.response.body = { enrollments, page, pages, total, filterStatus, filterName, passwordResetAllowedUids };
+        const notice = (this.session as any)?.oi33EnrollmentNotice;
+        if (this.session) delete (this.session as any).oi33EnrollmentNotice;
+        const labels = { approve: '审核通过', reject: '退回补充', disable: '停用账号', enable: '恢复启用',
+            extend: '延长有效期', convert: '转为日常账号', reset_password: '重置密码' };
+        const actionNotice = notice?.domainId === domainOf(this) && Date.now() - notice.at < 300000 && labels[notice.action]
+            ? `${notice.realName || '学生'}（UID ${notice.uid}）：${labels[notice.action]}成功。${notice.action === 'reset_password' ? '下次登录须先修改密码。' : ''}` : '';
+        this.response.body = { enrollments, page, pages, total, filterStatus, filterName, passwordResetAllowedUids, actionNotice };
     }
 
     @requireSudo
@@ -403,7 +422,7 @@ export class Oi33EnrollmentReviewHandler extends Handler {
             throw new ValidationError('password_reset', null, '密码重置未完成或账号状态已变化，请刷新页面后重试。');
         }
         const target = await getEnrollment(uid);
-        this.response.redirect = this.url('oi33_enrollment_review', { query: { name: target?.realName || '' } });
+        returnToReview(this, uid, 'reset_password', target?.realName || '');
     }
 
     @param('uid', Types.UnsignedInt)
@@ -432,7 +451,7 @@ export class Oi33EnrollmentReviewHandler extends Handler {
                     validUntil ? { validUntil: new Date(validUntil) } : {});
             } else throw new Error('操作无效。');
         } catch (e: any) { throw new ValidationError('enrollment', e.message); }
-        this.response.redirect = this.url('oi33_enrollment_review', { query: { name: target.realName } });
+        returnToReview(this, uid, action, target.realName);
     }
 }
 

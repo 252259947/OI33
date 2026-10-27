@@ -1,0 +1,5 @@
+.oi33-upload-disabled { opacity: .45; cursor: not-allowed !important; }
+.oi33-article-draft-notice { padding: 12px 16px; margin-bottom: 16px; border: 1px solid var(--oi33-line, #d8ddf0); border-radius: 10px; background: var(--oi33-surface-2, #f5f4ff); color: var(--oi33-text, inherit); }
+.oi33-article-draft-notice[hidden] { display: none; }
+.oi33-article-draft-notice .button { margin: 8px 8px 0 0; }
+.oi33-article-compose__hint { color: var(--oi33-text-2, #718096); font-size: 13px; margin: 8px 0; }

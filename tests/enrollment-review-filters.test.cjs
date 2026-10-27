@@ -27,7 +27,7 @@ env.addGlobal('url', (name, args = {}) => {
 });
 env.addGlobal('datetimeSpan', () => '<span>2026-10-08</span>');
 function render(context = {}) {
-    return env.render('oi33_enrollment_review.html', { handler: { csrfToken: 'csrf-test' },
+    return env.render('oi33_enrollment_review.html', { handler: { csrfToken: 'csrf-test', user: { _id: 2 } },
         filterStatus: '', filterName: '', page: 1, pages: 1, total: 0, enrollments: [], ...context });
 }
 function form(html, marker) {
@@ -228,17 +228,64 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('real Chrome reset confirmation c
         await Promise.all([page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame()), button.click()]);
         await page.waitForLoadState('load');
         assert.equal(posted.length, 1);
-        assert.deepEqual(Object.fromEntries(posted[0]), { csrfToken: 'csrf-test', uid: '45', revision: '9', action: 'reset_password' });
+        assert.deepEqual(Object.fromEntries(posted[0]), { returnStatus: '', returnName: '', returnPage: '1', csrfToken: 'csrf-test', uid: '45', revision: '9', action: 'reset_password' });
         assert.equal(new URL(page.url()).search, '', 'never submit forged query uid/revision');
-        const unexpectedDialogs = [];
-        page.on('dialog', async (dialog) => { unexpectedDialogs.push(dialog.message()); await dialog.dismiss(); });
+        await page.evaluate(() => { window.confirmCalls = []; window.confirm = (message) => { window.confirmCalls.push(message); return false; }; });
+        await page.locator('.oi33-enrollment__account-actions button[name=action][value=disable]').click();
+        assert.equal(posted.length, 1, 'Canceling disable must not send a request');
+        assert.match(await page.evaluate(() => window.confirmCalls[0]), /停用.*测试学生.*UID 45/);
+        assert.doesNotMatch(await page.evaluate(() => window.confirmCalls[0]), /123456/);
+        await page.evaluate(() => { window.confirm = () => true; });
         await Promise.all([page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame()),
             page.locator('.oi33-enrollment__account-actions button[name=action][value=disable]').click()]);
         await page.waitForLoadState('load');
-        assert.deepEqual(unexpectedDialogs, [], 'Disabling an account must not trigger reset confirmation');
         assert.equal(posted.length, 2);
-        assert.deepEqual(Object.fromEntries(posted[1]), { csrfToken: 'csrf-test', uid: '45', revision: '9', action: 'disable' });
+        assert.deepEqual(Object.fromEntries(posted[1]), { returnStatus: '', returnName: '', returnPage: '1', csrfToken: 'csrf-test', uid: '45', revision: '9', action: 'disable' });
     } finally { await browser.close(); }
+});
+
+if (process.env.OI33_LAYOUT_TEST === '1') test('account POST keeps active filters, page and scroll location after its success redirect', async () => {
+    const { chromium } = require('playwright');
+    const bundle = buildSync({ entryPoints: [path.join(root, 'frontend/enrollment-review.page.ts')], bundle: true,
+        write: false, format: 'iife', globalName: 'ReviewFilters', external: ['@hydrooj/ui-default'] }).outputFiles[0].text;
+    const browser = await chromium.launch({ channel: 'chrome', headless: true });
+    let posted;
+    const server = require('node:http').createServer(async (request, response) => {
+        if (request.method === 'POST') {
+            const chunks = []; for await (const chunk of request) chunks.push(chunk);
+            posted = Object.fromEntries(new URLSearchParams(Buffer.concat(chunks).toString()));
+            const query = new URLSearchParams({ status: posted.returnStatus, name: posted.returnName, page: posted.returnPage });
+            response.writeHead(302, { location: `${route}?${query}` }); response.end(); return;
+        }
+        const html = render({ filterStatus: 'approved', filterName: '学生', page: 2, pages: 3, total: 80,
+            actionNotice: posted ? '学生 12（UID 112）：停用账号成功。' : '',
+            enrollments: Array.from({ length: 30 }, (_, i) => ({ _id: 100 + i, realName: `学生 ${i}`, revision: 2,
+                status: 'approved', enabled: true, accountType: 'regular', history: [] })) });
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end('<!doctype html><style>.section{min-height:320px;margin:24px}.section__body{padding:20px}</style>'
+            + html + '<script>window.require=()=>({NamedPage:function(){},addPage(){}});window.confirm=()=>true;</script>'
+            + `<script>${bundle}</script><script>ReviewFilters.installEnrollmentReviewFilters();</script>`);
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+        const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+        await page.goto(`http://127.0.0.1:${server.address().port}${route}?status=approved&name=${encodeURIComponent('学生')}&page=2`);
+        const action = page.locator('button[name=action][value=disable]').nth(12);
+        await action.scrollIntoViewIfNeeded();
+        const before = await page.evaluate(() => scrollY);
+        assert.ok(before > 1000);
+        await Promise.all([page.waitForURL((url) => url.pathname === route && url.searchParams.get('status') === 'approved'
+            && url.searchParams.get('page') === '2', { waitUntil: 'load' }), action.click()]);
+        await page.waitForSelector('[data-enrollment-action-success]', { timeout: 5000 }).catch(async () => {
+            assert.fail(JSON.stringify({ posted, url: page.url(), body: (await page.locator('body').innerText()).slice(0, 600) }));
+        });
+        await page.waitForFunction((y) => Math.abs(scrollY - y) < 2, before);
+        assert.equal(new URL(page.url()).searchParams.get('name'), '学生');
+        assert.equal(posted.returnPage, '2');
+        assert.equal(posted.uid, '112');
+        assert.equal(posted.returnStatus, 'approved');
+        assert.match(await page.locator('[data-enrollment-action-success]').innerText(), /停用账号成功/);
+    } finally { await browser.close(); await new Promise((resolve) => server.close(resolve)); }
 });
 
 if (process.env.OI33_LAYOUT_TEST === '1') test('real Chrome GET forms: immediate status reset, explicit name submit, Enter and pagination', async () => {

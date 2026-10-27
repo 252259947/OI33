@@ -4,7 +4,7 @@ import {
 } from 'hydrooj';
 import { assertEducationCoach, isEducationAdmin, isEducationCoach } from '../model/education-auth';
 import {
-    confirmRosterChange, createHomeworkRoster, educationRosterColl, ensureEducationIndexes,
+    confirmRosterChange, createClassStudents, createHomeworkRoster, educationRosterColl, ensureEducationIndexes,
     getHomeworkRoster, getTeachingStudentScope, listClassGroups, normalizeClassNames, prepareRosterChange, resolveClassStudents, setClassStudents,
 } from '../model/education';
 import { homeworkProgress, uniqueStudentIds } from '../model/education-policy';
@@ -99,8 +99,21 @@ class EducationClassesHandler extends Handler {
 
     @param('name', Types.String)
     @param('uids', Types.String, true)
-    async postUpdate(domainId: string, name: string, uids = '') {
-        await setClassStudents(domainId, name.trim(), parseUids(uids), this.user._id);
+    async postCreate(domainId: string, name: string, uids = '') {
+        await createClassStudents(domainId, name.trim(), parseUids(uids), this.user._id);
+        this.response.redirect = this.url('oi33_education_classes');
+    }
+
+    @param('name', Types.String)
+    @param('uids', Types.String, true)
+    @param('originalUids', Types.String, true)
+    @param('allowEmpty', Types.Boolean)
+    async postUpdate(domainId: string, name: string, uids = '', originalUids?: string, allowEmpty = false) {
+        // Hydro converts an explicitly submitted empty optional string to
+        // undefined; distinguish it from a missing stale-page snapshot.
+        if (originalUids === undefined && this.request?.body?.originalUids === '') originalUids = '';
+        await setClassStudents(domainId, name.trim(), parseUids(uids), this.user._id,
+            typeof originalUids === 'string' ? parseUids(originalUids) : undefined, allowEmpty);
         this.response.redirect = this.url('oi33_education_classes');
     }
 }

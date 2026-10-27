@@ -6,6 +6,7 @@ import { EDITOR_FONT_MAX, EDITOR_FONT_MIN, installEditorWheelZoom } from './edit
 import { installPretestFeedback } from './pretest-feedback';
 import { installSampleActions } from './sample-actions';
 import { createEditorSettingsSync } from './editor-account-settings';
+import { installEditorDraftGuard } from './editor-draft-guard';
 import './problem-workbench.css';
 
 const problemPages = ['problem_detail', 'contest_detail_problem', 'homework_detail_problem'];
@@ -134,6 +135,7 @@ type ScratchpadStore = {
     dispatch: (action: any) => any;
     getState: () => any;
     subscribe: (listener: () => void) => () => void;
+    replaceReducer: (reducer: (state: any, action: any) => any) => void;
 };
 
 type ScratchpadRoot = HTMLElement & {
@@ -631,6 +633,7 @@ function installPretestFlow(root: ScratchpadRoot, store: ScratchpadStore) {
 
     root.addEventListener('click', (event) => {
         if ((event.target as Element | null)?.closest('.scratchpad-fill-button')) {
+            feedback.rememberInput();
             window.setTimeout(() => {
                 feedback.filledSample();
                 store.dispatch({
@@ -678,6 +681,8 @@ function mountScratchpadWorkbench() {
     const toolbar = root?.querySelector<HTMLElement>('.scratchpad__toolbar');
     const store = getScratchpadStore();
     if (!root || !toolbar || !store) return false;
+
+    void installEditorDraftGuard(root, store, (window as any).UserContext, (window as any).UiContext);
 
     root.querySelectorAll<HTMLElement>('.problem-content').forEach(installSampleActions);
 

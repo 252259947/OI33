@@ -12,7 +12,8 @@
     </div>
     <div class="oi33-auth__form">
       <h2 id="oi33-register-title">创建账号</h2>
-      <p class="oi33-auth__lead">先填写邮箱，我们会发送账号验证邮件。</p>
+      {% set verifyEmail = model.system.get('smtp.verify') and model.system.get('smtp.user') %}
+      <p class="oi33-auth__lead">{% if verifyEmail %}先填写邮箱，我们会发送账号验证邮件。{% else %}先填写注册邮箱，下一步设置用户名和密码。{% endif %}</p>
       <form method="POST" captcha>
         <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
         <label class="oi33-field">
@@ -20,7 +21,7 @@
           <input name="mail" type="email" autofocus autocomplete="email" required>
         </label>
         <div class="oi33-auth__captcha">{{ captcha|safe }}</div>
-        <input id="submit" type="submit" value="{{ _('Send Verification Email') }}" class="oi33-auth__submit">
+        <input id="submit" type="submit" value="{% if verifyEmail %}{{ _('Send Verification Email') }}{% else %}下一步{% endif %}" class="oi33-auth__submit">
         <a href="{{ url('user_login') }}" class="oi33-auth__secondary">已有账号？{{ _('Login') }}</a>
       </form>
     </div>

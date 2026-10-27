@@ -5,10 +5,10 @@
     <div class="section__body">
       <p>一个学生可以属于多个班型；布置作业时，所选班型的学生合并去重。班型只决定学习范围，不授予教练或管理员权限。仅可添加已加入本域或在本域提交身份申请的日常学生，临时比赛账号不能加入教学班型。</p>
       <form method="post" class="education-class-form">
-        <input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="update">
+        <input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="create">
         <label>新班型名称<input class="textbox" name="name" required maxlength="80" placeholder="例如：提高班 / 周六班"></label>
         {% set pickerUids = [] %}{% include "partials/education_student_picker.html" %}
-        <button class="primary rounded button" type="submit">保存班型</button>
+        <button class="primary rounded button" type="submit">创建班型</button>
       </form>
     </div>
   </div>
@@ -19,8 +19,10 @@
         <details><summary>编辑班型成员</summary>
           <form method="post" class="education-class-form">
             <input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="update"><input type="hidden" name="name" value="{{ group.name }}">
+            <input type="hidden" name="originalUids" value="{{ group.uids | join(',') }}">
             {% set pickerUids = group.uids %}{% include "partials/education_student_picker.html" %}
             <p class="help-text">保存会替换本班型成员，其他班型不变。已发布作业的应交名单不自动重算；作业访问范围会随当前班型变化。</p>
+            {% if group.uids | length %}<label class="help-text" data-class-clear-confirm><input type="checkbox" name="allowEmpty" value="true"> 确认清空本班型名单（仅在移除全部学生时勾选）</label>{% endif %}
             <button class="rounded button" type="submit">保存成员</button>
           </form>
         </details>

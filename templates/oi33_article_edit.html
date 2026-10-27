@@ -15,10 +15,14 @@
       </div>
     </header>
 
-    <form method="post" class="oi33-article-compose__form">
+    <form method="post" class="oi33-article-compose__form" data-article-compose data-article-owner="{{ handler.domain._id }}:{{ handler.user._id }}" data-article-id="{{ ddoc.docId if ddoc else 'new' }}" data-article-upload="{{ '1' if articleCanUpload else '0' }}">
       <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}">
       <section class="section oi33-article-compose__main">
         <div class="section__body">
+          <div class="oi33-article-draft-notice" data-article-draft-notice hidden>
+            <p data-draft-description></p><button class="rounded button" type="button" data-draft-restore>恢复草稿</button><button class="rounded button" type="button" data-draft-discard>舍弃草稿</button>
+          </div>
+          <p class="oi33-article-compose__hint" data-article-draft-status role="status"></p>
           <label class="oi33-article-field">
             <span>标题</span>
             <input name="title" class="textbox" maxlength="100" required autofocus
@@ -37,6 +41,7 @@
             extra_style: 'height: 560px',
             extra_textarea_class: 'auto-resize oi33-article-editor'
           }) }}
+          {% if not articleCanUpload %}<p class="oi33-article-compose__hint">图片可通过链接插入；当前账号没有本地图片上传权限。</p>{% endif %}
         </div>
       </section>
 

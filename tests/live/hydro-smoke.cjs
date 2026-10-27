@@ -15,6 +15,7 @@ const { checkEditorSettings } = require('./editor-settings-checks.cjs');
 const { checkAccountUsername } = require('./account-username-checks.cjs');
 const { checkPublicStudentIdentity } = require('./public-student-identity-checks.cjs');
 const { checkStudentScoreboardIdentity } = require('./scoreboard-student-identity-checks.cjs');
+const { checkArticleUx } = require('./article-ux-checks.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const globalModules = process.env.OI33_QA_GLOBAL_MODULES || '/usr/local/share/.config/yarn/global/node_modules';
@@ -318,7 +319,7 @@ async function checkHomeworkAccess(db, actors, fixtureData) {
   check('legacy my-homework entry leads to the same current-class list', result.status < 400 && !!result.location
     && new URL(result.location, base).pathname === '/homework', `status ${result.status}; location ${result.location}`);
   for (const actor of [powerfulStudent, outsider]) {
-    if (actor === outsider) await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,6' });
+    if (actor === outsider) await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,6', originalUids: (await db.collection('user.group').findOne({ domainId: 'system', name: '基础班' })).uids.join(',') });
     result = await actor('/homework');
     check(`student without target classes cannot list homework (${actor === outsider ? 'ordinary' : 'legacy elevated permissions'})`,
       result.status === 200 && !result.body.tdocs.some((doc) => String(doc.docId) === tid));
@@ -329,7 +330,7 @@ async function checkHomeworkAccess(db, actors, fixtureData) {
     result = await actor(submitUrl, submission);
     check(`unassigned student cannot submit homework (${actor === outsider ? 'ordinary' : 'elevated'})`, result.status >= 400 && result.status < 500);
   }
-  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6' });
+  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6', originalUids: (await db.collection('user.group').findOne({ domainId: 'system', name: '基础班' })).uids.join(',') });
   result = await otherCoach('/homework');
   check('coach without any class membership sees all homework and filters', result.status === 200
     && result.body.tdocs.some((doc) => String(doc.docId) === tid) && result.body.groups.includes('仅教师可见班'));
@@ -369,14 +370,14 @@ async function checkHomeworkAccess(db, actors, fixtureData) {
   const record = await db.collection('record').findOne({ _id: new ObjectId(result.body.rid) });
   check('direct submission remains bound to the actual homework and problem', record?.uid === 5
     && String(record.contest) === tid && record.pid === fixtureData.pid && (await status(5))?.attend === 1);
-  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,6' });
+  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,6', originalUids: (await db.collection('user.group').findOne({ domainId: 'system', name: '基础班' })).uids.join(',') });
   for (const [route, data] of [[`/homework/${tid}`, null], [problemUrl, null], [submitUrl, submission]]) {
     result = await outsider(route, data);
     check(`transferred-out student loses access despite existing attendance ${route}`, result.status >= 400 && result.status < 500);
   }
   check('transfer-out preserves historical participation and submission', !!await status(5)
     && !!await db.collection('record').findOne({ _id: record._id }));
-  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6,8' });
+  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6,8', originalUids: (await db.collection('user.group').findOne({ domainId: 'system', name: '基础班' })).uids.join(',') });
   result = await powerfulStudent(problemUrl);
   check('newly transferred-in student can immediately solve current class homework', result.status === 200 && (await status(8))?.attend === 1);
   check('automatic participation and class transfer never silently rewrite the fixed roster', JSON.stringify(await rosterFor()) === originalRoster);
@@ -410,7 +411,7 @@ async function checkHomeworkAccess(db, actors, fixtureData) {
     && !result.body.tdocs.some((doc) => String(doc.docId) === String(unassignedId)));
   result = await student(`/homework/${unassignedId}`);
   check('old no-class homework also denies student direct URLs', result.status >= 400 && result.status < 500);
-  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6' });
+  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6', originalUids: (await db.collection('user.group').findOne({ domainId: 'system', name: '基础班' })).uids.join(',') });
 }
 async function probeMessageSubscription(credential) {
   secrets.push(credential);
@@ -483,7 +484,7 @@ exports.apply = async function(ctx) {
   if (!await DomainModel.get('system')) await DomainModel.add('system', 2, 'Isolated QA', 'Synthetic fixture only');
   const users = {};
   for (const [name, uid, priv] of [['nobody',0,PRIV.PRIV_DEFAULT],['qa_admin',2,PRIV.PRIV_ALL],['qa_coach',3,PRIV.PRIV_DEFAULT],['qa_student',4,PRIV.PRIV_DEFAULT],['qa_outsider',5,PRIV.PRIV_DEFAULT],['qa_new',6,PRIV.PRIV_DEFAULT],['qa_other_coach',7,PRIV.PRIV_DEFAULT],['qa_power_student',8,PRIV.PRIV_DEFAULT],['qa_coach_no_file',9,PRIV.PRIV_DEFAULT & ~PRIV.PRIV_CREATE_FILE],['qa_learning_student',10,PRIV.PRIV_DEFAULT],['qa_name_student',11,PRIV.PRIV_DEFAULT]]) {
-    users[name] = await UserModel.create(name + '@fixture.invalid', name, ${JSON.stringify(password)}, uid, '127.0.0.1', priv);
+    users[name] = await UserModel.create(name + '@fixture.invalid', name, ${JSON.stringify(password)}, uid, '127.0.0.1', uid === 0 ? priv | PRIV.PRIV_REGISTER_USER : priv);
   }
   await DomainModel.addRole('system', 'coach', PERM.PERM_DEFAULT | PERM.PERM_CREATE_HOMEWORK | PERM.PERM_EDIT_HOMEWORK_SELF);
   await DomainModel.setUserRole('system', 3, 'coach', true);
@@ -533,6 +534,7 @@ exports.apply = async function(ctx) {
   const articleContent = ${JSON.stringify('QA excerpt $\\frac{1}{2}$ and $x^2$.')};
   const articleId = await articles.addArticle({ domainId: 'system', owner: 2, title: 'QA formula article',
     content: articleContent, visibility: 'public', binding, ip: '127.0.0.1' });
+  await require(base + '/handler/moderate.ts').apply(ctx);
   fs.writeFileSync(${JSON.stringify(ready)}, JSON.stringify({users,pid,otherPid,lang,articleId:String(articleId),articleContent,tid:String(tid),otherTid:String(otherTid),
     identityArticleId:String(identityArticleId),trainingId:String(trainingId),acceptedStatus:STATUS.STATUS_ACCEPTED,wrongStatus:STATUS.STATUS_WRONG_ANSWER}));
 };
@@ -569,6 +571,18 @@ exports.apply = async function(ctx) {
   await waitFor(async () => (await fetch(`${base}/login`)).status < 500, 'Hydro HTTP', 30000);
   const fixtureData = JSON.parse(fs.readFileSync(ready, 'utf8'));
   await checkHomepage(session(), 'anonymous empty');
+  const anonymousUx = session();
+  for (const [route, expected] of [['/login', '用户名或邮箱'], ['/lostpass', '课程老师或 OJ 管理员'],
+    ['/register', '下一步设置用户名和密码'], ['/homework', '登录后查看你的作业']]) {
+    const page = await anonymousUx(route, null, { html: true });
+    check(`real anonymous recovery and learning guidance ${route}`, page.status === 200 && page.body.raw?.includes(expected),
+      `status=${page.status}`);
+  }
+  const emailLogin = session();
+  await login(emailLogin, 'qa_student@fixture.invalid');
+  const emailProfile = await emailLogin('/homework', null, { html: true });
+  check('registered email still signs into the normal student homework view', emailProfile.status === 200
+    && !emailProfile.body.raw?.includes('登录后查看你的作业') && emailProfile.body.raw?.includes('name="q"'));
   const admin = session(); const coach = session(); const student = session(); const outsider = session(); const applicant = session();
   const otherCoach = session(); const powerfulStudent = session(); const noFileCoach = session();
   await login(admin, 'qa_admin'); await login(coach, 'qa_coach'); await login(student, 'qa_student');
@@ -621,8 +635,39 @@ exports.apply = async function(ctx) {
   doc = await db.collection('oi33_enrollment').findOne({ _id: 6 });
   check('enrollment persisted approved', doc?.status === 'approved' && doc.revision === 2);
   await checkHomepageFortune(applicant, 'newly approved applicant in existing session', true);
-  result = await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,6' });
+  result = await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,6', originalUids: (await db.collection('user.group').findOne({ domainId: 'system', name: '基础班' })).uids.join(',') });
   check('coach updates class membership over HTTP', result.status < 400, JSON.stringify(result.body));
+  const classFixture = 'QA atomic roster';
+  const groupDoc = () => db.collection('user.group').findOne({ domainId: 'system', name: classFixture });
+  result = await coach('/oi33/education/classes', { operation: 'create', name: classFixture, uids: '4,6' });
+  check('new class uses a dedicated creation operation', result.status < 400 && (await groupDoc())?.uids.join(',') === '4,6');
+  const classNameIndex = (await db.collection('user.group').listIndexes().toArray()).find(index => index.name === 'name');
+  check('class creation establishes the native atomic uniqueness index on a fresh database',
+    classNameIndex?.unique === true && JSON.stringify(classNameIndex.key) === JSON.stringify({ domainId: 1, name: 1 }));
+  for (const uids of ['', '4']) {
+    result = await coach('/oi33/education/classes', { operation: 'create', name: classFixture, uids });
+    check(`duplicate class creation cannot replace its roster (${uids || 'empty'})`, result.status >= 400 && (await groupDoc())?.uids.join(',') === '4,6');
+  }
+  result = await coach('/oi33/education/classes', { operation: 'create', name: classFixture + ' empty', uids: '' });
+  check('a new empty teaching class is valid', result.status < 400);
+  result = await coach('/oi33/education/classes', { operation: 'update', name: classFixture + ' empty', originalUids: '', uids: '4' });
+  check('an explicitly empty original roster survives native optional parameter conversion', result.status < 400
+    && (await db.collection('user.group').findOne({ domainId: 'system', name: classFixture + ' empty' }))?.uids.join(',') === '4');
+  result = await coach('/oi33/education/classes', { operation: 'update', name: classFixture + ' empty', originalUids: '4', uids: '', allowEmpty: 'true' });
+  check('a teacher can explicitly confirm clearing a roster', result.status < 400
+    && (await db.collection('user.group').findOne({ domainId: 'system', name: classFixture + ' empty' }))?.uids.length === 0);
+  const concurrentCreates = await Promise.all([coach('/oi33/education/classes', { operation: 'create', name: classFixture + ' race', uids: '4' }),
+    otherCoach('/oi33/education/classes', { operation: 'create', name: classFixture + ' race', uids: '6' })]);
+  check('concurrent same-name creation succeeds exactly once', concurrentCreates.filter((response) => response.status < 400).length === 1
+    && await db.collection('user.group').countDocuments({ domainId: 'system', name: classFixture + ' race' }) === 1);
+  const concurrentEdits = await Promise.all([coach('/oi33/education/classes', { operation: 'update', name: classFixture, originalUids: '4,6', uids: '4' }),
+    otherCoach('/oi33/education/classes', { operation: 'update', name: classFixture, originalUids: '4,6', uids: '6' })]);
+  check('concurrent roster edit rejects the stale update', concurrentEdits.filter((response) => response.status < 400).length === 1
+    && (await groupDoc()).uids.length === 1);
+  const remainingUids = (await groupDoc()).uids.join(',');
+  result = await coach('/oi33/education/classes', { operation: 'update', name: classFixture, originalUids: remainingUids, uids: '' });
+  check('clearing a populated class requires explicit confirmation', result.status >= 400 && (await groupDoc()).uids.join(',') === remainingUids);
+  await db.collection('user.group').deleteMany({ domainId: 'system', name: { $in: [classFixture, classFixture + ' race', classFixture + ' empty'] } });
   await homeworkDefaults(admin, 'administrator', 'Pacific/Kiritimati');
   const defaults = await homeworkDefaults(coach, 'coach', 'Pacific/Honolulu');
   const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
@@ -657,7 +702,7 @@ exports.apply = async function(ctx) {
   }
   result = await coach(`/oi33/education/homework/${homeworkId}`);
   check('coach progress includes never-started students', result.status < 400 && result.body.summary?.total === 2 && result.body.summary?.notStarted === 2, JSON.stringify(result.body));
-  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6' });
+  await coach('/oi33/education/classes', { operation: 'update', name: '基础班', uids: '4,5,6', originalUids: (await db.collection('user.group').findOne({ domainId: 'system', name: '基础班' })).uids.join(',') });
   const unchanged = await db.collection('oi33_education_roster').findOne({ _id: roster._id });
   check('class change does not silently rewrite historical snapshot', unchanged.entries.length === 2);
   await checkEmptyHomeworkLifecycle(db, coach, student, defaults, fixtureData.pid);
@@ -670,6 +715,7 @@ exports.apply = async function(ctx) {
   await checkAccountUsername({ db, check, session, login, password });
   await checkPublicStudentIdentity({ db, check, actors: { student, coach, admin }, fixtureData, session, login, report });
   await checkStudentScoreboardIdentity({ db, check, actors: { student, applicant, admin }, fixtureData });
+  await checkArticleUx({ db, check, actors: { student, outsider, admin, coach }, fixtureData });
   const multiple = new URLSearchParams({ users: 'qa_regular,QA Regular,R01', accountType: 'regular' });
   multiple.append('groups', '基础班'); multiple.append('groups', '提高班');
   result = await admin('/oi33/accounts/batch', multiple);

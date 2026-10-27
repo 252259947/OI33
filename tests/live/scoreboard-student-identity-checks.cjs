@@ -71,6 +71,8 @@ exports.checkStudentScoreboardIdentity = async function ({ db, check, actors, fi
     for (const [view, options] of [['HTML', { html: true }], ['PJAX', { html: true, headers: { 'X-PJAX': 'true' } }]]) {
       result = await student(route, null, options);
       const cells = userCells(result.body.raw || '');
+      if (view === 'HTML') check(`real ${kind} scoreboard includes name search beside native group filters`,
+        result.body.raw?.includes('id="oi33-scoreboard-query"') && result.body.raw?.includes('class="select filter"'));
       check(`student ${kind} real ${view} renders real names in linked user cells`, result.status === 200
         && cells.length === 2 && accounts.every(account => cells.some(cell => cell.includes(`/user/${account._id}`)
           && text(cell) === names[account._id] && !text(cell).includes(account.uname)))

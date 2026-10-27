@@ -20,7 +20,7 @@ exports.checkLearningUx = async function ({ db, check, actors, fixtureData, sess
   result = await learningStudent('/', null, { html: true });
   check('homepage native continue link has the requested wording and safe endpoint',
     result.status === 200 && /href="\/oi33\/learning\/continue"[^>]*>继续练习/.test(result.body.raw || ''));
-  result = await coach('/oi33/education/classes', { operation: 'update', name: group, uids: '4,6,10' });
+  result = await coach('/oi33/education/classes', { operation: 'create', name: group, uids: '4,6,10' });
   check('learning UX fixture creates a separate teaching class over the native route', result.status < 400);
   const day = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   async function createHomework(suffix, pids) {
@@ -112,7 +112,7 @@ exports.checkLearningUx = async function ({ db, check, actors, fixtureData, sess
     && (result.body.raw || '').includes('上次打开的作业或训练计划已不可访问'));
   await learningStudent(`/homework/${partial}`);
   const beforeRemoval = JSON.stringify(await recent(10));
-  await coach('/oi33/education/classes', { operation: 'update', name: group, uids: '4,6' });
+  await coach('/oi33/education/classes', { operation: 'update', name: group, uids: '4,6', originalUids: '4,6,10' });
   result = await learningStudent('/oi33/learning/continue', null, { html: true });
   check('recent homework continuation rechecks changed class membership', result.status < 400
     && result.location === '/homework?resume=unavailable');
@@ -122,7 +122,7 @@ exports.checkLearningUx = async function ({ db, check, actors, fixtureData, sess
   const continuedStudent = await student('/oi33/learning/continue?uid=10', null, { html: true });
   check('forged continuation uid never borrows another students stored target',
     continuedStudent.status < 400 && continuedStudent.location !== `/homework/${partial}`);
-  await coach('/oi33/education/classes', { operation: 'update', name: group, uids: '4,6,10' });
+  await coach('/oi33/education/classes', { operation: 'update', name: group, uids: '4,6,10', originalUids: '4,6' });
 
   // Real-name searches are restricted to teachers and existing scope. All names
   // and accounts in this fixture are synthetic; requests never touch production.
@@ -158,7 +158,7 @@ exports.checkLearningUx = async function ({ db, check, actors, fixtureData, sess
   result = await coach(search({ q: 'QA', tid: partial, mode: 'add' }));
   check('supplement selector includes only current homework class students', result.status === 200
     && result.body.students.every(entry => [4, 6, 10].includes(entry.uid)));
-  await coach('/oi33/education/classes', { operation: 'update', name: group, uids: '4,5,6,10' });
+  await coach('/oi33/education/classes', { operation: 'update', name: group, uids: '4,5,6,10', originalUids: '4,6,10' });
   result = await coach(search({ q: 'QA 5', tid: partial, mode: 'add' }));
   check('newly assigned student appears in supplementary picker immediately', result.status === 200
     && result.body.students.some(entry => entry.uid === 5));

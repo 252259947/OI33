@@ -188,7 +188,7 @@ const env = new nunjucks.Environment(new TemplateLoader(path.join(root, 'templat
 const templateState = (extra = {}) => ({
   tdocs: [catalog.annotateHomeworkProgress(homework('one'), { detail: { 1: { status: 1 } } }, now)],
   q: '', group: '', groups: ['基础班'], progress: 'unfinished', page: 1, tpcount: 2, educationIsCoach: false,
-  handler: { user: { hasPerm: () => false } }, perm: {}, model: { contest: { isDone: () => false, isNotStarted: () => false } },
+  handler: { user: { _id: 17, hasPriv: () => true, hasPerm: () => false } }, perm: {}, model: { contest: { isDone: () => false, isNotStarted: () => false } },
   datetimeSpan: () => '<time>2026-10-22 20:00</time>', url: (name) => `/${name}`,
   utils: { buildQueryString: (args) => new URLSearchParams(Object.entries(args).filter(([key]) => key !== '__keywords')).toString() },
   paginator: { render: (_, __, args) => `pagination:${args.add_qs}` }, ...extra,

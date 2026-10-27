@@ -532,7 +532,8 @@ async function main() {
   write(path.join(profile, 'config.json'), { host: '127.0.0.1', port: String(mongoPort), name: run.replaceAll('-', '_') });
   write(path.join(profile, 'addon.json'), [path.join(globalModules, '@hydrooj/ui-default'), path.join(fixture, 'addon')]);
   write(path.join(fixture, 'addon/package.json'), { name: 'oi33-enrollment-name-qa', version: '1.0.0', main: 'index.js' });
-  for (const name of ['oi33_enrollment.html', 'oi33_enrollment_review.html', 'oi33_password_change.html']) {
+  for (const name of ['oi33_enrollment.html', 'oi33_enrollment_review.html', 'oi33_password_change.html', 'partials/enrollment_review_return.html']) {
+    fs.mkdirSync(path.dirname(path.join(fixture, 'addon/templates', name)), { recursive: true });
     fs.copyFileSync(path.join(root, 'templates', name), path.join(fixture, 'addon/templates', name));
   }
   const ready = path.join(fixture, 'ready.json');

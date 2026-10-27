@@ -96,12 +96,50 @@ export async function addStudentsToGroups(domainId: string, uids: number[], grou
     if (operator) await addLog({ type: 'education', action: 'class_add_students', operator, domainId, groups: names, uids: students } as any);
 }
 
-export async function setClassStudents(domainId: string, name: string, uids: number[], operator: number) {
+let classNameIndexReady: Promise<unknown> | undefined;
+async function requireClassNameIndex() {
+    // Hydro only initializes core indexes in worker 0. Confirm this required
+    // invariant before an insert even on a fresh database or another worker.
+    try {
+        classNameIndexReady ||= UserModel.collGroup.createIndex({ domainId: 1, name: 1 }, { name: 'name', unique: true });
+        await classNameIndexReady;
+    } catch {
+        classNameIndexReady = undefined;
+        throw new ValidationError('班型', null, '暂时无法保证班型名称唯一，请联系管理员；原名单未改变。');
+    }
+}
+
+export async function createClassStudents(domainId: string, name: string, uids: number[], operator: number) {
     const names = normalizeClassNames([name]);
     if (names.length !== 1) throw new ValidationError('班型');
     const students = uniqueStudentIds(uids);
     await requireTeachingStudents(domainId, students);
-    await UserModel.updateGroup(domainId, name, students);
+    await requireClassNameIndex();
+    try {
+        // Hydro maintains a unique (domainId, name) index. insertOne cannot
+        // replace a roster, including when two teachers create it concurrently.
+        await UserModel.collGroup.insertOne({ domainId, name: names[0], uids: students });
+    } catch (error) {
+        if (error?.code === 11000) throw new ValidationError('班型', null, '同名班型已存在，请使用下方“编辑班型成员”；原名单未改变。');
+        throw error;
+    }
+    UserModel._deleteUserCache(domainId);
+    await addLog({ type: 'education', action: 'class_create', operator, domainId, groups: names, uids: students } as any);
+}
+
+export async function setClassStudents(domainId: string, name: string, uids: number[], operator: number, originalUids?: number[], allowEmpty = false) {
+    const names = normalizeClassNames([name]);
+    if (names.length !== 1) throw new ValidationError('班型');
+    const students = uniqueStudentIds(uids);
+    await requireTeachingStudents(domainId, students);
+    if (!Array.isArray(originalUids)) throw new ValidationError('班型', null, '请刷新班型管理页后重新编辑。');
+    const original = uniqueStudentIds(originalUids);
+    if (original.length && !students.length && !allowEmpty) throw new ValidationError('班型', null, '清空名单需要勾选“确认清空本班型名单”；原名单未改变。');
+    const result = await UserModel.collGroup.updateOne({ domainId, name: names[0],
+        uids: original.length ? { $all: original, $size: original.length } : { $size: 0 },
+    }, { $set: { uids: students } });
+    if (!result.matchedCount) throw new ValidationError('班型', null, '班型已删除或名单已被其他操作修改，请刷新后重试；本次未覆盖名单。');
+    UserModel._deleteUserCache(domainId);
     await addLog({ type: 'education', action: 'class_set_students', operator, domainId, groups: names, uids: students } as any);
 }
 

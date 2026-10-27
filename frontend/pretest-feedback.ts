@@ -2,7 +2,11 @@ import { discoverSampleBlocks } from './problem-samples';
 
 export type PublicSample = { id: string; input: string; output: string | null };
 type Store = { getState: () => any; dispatch: (action: any) => any; subscribe: (listener: () => void) => () => void };
-type Run = { input: string; sample?: PublicSample; rid?: string; error?: string; record?: any };
+type Run = { input: string; code: string; lang: string; sample?: PublicSample; rid?: string; error?: string; record?: any };
+type InputDrafts = { sampleId: string; customChosen: boolean; values: Map<string, string> };
+// The native store belongs to one account/problem/contest page. Keep drafts when
+// its panel remounts, without leaking them into a different page's store.
+const inputDrafts = new WeakMap<Store, InputDrafts>();
 const RUNNING = new Set([0, 20, 21, 22]);
 const MAX_COMPARE_LENGTH = 200000;
 const MAX_DISPLAY_LENGTH = 32000;
@@ -86,8 +90,13 @@ function displayed(value: string) {
 /** UI-only sample comparison. Nothing here changes a judge result or a submission score. */
 export function installPretestFeedback(root: HTMLElement, store: Store, recordUrl?: (rid: string) => string) {
     const samples = readPublicSamples(root.querySelector('.problem-content') || root);
-    let sampleId = '';
-    let customInput = false;
+    let drafts = inputDrafts.get(store);
+    if (!drafts) {
+        drafts = { sampleId: '', customChosen: false, values: new Map([['', String(store.getState().pretest?.input || '')]]) };
+        inputDrafts.set(store, drafts);
+    }
+    let sampleId = drafts.sampleId;
+    let customInput = drafts.customChosen;
     let run: Run | undefined;
     let panel: HTMLElement | undefined;
     let select: HTMLSelectElement;
@@ -108,6 +117,11 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
     let lastRender = '';
 
     const currentSample = () => samples.find((sample) => sample.id === sampleId);
+    const rememberInput = () => {
+        drafts.values.set(sampleId, String(store.getState().pretest?.input || ''));
+        drafts.sampleId = sampleId;
+        drafts.customChosen = customInput;
+    };
     const canRun = () => {
         const state = store.getState();
         const native = root.querySelector<HTMLButtonElement>('.scratchpad__toolbar__pretest');
@@ -125,8 +139,10 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
             ? { status: '自测未提交成功', kind: 'error', actual: '', comparison: run.error }
             : run ? pretestResult(record, run.sample)
                 : { status: '', kind: 'idle', actual: '', comparison: '' };
-        const changed = !!run && currentInput !== run.input;
-        const selected = run?.sample || (!run ? currentSample() : undefined);
+        const changed = !!run && (currentInput !== run.input
+            || String(state.editor?.code || '') !== run.code || String(state.editor?.lang || '') !== run.lang);
+        const sample = currentSample();
+        const selected = run?.sample || (!run && sample?.input === currentInput ? sample : undefined);
         const hasExpected = selected?.output !== null && selected?.output !== undefined;
         const expectedText = selected?.output ?? '';
         if (!hasExpected) outputTab = 'actual';
@@ -142,8 +158,8 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
         if (snapshot === lastRender) return;
         lastRender = snapshot;
         select.value = sampleId;
-        status.textContent = view.status;
-        status.title = view.status;
+        status.textContent = changed ? '结果已过期，请重新运行' : view.status;
+        status.title = status.textContent;
         summary.hidden = !run;
         resources.textContent = metrics;
         resources.title = metrics;
@@ -153,7 +169,7 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
         const url = run?.rid && recordUrl?.(run.rid);
         recordLink.hidden = !url;
         if (url) recordLink.href = url;
-        panel.dataset.result = view.kind;
+        panel.dataset.result = changed ? 'stale' : view.kind;
         comparison.textContent = view.comparison;
         comparison.title = view.comparison;
         comparison.hidden = !view.comparison;
@@ -199,12 +215,15 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
             select.append(option);
         });
         select.addEventListener('change', () => {
+            rememberInput();
             sampleId = select.value;
             customInput = !sampleId;
             const sample = currentSample();
-            if (sample) store.dispatch({
-                type: 'SCRATCHPAD_PRETEST_DATA_CHANGE', payload: { type: 'input', value: sample.input },
+            store.dispatch({
+                type: 'SCRATCHPAD_PRETEST_DATA_CHANGE',
+                payload: { type: 'input', value: drafts.values.get(sampleId) ?? sample?.input ?? '' },
             });
+            rememberInput();
             render();
         });
         label.append(select);
@@ -257,7 +276,7 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
         stale = element('details', 'oi33-pretest-feedback__stale');
         stale.hidden = true;
         executedInput = element('pre', '');
-        const staleSummary = element('summary', '', '输入已修改 · 查看上次运行输入');
+        const staleSummary = element('summary', '', '代码、语言或输入已修改 · 查看上次运行输入');
         staleSummary.title = '下方结果仍对应上次运行；请重新运行以更新结果。';
         stale.append(staleSummary, executedInput);
         const inputBody = element('div', 'oi33-pretest-feedback__input-body');
@@ -268,9 +287,9 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
         input.placeholder = '输入测试数据…';
         input.title = '可填写自定义输入，允许留空；点击右下角按钮或按 F9 运行';
         input.addEventListener('input', () => {
-            sampleId = '';
-            customInput = true;
+            if (!sampleId) customInput = true;
             store.dispatch({ type: 'SCRATCHPAD_PRETEST_DATA_CHANGE', payload: { type: 'input', value: input.value } });
+            rememberInput();
             render();
         });
         runButton = element('button', 'oi33-pretest-feedback__run', '运行自测 (F9)');
@@ -312,19 +331,24 @@ export function installPretestFeedback(root: HTMLElement, store: Store, recordUr
     mount();
     return {
         mount,
+        rememberInput,
         autofill() {
             if (store.getState().pretest?.input !== '' || sampleId || customInput || !samples.length) return;
             sampleId = samples[0].id;
             store.dispatch({ type: 'SCRATCHPAD_PRETEST_DATA_CHANGE', payload: { type: 'input', value: samples[0].input } });
+            rememberInput();
         },
         filledSample() {
             sampleId = samples.find((sample) => sample.input === store.getState().pretest?.input)?.id || '';
             customInput = !sampleId;
+            rememberInput();
             render();
         },
         start(inputValue: string) {
             const sample = currentSample();
-            run = { input: inputValue, sample: sample?.input === inputValue ? sample : undefined };
+            const editor = store.getState().editor;
+            run = { input: inputValue, code: String(editor?.code || ''), lang: String(editor?.lang || ''),
+                sample: sample?.input === inputValue ? sample : undefined };
             outputTab = 'actual';
             render();
             return run;

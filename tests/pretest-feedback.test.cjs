@@ -435,6 +435,42 @@ if (process.env.OI33_LAYOUT_TEST === '1') test('Chrome and actual Monaco: sample
         assert.equal(await page.locator('.oi33-pretest-feedback__actual').isVisible(), true);
         await screenshotLayouts();
 
+        // Each result is bound to all three submitted values, not input alone.
+        await page.evaluate(() => {
+            window.state.editor.code = 'changed code';
+            window.store.dispatch({ type: 'FIXTURE_EDITOR_CHANGE' });
+        });
+        assert.equal(await page.locator('.oi33-pretest-feedback__stale').isVisible(), true);
+        assert.match(await page.textContent('.oi33-pretest-feedback__status'), /结果已过期/);
+        await page.evaluate((code) => {
+            window.state.editor.code = code;
+            window.state.editor.lang = 'python3';
+            window.store.dispatch({ type: 'FIXTURE_LANGUAGE_CHANGE' });
+        }, initial.code);
+        assert.equal(await page.locator('.oi33-pretest-feedback__stale').isVisible(), true);
+        await page.evaluate(() => {
+            window.state.editor.lang = 'cc.cc14o2';
+            window.store.dispatch({ type: 'FIXTURE_LANGUAGE_RESTORE' });
+        });
+        assert.equal(await page.locator('.oi33-pretest-feedback__stale').isVisible(), false);
+
+        // Custom and each sample have separate editable drafts. Switching is
+        // non-destructive, including a deliberately empty custom input.
+        await page.selectOption('[aria-label="选择自测样例"]', '');
+        await page.locator('[aria-label="自测输入"]').fill('42 84\n');
+        await page.selectOption('[aria-label="选择自测样例"]', '2');
+        await page.locator('[aria-label="自测输入"]').fill('6 7\n');
+        assert.equal(await page.inputValue('[aria-label="选择自测样例"]'), '2');
+        await page.selectOption('[aria-label="选择自测样例"]', '1');
+        assert.equal(await page.inputValue('[aria-label="自测输入"]'), '1 2\n');
+        await page.selectOption('[aria-label="选择自测样例"]', '');
+        assert.equal(await page.inputValue('[aria-label="自测输入"]'), '42 84\n');
+        await page.selectOption('[aria-label="选择自测样例"]', '2');
+        assert.equal(await page.inputValue('[aria-label="自测输入"]'), '6 7\n');
+        await page.locator('[aria-label="自测输入"]').fill('4 5\n');
+        await page.selectOption('[aria-label="选择自测样例"]', '');
+        await page.locator('[aria-label="自测输入"]').fill('');
+
         await page.selectOption('[aria-label="选择自测样例"]', '2');
         assert.equal(await page.inputValue('[aria-label="自测输入"]'), '4 5\n');
         assert.equal(await page.locator('.oi33-pretest-feedback__stale').isVisible(), true);

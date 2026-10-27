@@ -1,7 +1,7 @@
 {% set page_name = 'oi33_enrollment_review' %}
 {% extends 'layout/basic.html' %}
 {% block content %}
-<div class="row oi33-enrollment"><div class="columns">
+<div class="row oi33-enrollment" data-enrollment-review data-admin-uid="{{ handler.user._id }}"><div class="columns">
   <section class="section">
     <div class="section__header"><h1 class="section__title">实名审核与账号管理</h1></div>
     <div class="section__body">
@@ -20,6 +20,7 @@
       <p class="oi33-enrollment__muted oi33-enrollment__filter-hint">切换状态会显示该状态的全部学生并清除姓名筛选；姓名查找需点击“筛选”。“审核未通过”包括自动审核未确认、待人工确认及已退回的申请。</p>
     </div>
   </section>
+  {% if actionNotice %}<div class="oi33-enrollment__notice oi33-enrollment__action-notice" role="status" data-enrollment-action-success>{{ actionNotice }}</div>{% endif %}
   {% for entry in enrollments %}
   <section class="section">
     <div class="section__header"><h2 class="section__title"><a class="oi33-enrollment__profile-link" href="{{ url('user_detail', uid=entry._id) }}" title="查看个人主页">{{ entry.realName or '查看个人主页' }}</a> <span class="oi33-enrollment__muted">UID {{ entry._id }}</span></h2></div>
@@ -38,27 +39,31 @@
         {% if entry.rejectionReason %}<dt>审核意见</dt><dd>{{ entry.rejectionReason }}</dd>{% endif %}
       </dl>
       {% if entry.status == 'pending' and entry.enabled %}
-      <form method="post" class="oi33-enrollment__review-form">
+      <form data-enrollment-action data-student-name="{{ entry.realName }}" data-student-uid="{{ entry._id }}" method="post" class="oi33-enrollment__review-form">
+        {% include "partials/enrollment_review_return.html" %}
         <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}">
         <label>审核意见（退回时必填）<input class="textbox" name="reason" maxlength="1000" placeholder="例如：请补充与班级名册一致的学号"></label>
         <div class="oi33-enrollment__actions"><button class="primary button" name="action" value="approve">核验通过</button><button class="button" name="action" value="reject">退回补充</button></div>
       </form>
       {% endif %}
       <div class="oi33-enrollment__account-actions">
-        <form method="post" class="oi33-enrollment__actions">
-          <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}">
+        <form data-enrollment-action data-student-name="{{ entry.realName }}" data-student-uid="{{ entry._id }}" method="post" class="oi33-enrollment__actions">
+          {% include "partials/enrollment_review_return.html" %}
+        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}">
           {% if entry.enabled %}<button class="button" name="action" value="disable">停用账号</button>{% else %}<button class="button" name="action" value="enable">恢复启用</button>{% endif %}
           {% if entry.accountType == 'temporary' and entry.status == 'approved' %}<button class="button" name="action" value="convert">转为日常账号（保留 UID）</button>{% endif %}
         </form>
         {% if entry._id in (passwordResetAllowedUids or []) %}
-        <form method="post" action="{{ url('oi33_enrollment_review') }}" class="oi33-enrollment__actions oi33-enrollment__password-reset" data-enrollment-password-reset>
-          <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}"><input type="hidden" name="action" value="reset_password">
+        <form data-enrollment-action data-student-name="{{ entry.realName }}" data-student-uid="{{ entry._id }}" method="post" action="{{ url('oi33_enrollment_review') }}" class="oi33-enrollment__actions oi33-enrollment__password-reset" data-enrollment-password-reset>
+          {% include "partials/enrollment_review_return.html" %}
+        <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}"><input type="hidden" name="action" value="reset_password">
           <button class="button" type="submit" title="重置为 123456，下次登录必须修改。">重置密码</button>
         </form>
         {% endif %}
       </div>
       {% if entry.accountType == 'temporary' and entry.status == 'approved' %}
-      <form method="post" class="oi33-enrollment__filters">
+      <form data-enrollment-action data-student-name="{{ entry.realName }}" data-student-uid="{{ entry._id }}" method="post" class="oi33-enrollment__filters">
+        {% include "partials/enrollment_review_return.html" %}
         <input type="hidden" name="csrfToken" value="{{ handler.csrfToken }}"><input type="hidden" name="uid" value="{{ entry._id }}"><input type="hidden" name="revision" value="{{ entry.revision }}"><input type="hidden" name="action" value="extend">
         <label>新的到期时间（含时区）<input class="textbox" type="text" name="validUntil" required placeholder="2026-10-01T18:00:00+08:00"></label><button class="button">延长有效期</button>
       </form>

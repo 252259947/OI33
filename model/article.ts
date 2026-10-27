@@ -13,14 +13,14 @@ export const ARTICLE_LIST_PROJECTION = [
     ...DiscussionModel.PROJECTION_LIST,
     'content', 'edited', 'react', 'lock',
     'oi33Kind', 'oi33Visibility', 'oi33ProblemId',
-    'oi33ModerationPending',
+    'oi33ModerationPending', 'oi33ModerationRejected',
     'oi33CreatedAt', 'oi33PublishedAt', 'oi33ContentUpdatedAt',
 ] as any;
 
 const ARTICLE_ACCESS_PROJECTION = [
     ...DiscussionModel.PROJECTION_PUBLIC,
     'oi33Kind', 'oi33Visibility', 'oi33ProblemId',
-    'oi33ModerationPending',
+    'oi33ModerationPending', 'oi33ModerationRejected',
     'oi33CreatedAt', 'oi33PublishedAt', 'oi33ContentUpdatedAt',
     // Deliberately kept out of ARTICLE_LIST_PROJECTION and every public list.
     'oi33ShareToken',
@@ -226,6 +226,7 @@ export async function updateArticle(
         pin: !!args.pin,
         hidden: args.hidden,
         oi33ModerationPending: args.moderationPending,
+        oi33ModerationRejected: false,
         parentType: args.binding.parentType,
         parentId: args.binding.parentId,
         oi33Visibility: args.visibility,

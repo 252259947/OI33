@@ -1,7 +1,7 @@
 {% extends "layout/basic.html" %}
 {% import "components/paginator.html" as paginator with context %}
 {% block content %}
-<div class="row oi33-article-mine">
+<div class="row oi33-article-mine" data-article-draft-owner="{{ handler.domain._id }}:{{ handler.user._id }}"{% if articleSavedDraft %} data-article-saved-id="{{ articleSavedDraft.source }}" data-article-saved-fingerprint="{{ articleSavedDraft.fingerprint }}"{% endif %}>
   <div class="columns">
     <header class="oi33-article-mine__head">
       <div>
@@ -10,6 +10,7 @@
         <p>公开文章、私人笔记和链接剪切板都集中保存在这里。</p>
       </div>
       <div class="oi33-article-mine__actions">
+        <a class="rounded button" href="{{ url('oi33_article_feedback') }}">发布反馈</a>
         <a class="rounded button" href="/discuss">文章广场</a>
         <a class="primary rounded button" href="/article/new"><span class="icon icon-add"></span> 写文章</a>
       </div>
@@ -35,7 +36,7 @@
             <div class="oi33-article-mine__item-main">
               <div class="oi33-article-mine__badges">
                 <span class="oi33-article-badge is-{{ ddoc.oi33Visibility }}">{% if ddoc.oi33Visibility == 'private' %}仅自己可见{% elif ddoc.oi33Visibility == 'unlisted' %}获取链接可见{% else %}公开可见{% endif %}</span>
-                {% if ddoc.hidden %}<span class="oi33-article-badge is-review">审核中</span>{% endif %}
+                {% if ddoc.hidden %}<a class="oi33-article-badge is-review" href="{{ url('oi33_article_feedback') }}">{% if ddoc.oi33ModerationRejected %}未通过审核 · 修改后可重提{% else %}审核中 · 查看反馈{% endif %}</a>{% endif %}
                 {% if parentDoc and ddoc.oi33ProblemId %}<span class="oi33-article-badge is-problem">{{ parentDoc.title }}</span>{% endif %}
               </div>
               <h2><a class="oi33-article-mine__primary-link" href="{{ url('discussion_detail', did=ddoc.docId) }}">{{ ddoc.title }}</a></h2>

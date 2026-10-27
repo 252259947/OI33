@@ -1,8 +1,8 @@
 {% import "components/user.html" as user with context %}
 {% import "components/paginator.html" as paginator with context %}
 {% set isArticleHub = not vnode._id or (vnode.type == model.document.TYPE_DISCUSSION_NODE and vnode.id == 'oi33-articles-internal') %}
-{% set canWriteArticle = handler.user.hasPerm(perm.PERM_CREATE_DISCUSSION) and (handler.user.realname_flag or 0) >= 1 %}
 {% if not ddocs.length %}
+  {% set canWriteArticle = handler.user.hasPerm(perm.PERM_CREATE_DISCUSSION) and (handler.user.realname_flag or 0) >= 1 %}
   <div class="oi33-discuss__empty">
     <span class="oi33-discuss__empty-icon icon icon-file" aria-hidden="true"></span>
     <h2>{% if isArticleHub %}还没有公开文章{% else %}这道题还没有公开讨论{% endif %}</h2>

@@ -16,6 +16,8 @@
 - **公共身份展示例外**：按用户要求，学生/访客查看个人主页、排名、讨论及文章列表时，以请求内 `oi33_public_name` 显示原用户名；空用户名回退注册邮箱，再回退 UID。由 `public-student-identity.ts` 的限定 GET hook 实现，待审账号仍隐藏头像/简介，审核及访问权限不变；不改数据库用户名或缓存 User。教师/管理员保留原权限；作业/训练/比赛成绩表继续使用实名，不套用此规则。
 - **用户列表渲染**：必须 `UserModel.getList`（带 `hasPriv()`，`components/user.html` 依赖）+ `getUserDataByUids` + `mergeOi33Fields`；禁用 `getListForRender` 渲染 user.html。
 - **模板**：POST 表单必带 `csrfToken` 隐藏域；难度渲染一律走 `partials/oi33_difficulty.html`（0-8 洛古难度，默认遮罩、前端点击显示）。
+- **编辑器草稿**：`editor-draft-build.ts` 只解析本插件的虚拟模块，读取已安装 UI 的原生 scratchpad reducers；前端仅替换代码/语言 action 的缓存写入语义，缓存失败不能阻止内存代码更新或让提交使用旧代码。额外运行依赖 `redux@5.0.1`，UI 版本当前锁定 4.58.4，升级时必须先重跑原生 Monaco/Redux/提交链路回归，不可简单放开版本检查。
+- **教学 UX**：班型新建使用原子 insert；编辑必须携带原名单并进行条件更新，不能恢复 upsert。成绩表姓名查找与原生班型/星标筛选取交集，不更改名次/分数；训练章节排序保留节点 ID 和先修关系。账号管理操作保留筛选并只向 OJ 管理员开放。
 - **审核引擎复用**：`handler/moderate.ts` 的 `runAiVerdict(uid, normalized, hash, cfg)`（规则+AI+缓存+预算熔断，fail-closed），喵喵/讨论区/简介共用；开关 `moderation_enabled`（默认开）。
 - **大猫（school-cat）**：地图格子 `catId` 编码为非负学校 id+1、特殊大猫负数原样，0=无大猫；**特殊大猫**用负数 `_id`（自定义 `name`，★ 不占数字名次，周奖励走管理员规则），是**唯一**的管理员大猫形式（旧 isAdminCat 手动设定已废弃，迁移会清除旧标记），仅 flag≥2 可搜索/绑定，flag≥3 可创建/改名；`transferSchoolCat`（flag≥3）把一只大猫的绑定用户/投喂历史/体重/领地格子整体转移到另一只并重算 territoryCount。周奖池 = 领地基础奖励（≥64 格起 1，翻倍 +1，封顶 12）× max(0, ⌊log2(体重)⌋−10)，按 ⌊log2(贡献)⌋ 权重最大余数法分配；结算完成后全体用户当前贡献与大猫体重各扣 5%（回滚不恢复）。成就仅稀有（saleable）或手动发放才自动发喵喵，用户可删自己的喵喵。**地图分区**：帝国区=距边框 250 格环形（前/后 250 行、左/右 250 列），中央 500×500（坐标 250~749）为 00区（`CAT_MAP_CORE_MIN/MAX`，前端 `cat-can-arena.page.ts` 有同步副本）；分界线画成 00区外框的加粗「口」字，由地图「帝国边界」图层开关控制（默认开）。00区内某格与上下左右四邻全归属同一大猫即为「领地核心」（`fortressCatIdAt`），禁止绑定其他大猫的小猫移动/加入进入；染色形成核心时滞留其上的小猫被驱逐（`displaceFortressIntruders`）——绑定了大猫的传送到自己领地随机格，未绑定的传送到帝国区随机位置，驱逐走 `oi33/cat-map-change` player 广播。
 

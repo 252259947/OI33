@@ -19,7 +19,7 @@ function state(options = {}) {
       { docId: 'two', title: '下一次作业', pids: [], assign: [], beginAt: now + 100000, penaltySince: now + 200000, endAt: now + 200000 },
       { docId: 'three', title: '已结束作业', pids: [1], assign: ['提高班'], beginAt: now - 200000, penaltySince: now - 100000, endAt: now - 100000 }],
     q: '', group: '', groups: ['基础班', '提高班'], page: 1, tpcount: 1, educationIsCoach: false,
-    handler: { user: { hasPriv: (value) => value === 1, hasPerm: (value) => (1n & value) === value } },
+    handler: { user: { _id: 17, hasPriv: (value) => value === 1, hasPerm: (value) => (1n & value) === value } },
     PRIV: { PRIV_USER_PROFILE: 1 }, perm: { PERM_CREATE_HOMEWORK: 1n },
     model: { contest: { isDone: (doc) => doc.endAt < now, isNotStarted: (doc) => doc.beginAt > now,
       statusText: (doc) => doc.endAt < now ? '已结束' : doc.beginAt > now ? '未开始' : '进行中' } },

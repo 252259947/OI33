@@ -44,6 +44,7 @@ export async function ensureModerationIndexes() {
         moderationColl.createIndex({ contentHash: 1, createdAt: -1 }),
         moderationColl.createIndex({ status: 1, createdAt: -1 }),
         moderationColl.createIndex({ uid: 1, createdAt: -1 }),
+        moderationColl.createIndex({ uid: 1, 'target.domainId': 1, createdAt: -1 }),
         moderationColl.createIndex({ createdAt: -1 }),
     ]);
 }
