@@ -5,7 +5,8 @@ import {
 import { assertEducationCoach, isEducationAdmin, isEducationCoach } from '../model/education-auth';
 import {
     confirmRosterChange, createClassStudents, createHomeworkRoster, educationRosterColl, ensureEducationIndexes,
-    getHomeworkRoster, getTeachingStudentScope, listClassGroups, normalizeClassNames, prepareRosterChange, resolveClassStudents, setClassStudents,
+    deleteClassGroup, getClassReferenceSummaries, getHomeworkRoster, getTeachingStudentScope, listClassGroups, normalizeClassNames,
+    prepareRosterChange, renameClassGroup, resolveClassStudents, setClassStudents,
 } from '../model/education';
 import { homeworkProgress, uniqueStudentIds } from '../model/education-policy';
 import { userColl } from '../model/user';
@@ -87,14 +88,15 @@ export async function rosterNames(domainId: string, uids: number[]) {
     return names;
 }
 
-class EducationClassesHandler extends Handler {
+export class EducationClassesHandler extends Handler {
     async prepare() { privatePage(this); assertEducationCoach(this.user); }
 
     async get({ domainId }) {
         const groups = await listClassGroups(domainId);
         const names = await rosterNames(domainId, uniqueStudentIds(groups.flatMap((group) => group.uids)));
         this.response.template = 'oi33_education_classes.html';
-        this.response.body = { groups, names };
+        const classReferences = await getClassReferenceSummaries(domainId, groups.map((group) => group.name));
+        this.response.body = { groups, names, classReferences };
     }
 
     @param('name', Types.String)
@@ -114,6 +116,28 @@ class EducationClassesHandler extends Handler {
         if (originalUids === undefined && this.request?.body?.originalUids === '') originalUids = '';
         await setClassStudents(domainId, name.trim(), parseUids(uids), this.user._id,
             typeof originalUids === 'string' ? parseUids(originalUids) : undefined, allowEmpty);
+        this.response.redirect = this.url('oi33_education_classes');
+    }
+
+    @param('groupId', Types.ObjectId)
+    @param('name', Types.String)
+    @param('newName', Types.String)
+    @param('originalUids', Types.String, true)
+    async postRename(domainId: string, groupId: ObjectId, name: string, newName: string, originalUids?: string) {
+        if (originalUids === undefined && this.request?.body?.originalUids === '') originalUids = '';
+        await renameClassGroup(domainId, groupId, name, newName, this.user._id,
+            typeof originalUids === 'string' ? parseUids(originalUids) : undefined);
+        this.response.redirect = this.url('oi33_education_classes');
+    }
+
+    @param('groupId', Types.ObjectId)
+    @param('name', Types.String)
+    @param('originalUids', Types.String, true)
+    @param('confirmDelete', Types.Boolean)
+    async postDelete(domainId: string, groupId: ObjectId, name: string, originalUids?: string, confirmDelete = false) {
+        if (originalUids === undefined && this.request?.body?.originalUids === '') originalUids = '';
+        await deleteClassGroup(domainId, groupId, name, this.user._id,
+            typeof originalUids === 'string' ? parseUids(originalUids) : undefined, confirmDelete);
         this.response.redirect = this.url('oi33_education_classes');
     }
 }

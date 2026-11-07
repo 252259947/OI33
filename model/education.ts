@@ -143,6 +143,104 @@ export async function setClassStudents(domainId: string, name: string, uids: num
     await addLog({ type: 'education', action: 'class_set_students', operator, domainId, groups: names, uids: students } as any);
 }
 
+export interface ClassReferences {
+    documents: number;
+    joinSettings: number;
+    previews: number;
+    batches: number;
+    total: number;
+}
+
+// Names are native access-control keys. Never remove them from assign arrays:
+// an empty assign means public in Hydro. Historical roster snapshots are not
+// access grants and deliberately retain their original names and student rows.
+export async function getClassReferenceSummaries(domainId: string, names: string[]) {
+    const result: Record<string, ClassReferences> = Object.create(null);
+    for (const name of names) result[name] = { documents: 0, joinSettings: 0, previews: 0, batches: 0, total: 0 };
+    if (!names.length) return result;
+    const now = new Date();
+    const [documents, domain, previews, batches] = await Promise.all([
+        db.collection<any>('document').find({ domainId, assign: { $in: names } }).project({ assign: 1 }).toArray(),
+        DomainModel.coll.findOne({ _id: domainId }, { projection: { _join: 1, joinSettings: 1 } }),
+        previewColl.find({ domainId, groups: { $in: names }, expiresAt: { $gt: now } }).project({ groups: 1 }).toArray(),
+        db.collection<any>('oi33_account_batch').find({ domainId, groups: { $in: names }, $or: [
+            { status: 'preview', expiresAt: { $gt: now } }, { status: { $in: ['processing', 'partial'] } },
+        ] }).project({ groups: 1 }).toArray(),
+    ]);
+    const count = (rows: any[], field: string, category: keyof Omit<ClassReferences, 'total'>) => {
+        for (const row of rows) {
+            const values = Array.isArray(row[field]) ? row[field] : [row[field]];
+            for (const name of new Set(values)) if (Object.prototype.hasOwnProperty.call(result, name)) result[name][category]++;
+        }
+    };
+    count(documents, 'assign', 'documents');
+    count(previews, 'groups', 'previews');
+    count(batches, 'groups', 'batches');
+    for (const name of new Set([domain?._join?.group, (domain as any)?.joinSettings?.group])) {
+        if (typeof name === 'string' && Object.prototype.hasOwnProperty.call(result, name)) result[name].joinSettings = 1;
+    }
+    for (const refs of Object.values(result)) refs.total = refs.documents + refs.joinSettings + refs.previews + refs.batches;
+    return result;
+}
+
+function className(value: string) {
+    const names = normalizeClassNames([value]);
+    if (names.length !== 1) throw new ValidationError('班型', null, '请输入有效的班型名称。');
+    return names[0];
+}
+
+function classSnapshot(domainId: string, groupId: ObjectId, name: string, originalUids?: number[]) {
+    if (!(groupId instanceof ObjectId) || !Array.isArray(originalUids)) {
+        throw new ValidationError('班型', null, '请刷新班型管理页后重新操作。');
+    }
+    const original = uniqueStudentIds(originalUids);
+    return { _id: groupId, domainId, name,
+        uids: original.length ? { $all: original, $size: original.length } : { $size: 0 } };
+}
+
+async function requireUnusedClass(domainId: string, name: string, description = '该班型') {
+    const refs = (await getClassReferenceSummaries(domainId, [name]))[name];
+    if (!refs.total) return;
+    const details = [refs.documents && `作业、比赛或讨论 ${refs.documents} 项`, refs.joinSettings && '入域设置 1 项',
+        refs.previews && `作业名单预览 ${refs.previews} 项`, refs.batches && `账号导入批次 ${refs.batches} 项`].filter(Boolean).join('，');
+    throw new ValidationError('班型', null, `${description}仍被引用（${details}），请先调整相关设置再操作；原班型和名单未改变。`);
+}
+
+export async function renameClassGroup(domainId: string, groupId: ObjectId, name: string, newName: string, operator: number, originalUids?: number[]) {
+    const previousName = className(name);
+    const nextName = className(newName);
+    const filter = classSnapshot(domainId, groupId, previousName, originalUids);
+    if (!await UserModel.collGroup.findOne(filter)) throw new ValidationError('班型', null, '班型已删除、改名或名单已变化，请刷新后重试。');
+    if (nextName === previousName) return;
+    await requireUnusedClass(domainId, previousName);
+    // A previously deleted name may still be an access key in legacy data.
+    // Do not attach this class's students to those unrelated obligations.
+    await requireUnusedClass(domainId, nextName, '新班型名称');
+    await requireClassNameIndex();
+    try {
+        const result = await UserModel.collGroup.updateOne(filter, { $set: { name: nextName } });
+        if (!result.matchedCount) throw new ValidationError('班型', null, '班型已删除、改名或名单已变化，请刷新后重试；本次未修改。');
+    } catch (error) {
+        if (error?.code === 11000) throw new ValidationError('班型', null, '同名班型已存在，请使用其他名称；原班型和名单未改变。');
+        throw error;
+    }
+    UserModel._deleteUserCache(domainId);
+    await addLog({ type: 'education', action: 'class_rename', operator, domainId,
+        groups: [previousName, nextName], groupId } as any);
+}
+
+export async function deleteClassGroup(domainId: string, groupId: ObjectId, name: string, operator: number, originalUids?: number[], confirmDelete = false) {
+    if (confirmDelete !== true) throw new ValidationError('删除班型', null, '请先确认删除班型。');
+    const previousName = className(name);
+    const filter = classSnapshot(domainId, groupId, previousName, originalUids);
+    if (!await UserModel.collGroup.findOne(filter)) throw new ValidationError('班型', null, '班型已删除、改名或名单已变化，请刷新后重试。');
+    await requireUnusedClass(domainId, previousName);
+    const result = await UserModel.collGroup.deleteOne(filter);
+    if (!result.deletedCount) throw new ValidationError('班型', null, '班型已删除、改名或名单已变化，请刷新后重试；本次未删除。');
+    UserModel._deleteUserCache(domainId);
+    await addLog({ type: 'education', action: 'class_delete', operator, domainId, groups: [previousName], groupId } as any);
+}
+
 export async function getHomeworkRoster(domainId: string, tid: ObjectId): Promise<HomeworkRoster | null> {
     return await educationRosterColl.findOne({ domainId, tid }) as any;
 }

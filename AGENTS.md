@@ -21,6 +21,8 @@
 - **审核引擎复用**：`handler/moderate.ts` 的 `runAiVerdict(uid, normalized, hash, cfg)`（规则+AI+缓存+预算熔断，fail-closed），喵喵/讨论区/简介共用；开关 `moderation_enabled`（默认开）。
 - **大猫（school-cat）**：地图格子 `catId` 编码为非负学校 id+1、特殊大猫负数原样，0=无大猫；**特殊大猫**用负数 `_id`（自定义 `name`，★ 不占数字名次，周奖励走管理员规则），是**唯一**的管理员大猫形式（旧 isAdminCat 手动设定已废弃，迁移会清除旧标记），仅 flag≥2 可搜索/绑定，flag≥3 可创建/改名；`transferSchoolCat`（flag≥3）把一只大猫的绑定用户/投喂历史/体重/领地格子整体转移到另一只并重算 territoryCount。周奖池 = 领地基础奖励（≥64 格起 1，翻倍 +1，封顶 12）× max(0, ⌊log2(体重)⌋−10)，按 ⌊log2(贡献)⌋ 权重最大余数法分配；结算完成后全体用户当前贡献与大猫体重各扣 5%（回滚不恢复）。成就仅稀有（saleable）或手动发放才自动发喵喵，用户可删自己的喵喵。**地图分区**：帝国区=距边框 250 格环形（前/后 250 行、左/右 250 列），中央 500×500（坐标 250~749）为 00区（`CAT_MAP_CORE_MIN/MAX`，前端 `cat-can-arena.page.ts` 有同步副本）；分界线画成 00区外框的加粗「口」字，由地图「帝国边界」图层开关控制（默认开）。00区内某格与上下左右四邻全归属同一大猫即为「领地核心」（`fortressCatIdAt`），禁止绑定其他大猫的小猫移动/加入进入；染色形成核心时滞留其上的小猫被驱逐（`displaceFortressIntruders`）——绑定了大猫的传送到自己领地随机格，未绑定的传送到帝国区随机位置，驱逐走 `oi33/cat-map-change` player 广播。
 
+班型重命名/删除通过 `model/education.ts` 处理：原生班型名称是访问控制键，有文档 assign、入域设置、未过期名单预览或可继续处理的账号导入批次引用时必须阻止操作，不能清空 assign 或隐式迁移。历史应交名单只保留快照，不作为动态引用。操作携带 groupId 与 originalUids，按域、ID、原名称和原名单做条件更新/删除，删除须 confirmDelete=true；保留学生账号、其他班型和历史成绩。前端用 Hydro ActionDialog 二次确认，取消不提交。
+
 ## 个人简介（bio）AI 审核
 
 OJ 站点管理员（OI33 flag≥2 或 Hydro PRIV_ALL）个人简介免审核，也免除简介修改冷却；仅有 domain root/coach 不豁免。统一判断见 `model/bio-policy.ts`。保存、后台异步与批量审查、人工队列和 `bio_visible` 显示均须遵守；旧 rejected/pending 管理员简介直接恢复显示，不重写简介或删除历史消息。免审不能写入可复用的 AI 通过缓存，普通账号仍保留身份、状态与哈希校验。个人主页的成就展示柜、成就标签页及相关入口已隐藏，后台数据保留。

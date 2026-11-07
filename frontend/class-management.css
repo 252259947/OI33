@@ -69,3 +69,25 @@
 .education-classes__empty > .icon { color:var(--oi33-brand,#5b5ce2); font-size:32px; }
 .education-classes__empty h2 { margin:10px 0 5px; color:var(--oi33-text,#182033); font-size:18px; }
 .education-classes__empty p { margin:0; }
+.education-class-settings { border-top:1px solid var(--oi33-line,#e3e8f2); padding:12px 20px; }
+.education-class-settings__actions { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.education-class-setting-button { display:inline-flex; align-items:center; gap:5px; margin:0; padding:5px 0; border:0; background:transparent; color:var(--oi33-text-2,#526078); font:inherit; font-size:12px; line-height:1.6; cursor:pointer; }
+.education-class-setting-button:hover { color:var(--oi33-brand-strong,#4546c7); }
+.education-class-setting-button--danger { color:var(--oi33-danger,#dc4c64); }
+.education-class-setting-button--danger:hover { color:var(--oi33-danger,#dc4c64); text-decoration:underline; }
+.education-class-setting-button:disabled { color:var(--oi33-text-3,#667085); opacity:.65; cursor:not-allowed; }
+.education-class-rename { flex:1; min-width:0; }
+.education-class-delete-form { flex:none; margin:0; }
+.education-class-delete-status:not(:empty) { display:block; max-width:210px; color:var(--oi33-danger,#dc4c64); font-size:12px; }
+.education-classes .education-class-form--rename { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; padding:12px 0 4px; }
+.education-class-form--rename label { flex:1; min-width:140px!important; margin:0; font-size:13px; }
+.education-class-form--rename .button { flex:none; height:42px; line-height:40px; font-size:13px; padding:0 16px; }
+.education-class-usage { display:flex; align-items:baseline; gap:8px; margin:0 0 10px; color:var(--oi33-text-2,#526078); font-size:12px; line-height:1.7; }
+.education-class-usage strong { flex:none; border-radius:4px; padding:1px 5px; background:var(--oi33-brand-soft,#eeefff); color:var(--oi33-brand-strong,#4546c7); font-size:11px; font-weight:500; }
+.education-class-delete-dialog .dialog__body h2 { margin:0 0 14px; color:var(--oi33-text,#182033); font-size:21px; }
+.education-class-delete-dialog .dialog__body p { overflow-wrap:anywhere; color:var(--oi33-text,#182033); line-height:1.8; }
+.education-class-delete-dialog .dialog__body .education-class-delete-note { color:var(--oi33-text-2,#526078); font-size:13px; }
+.education-class-delete-dialog .dialog__action { display:flex; gap:10px; }
+.education-class-delete-dialog .dialog__action .button { margin:0; }
+.education-class-delete-dialog .dialog__action .primary,
+.education-class-delete-dialog .dialog__action .primary:hover { background:#b4233b!important; border-color:#b4233b!important; color:#fff; }

@@ -91,7 +91,9 @@ function html(context = {}) {
 }
 test('class picker keeps protected POST and UID fallback with escaped names and unchanged roster semantics', () => {
     const rendered = html();
-    assert.equal((rendered.match(/name="csrfToken" value="fixture-token"/g) || []).length, 2);
+    const postForms = Array.from(rendered.matchAll(/<form\b[^>]*method="post"[^>]*>([\s\S]*?)<\/form>/g));
+    assert.ok(postForms.length >= 2);
+    for (const form of postForms) assert.equal((form[1].match(/name="csrfToken" value="fixture-token"/g) || []).length, 1);
     assert.match(rendered, /name="uids"[^>]*>17, 18/);
     assert.match(rendered, /已发布作业的应交名单不自动重算/);
     assert.doesNotMatch(rendered, /<script>bad/);
@@ -100,7 +102,8 @@ test('class picker keeps protected POST and UID fallback with escaped names and 
 
 test('class redesign keeps independent create and update contracts, including empty roster snapshots', () => {
     const rendered = html({ groups: [{ name: '周日 <上午>', uids: [17, 18] }, { name: '空班型', uids: [] }] });
-    const forms = Array.from(rendered.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/g), (match) => ({ attrs: match[1], body: match[2] }));
+    const forms = Array.from(rendered.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/g), (match) => ({ attrs: match[1], body: match[2] }))
+        .filter((form) => /name="operation" value="(?:create|update)"/.test(form.body));
     assert.equal(forms.length, 3);
     for (const form of forms) {
         assert.match(form.attrs, /method="post"/);

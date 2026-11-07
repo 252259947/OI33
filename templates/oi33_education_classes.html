@@ -35,9 +35,32 @@
           </form>
         </details>
         <div class="education-class-card__preview"><p class="education-members">{% for uid in group.uids %}<span>{{ names[uid] }} <small>· {{ uid }}</small></span>{% else %}<span class="education-class-card__empty">暂无学生，点击上方编辑添加</span>{% endfor %}</p></div>
+        {% set refs = classReferences[group.name] %}
+        <div class="education-class-settings">
+          {% if refs.total %}<p class="education-class-usage"><strong>使用中</strong><span>此班型仍有 {{ refs.total }} 处引用（{% if refs.documents %}学习任务/讨论 {{ refs.documents }} 处；{% endif %}{% if refs.joinSettings %}入域设置 {{ refs.joinSettings }} 处；{% endif %}{% if refs.previews %}名单预览 {{ refs.previews }} 处；{% endif %}{% if refs.batches %}账号导入 {{ refs.batches }} 处；{% endif %}）。请先调整关联内容，再修改名称或删除。</span></p>{% endif %}
+          <div class="education-class-settings__actions">
+            {% if refs.total %}<button type="button" class="education-class-setting-button" disabled>修改名称</button>{% else %}
+            <details class="education-class-rename">
+              <summary class="education-class-setting-button"><span class="icon icon-edit" aria-hidden="true"></span> 修改名称</summary>
+              <form method="post" class="education-class-form education-class-form--rename" data-class-rename-form>
+                <input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="rename">
+                <input type="hidden" name="groupId" value="{{ group._id }}"><input type="hidden" name="name" value="{{ group.name }}"><input type="hidden" name="originalUids" value="{{ group.uids | join(',') }}">
+                <label>新的班型名称<input class="textbox" name="newName" value="{{ group.name }}" required maxlength="80" autocomplete="off"></label>
+                <button type="submit" class="primary rounded button">保存名称</button>
+              </form>
+            </details>{% endif %}
+            <form method="post" class="education-class-delete-form" data-class-delete-form data-class-name="{{ group.name }}" data-class-count="{{ group.uids|length }}">
+              <input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="delete">
+              <input type="hidden" name="groupId" value="{{ group._id }}"><input type="hidden" name="name" value="{{ group.name }}"><input type="hidden" name="originalUids" value="{{ group.uids | join(',') }}">
+              <input type="hidden" name="confirmDelete" value="false">
+              <button type="submit" class="education-class-setting-button education-class-setting-button--danger"{% if refs.total %} disabled{% endif %}>删除班型</button>
+              <span class="education-class-delete-status" data-class-delete-status role="alert"></span>
+            </form>
+          </div>
+        </div>
     </section>
   {% else %}<div class="education-classes__empty"><span class="icon icon-group" aria-hidden="true"></span><h2>从第一个班型开始</h2><p>在上方填写班型名称，即可创建并添加学生。</p></div>{% endfor %}
   </div>
-  <p class="education-classes__footnote">学生可以加入多个班型，作业名单会合并去重。班型仅决定学习范围，不授予教练或管理员权限；仅支持本域日常学生账号，临时比赛账号不能加入。</p>
+  <p class="education-classes__footnote">学生可以加入多个班型，作业名单会合并去重。班型仅决定学习范围，不授予教练或管理员权限；仅支持本域日常学生账号，临时比赛账号不能加入。修改名称会保留成员，删除班型不会删除学生账号和历史成绩。</p>
 </div></div>
 {% endblock %}
