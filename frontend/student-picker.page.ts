@@ -1,5 +1,6 @@
 import { addPage, NamedPage } from '@hydrooj/ui-default';
 import './student-picker.css';
+import './class-management.css';
 
 interface Student { uid: number; name: string; username?: string }
 const attached = new WeakSet<HTMLElement>();
@@ -24,6 +25,8 @@ export function installStudentPickers() {
         const selectedBox = root.querySelector<HTMLElement>('[data-student-selected]')!;
         const status = root.querySelector<HTMLElement>('[data-student-status]')!;
         const mode = form.querySelector<HTMLSelectElement>('[name="mode"]');
+        const selectedCount = form.querySelector<HTMLElement>('[data-class-selected-count]');
+        const clearConfirm = form.querySelector<HTMLElement>('[data-class-clear-confirm]');
         const names = new Map<number, Student>();
         root.querySelectorAll<HTMLElement>('[data-student-seed]').forEach((seed) => {
             const uid = Number(seed.dataset.uid);
@@ -63,6 +66,12 @@ export function installStudentPickers() {
                 results.append(option);
             }
             selectedBox.setAttribute('aria-label', `已选 ${selected.size} 名学生`);
+            if (selectedCount) selectedCount.textContent = `已选 ${selected.size} 人`;
+            if (clearConfirm) {
+                clearConfirm.hidden = selected.size > 0;
+                const checkbox = clearConfirm.querySelector<HTMLInputElement>('input');
+                if (checkbox && selected.size > 0) checkbox.checked = false;
+            }
         }
         async function lookup() {
             const version = ++requestVersion;

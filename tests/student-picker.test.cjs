@@ -83,11 +83,11 @@ test('student lookup checks teaching role, trusted domain and homework managemen
 class Loader extends nunjucks.Loader {
     getSource(name) { return { src: name === 'layout/basic.html' ? '{% block content %}{% endblock %}' : source(`templates/${name}`), path: name }; }
 }
-function html() {
+function html(context = {}) {
     const env = new nunjucks.Environment(new Loader(), { autoescape: true });
     env.addGlobal('url', () => '/oi33/education/students');
     return env.render('oi33_education_classes.html', { csrfToken: 'fixture-token', groups: [{ name: 'A', uids: [17, 18] }],
-        names: { 17: '王同学', 18: '<script>bad()</script>' } });
+        names: { 17: '王同学', 18: '<script>bad()</script>' }, ...context });
 }
 test('class picker keeps protected POST and UID fallback with escaped names and unchanged roster semantics', () => {
     const rendered = html();
@@ -96,6 +96,45 @@ test('class picker keeps protected POST and UID fallback with escaped names and 
     assert.match(rendered, /已发布作业的应交名单不自动重算/);
     assert.doesNotMatch(rendered, /<script>bad/);
     assert.match(rendered, /data-student-seed/);
+});
+
+test('class redesign keeps independent create and update contracts, including empty roster snapshots', () => {
+    const rendered = html({ groups: [{ name: '周日 <上午>', uids: [17, 18] }, { name: '空班型', uids: [] }] });
+    const forms = Array.from(rendered.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/g), (match) => ({ attrs: match[1], body: match[2] }));
+    assert.equal(forms.length, 3);
+    for (const form of forms) {
+        assert.match(form.attrs, /method="post"/);
+        assert.equal((form.body.match(/name="csrfToken" value="fixture-token"/g) || []).length, 1);
+        assert.equal((form.body.match(/name="uids"/g) || []).length, 1, 'Keep one authoritative roster field per form');
+        assert.match(form.body, /data-student-search/);
+        assert.match(form.body, /data-class-selected-count/);
+    }
+    assert.match(forms[0].body, /name="operation" value="create"/);
+    assert.match(forms[0].body, /name="name" required maxlength="80"/);
+    assert.doesNotMatch(forms[0].body, /name="originalUids"|name="allowEmpty"/);
+    assert.match(forms[1].body, /name="operation" value="update"/);
+    assert.match(forms[1].body, /name="name" value="周日 &lt;上午&gt;"/);
+    assert.match(forms[1].body, /name="originalUids" value="17,18"/);
+    assert.match(forms[1].body, /name="uids"[^>]*>17, 18<\/textarea>/);
+    assert.match(forms[1].body, /type="checkbox" name="allowEmpty" value="true"/);
+    assert.match(forms[2].body, /name="originalUids" value=""/);
+    assert.match(forms[2].body, /name="uids"[^>]*><\/textarea>/);
+    assert.doesNotMatch(forms[2].body, /name="allowEmpty"/);
+    assert.match(forms[1].body, /已发布作业的应交名单不自动重算/);
+});
+
+test('first class creation is open and the shared homework picker stays free of class-only controls', () => {
+    assert.match(html({ groups: [], names: {} }), /<details open>/);
+    const env = new nunjucks.Environment(new Loader(), { autoescape: true });
+    env.addGlobal('url', () => '/oi33/education/students');
+    const rendered = env.render('partials/education_student_picker.html', {
+        pickerTid: 'homework-fixture', pickerUids: [17], names: { 17: '王同学' },
+    });
+    assert.match(rendered, /data-tid="homework-fixture"/);
+    assert.match(rendered, /data-search-url="\/oi33\/education\/students"/);
+    assert.match(rendered, /name="uids"[^>]*>17<\/textarea>/);
+    assert.match(rendered, /data-student-seed data-uid="17"/);
+    assert.doesNotMatch(rendered, /data-class-selected-count|data-class-clear-confirm|name="originalUids"|name="allowEmpty"/);
 });
 test('UID fallback accepts separated positive integer lists and rejects malformed or excessive input', () => {
     const { parseStudentIds } = compile('frontend/student-picker.page.ts', (name) => {
@@ -138,13 +177,17 @@ test('real Chrome name picker handles multiselect, removal, UID fallback, stale 
             await page.addScriptTag({ content: bundle });
             assert.deepEqual(errors, []);
             const picker = page.locator('[data-student-picker]').nth(1);
+            const editForm = picker.locator('xpath=..');
             await page.getByText('编辑班型成员', { exact: true }).click();
             assert.equal(await picker.locator('[data-student-selected] button').count(), 2);
+            assert.equal(await editForm.locator('[data-class-selected-count]').innerText(), '已选 2 人');
+            assert.equal(await editForm.locator('[data-class-clear-confirm]').isVisible(), false);
             await picker.locator('[data-student-search]').fill('王');
             const firstMatch = picker.locator('[data-student-results] label').filter({ hasText: 'UID 19' });
             const sameName = picker.locator('[data-student-results] label').filter({ hasText: 'UID 20' });
             await firstMatch.locator('input').check();
             assert.equal(await picker.locator('[name="uids"]').inputValue(), '17, 18, 19');
+            assert.equal(await editForm.locator('[data-class-selected-count]').innerText(), '已选 3 人');
             await sameName.locator('input').check();
             assert.equal(await picker.locator('[name="uids"]').inputValue(), '17, 18, 19, 20', 'Same names remain independently selectable by UID');
             await sameName.locator('input').uncheck();
@@ -158,6 +201,15 @@ test('real Chrome name picker handles multiselect, removal, UID fallback, stale 
             await picker.locator('summary').click();
             await picker.locator('[name="uids"]').fill('18，20 20');
             assert.equal(await picker.locator('[data-student-selected] button').count(), 2);
+            assert.equal(await editForm.locator('[data-class-selected-count]').innerText(), '已选 2 人');
+            await picker.locator('[name="uids"]').fill('');
+            assert.equal(await editForm.locator('[data-class-selected-count]').innerText(), '已选 0 人');
+            assert.equal(await editForm.locator('[data-class-clear-confirm]').isVisible(), true);
+            await editForm.locator('[name="allowEmpty"]').check();
+            await picker.locator('[name="uids"]').fill('18,20');
+            assert.equal(await editForm.locator('[data-class-clear-confirm]').isVisible(), false);
+            assert.equal(await editForm.locator('[name="allowEmpty"]').isChecked(), false, 'Restoring members resets the destructive confirmation');
+            assert.equal(await editForm.locator('[name="originalUids"]').inputValue(), '17,18', 'Draft edits must not change the concurrency snapshot');
             let confirmText = '';
             page.once('dialog', async (dialog) => { confirmText = dialog.message(); await dialog.dismiss(); });
             await picker.locator('xpath=..').getByRole('button', { name: '保存成员' }).click();

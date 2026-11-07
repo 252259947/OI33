@@ -1,34 +1,43 @@
 {% extends "layout/basic.html" %}
 {% block content %}
-<div class="row"><div class="medium-12 columns oi33-education">
-  <div class="section"><div class="section__header"><h1 class="section__title">班型管理</h1></div>
-    <div class="section__body">
-      <p>一个学生可以属于多个班型；布置作业时，所选班型的学生合并去重。班型只决定学习范围，不授予教练或管理员权限。仅可添加已加入本域或在本域提交身份申请的日常学生，临时比赛账号不能加入教学班型。</p>
-      <form method="post" class="education-class-form">
+<div class="row"><div class="medium-12 columns oi33-education education-classes">
+  <header class="education-classes__heading">
+    <div><p class="education-classes__eyebrow">TEACHING · CLASSES</p><h1>班型管理 <span>{{ groups|length }} 个班型</span></h1><p>按班型整理学生，让每一次作业都找到对应的同学。</p></div>
+  </header>
+  <section class="section education-class-create">
+    <details{% if not groups|length %} open{% endif %}>
+      <summary><span class="education-class-create__icon" aria-hidden="true">＋</span><span><strong>新建班型</strong><small>设置班型名称，添加学生</small></span><span class="education-class-chevron" aria-hidden="true"></span></summary>
+      <form method="post" class="education-class-form education-class-form--create">
         <input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="create">
         <label>新班型名称<input class="textbox" name="name" required maxlength="80" placeholder="例如：提高班 / 周六班"></label>
+        <div class="education-class-selection-heading"><strong>学生名单</strong><span data-class-selected-count aria-live="polite">已选 0 人</span></div>
         {% set pickerUids = [] %}{% include "partials/education_student_picker.html" %}
-        <button class="primary rounded button" type="submit">创建班型</button>
+        <div class="education-class-actions"><p>可先创建空班型，之后再添加学生。</p><button class="primary rounded button" type="submit">创建班型</button></div>
       </form>
-    </div>
-  </div>
+    </details>
+  </section>
   <div class="education-class-grid">
   {% for group in groups %}
-    <section class="section"><div class="section__header"><h2 class="section__title">{{ group.name }}</h2><span>{{ group.uids|length }} 人</span></div>
-      <div class="section__body"><p class="education-members">{% for uid in group.uids %}<span>{{ names[uid] }} · {{ uid }}</span>{% else %}暂无学生{% endfor %}</p>
-        <details><summary>编辑班型成员</summary>
-          <form method="post" class="education-class-form">
+    <section class="section education-class-card">
+        <details class="education-class-editor">
+          <summary class="education-class-card__header">
+            <span class="education-class-card__identity"><span class="education-class-card__icon icon icon-group" aria-hidden="true"></span><span class="education-class-card__name">{{ group.name }}</span><span class="education-class-card__count">{{ group.uids|length }} 人</span></span>
+            <span class="education-class-card__edit"><span class="education-class-card__edit-label">编辑班型成员</span><span class="education-class-card__close-label">收起编辑</span><span class="education-class-chevron" aria-hidden="true"></span></span>
+          </summary>
+          <form method="post" class="education-class-form education-class-form--edit">
             <input type="hidden" name="csrfToken" value="{{ csrfToken }}"><input type="hidden" name="operation" value="update"><input type="hidden" name="name" value="{{ group.name }}">
             <input type="hidden" name="originalUids" value="{{ group.uids | join(',') }}">
+            <div class="education-class-selection-heading"><strong>学生名单</strong><span data-class-selected-count aria-live="polite">已选 {{ group.uids|length }} 人</span></div>
             {% set pickerUids = group.uids %}{% include "partials/education_student_picker.html" %}
-            <p class="help-text">保存会替换本班型成员，其他班型不变。已发布作业的应交名单不自动重算；作业访问范围会随当前班型变化。</p>
-            {% if group.uids | length %}<label class="help-text" data-class-clear-confirm><input type="checkbox" name="allowEmpty" value="true"> 确认清空本班型名单（仅在移除全部学生时勾选）</label>{% endif %}
-            <button class="rounded button" type="submit">保存成员</button>
+            <p class="education-class-save-note"><span class="icon icon-info" aria-hidden="true"></span><span>已发布作业的应交名单不自动重算；作业访问范围会随当前班型变化。</span></p>
+            {% if group.uids | length %}<label class="education-class-clear" data-class-clear-confirm><input type="checkbox" name="allowEmpty" value="true"> <span>确认清空本班型名单<small>仅在移除全部学生时需要确认</small></span></label>{% endif %}
+            <div class="education-class-actions"><p>保存后更新本班型成员</p><button class="primary rounded button" type="submit">保存成员</button></div>
           </form>
         </details>
-      </div>
+        <div class="education-class-card__preview"><p class="education-members">{% for uid in group.uids %}<span>{{ names[uid] }} <small>· {{ uid }}</small></span>{% else %}<span class="education-class-card__empty">暂无学生，点击上方编辑添加</span>{% endfor %}</p></div>
     </section>
-  {% else %}<div class="section"><div class="section__body">还没有班型，请先创建班型并添加学生。</div></div>{% endfor %}
+  {% else %}<div class="education-classes__empty"><span class="icon icon-group" aria-hidden="true"></span><h2>从第一个班型开始</h2><p>在上方填写班型名称，即可创建并添加学生。</p></div>{% endfor %}
   </div>
+  <p class="education-classes__footnote">学生可以加入多个班型，作业名单会合并去重。班型仅决定学习范围，不授予教练或管理员权限；仅支持本域日常学生账号，临时比赛账号不能加入。</p>
 </div></div>
 {% endblock %}
