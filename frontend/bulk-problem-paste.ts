@@ -1,8 +1,13 @@
 export const MAX_BULK_PROBLEMS = 200;
-export const BULK_PROBLEM_HELP = '支持批量粘贴题号，用逗号、中文逗号、空格或换行分隔（每次最多 200 个）；仅匹配本题库，全部匹配后按顺序加入。';
+export const BULK_PROBLEM_HELP = '支持批量粘贴题号，例如 B2057、LuoguB2054。用逗号、空格或换行分隔，每次最多 200 个。匹配到的本题库题目按顺序添加。';
 
 export interface BulkProblem { docId: number; pid?: string; title?: string }
 export type ProblemLookup = (token: string) => Promise<BulkProblem[]>;
+export type ProblemAliases = ReadonlyMap<string, { pid: string; docId: number }>;
+
+export function isBareLuoguProblemId(token: string): boolean {
+    return /^[BPUT]\d+$/i.test(token);
+}
 
 export function parseProblemTokens(text: string): string[] {
     if (text.length > 32000) throw new Error('粘贴内容过长，请分批添加（每次最多 200 个题号）。');
@@ -33,27 +38,52 @@ export function mergeProblemIds(existing: number[], added: number[]): number[] {
 export async function resolveProblemTokens(
     tokens: string[], lookup: ProblemLookup,
     pause: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-): Promise<BulkProblem[]> {
+    aliases?: ProblemAliases,
+): Promise<{ matches: Map<string, BulkProblem>; missing: string[] }> {
     if (!tokens.length || tokens.length > MAX_BULK_PROBLEMS) throw new Error('每次请添加 1–200 个题号。');
-    const results: BulkProblem[] = [];
-    const missing: string[] = [];
-    // Bound both concurrency and request rate. No selected state is changed here.
-    for (let offset = 0; offset < tokens.length; offset += 4) {
-        if (offset) await pause(400);
-        const batch = tokens.slice(offset, offset + 4);
-        let matches: (BulkProblem | undefined)[];
-        try {
-            matches = await Promise.all(batch.map(async (token) => exactProblem(token, await lookup(token))));
-        } catch {
-            throw new Error('题目查询失败（网络异常或请求受限），本次未添加任何题目，请稍后重试。');
+    const responses = new Map<string, BulkProblem[]>();
+    let queried = false;
+    const fetchResults = async (queries: string[]) => {
+        const unique = [...new Set(queries)].filter((query) => !responses.has(query));
+        for (let offset = 0; offset < unique.length; offset += 4) {
+            if (queried) await pause(400);
+            queried = true;
+            await Promise.all(unique.slice(offset, offset + 4).map(async (query) => {
+                responses.set(query, await lookup(query));
+            }));
         }
-        matches.forEach((problem, index) => {
-            if (problem) results.push(problem);
-            else missing.push(batch[index]);
-        });
+    };
+    const luoguCandidate = (token: string) => {
+        if (isBareLuoguProblemId(token)) return `Luogu${token.toUpperCase()}`;
+        const bare = token.slice(5);
+        if (/^luogu/i.test(token) && isBareLuoguProblemId(bare)) return `Luogu${bare.toUpperCase()}`;
+        return token;
+    };
+    const match = (token: string) => {
+        const found = responses.get(token) || [];
+        const alias = luoguCandidate(token);
+        return exactProblem(token, found)
+            || (alias !== token && (exactProblem(alias, found) || exactProblem(alias, responses.get(alias) || [])))
+            || undefined;
+    };
+    try {
+        // Do not mutate the draft until all lookups have completed successfully.
+        await fetchResults(tokens);
+        await fetchResults(tokens.filter((token) => !match(token)).map(luoguCandidate));
+        await fetchResults(tokens.filter((token) => !match(token))
+            .map((token) => aliases?.get(luoguCandidate(token))?.pid).filter((pid): pid is string => !!pid));
+    } catch {
+        throw new Error('题目查询失败（网络异常或请求受限），本次未添加任何题目，请稍后重试。');
     }
-    if (missing.length) throw new Error(`以下题号不存在或无权访问：${missing.join('、')}。本次未添加任何题目。`);
-    return results;
+    const matches = new Map<string, BulkProblem>();
+    const missing: string[] = [];
+    for (const token of tokens) {
+        const alias = aliases?.get(luoguCandidate(token));
+        const problem = match(token) || (alias && responses.get(alias.pid)
+            ?.find((candidate) => candidate.pid === alias.pid && candidate.docId === alias.docId));
+        if (problem) matches.set(token, problem); else missing.push(token);
+    }
+    return { matches, missing };
 }
 
 export interface TrainingChapter { _id: number; title: string; pids: (number | string)[]; [key: string]: unknown }

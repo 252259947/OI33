@@ -1,6 +1,6 @@
 import { $, addPage, NamedPage, ProblemSelectAutoComplete, ReactDOM, request } from '@hydrooj/ui-default';
 import {
-    BULK_PROBLEM_HELP, mergeProblemIds, parseProblemTokens, parseTrainingChapters,
+    BULK_PROBLEM_HELP, isBareLuoguProblemId, mergeProblemIds, parseProblemTokens, parseTrainingChapters,
     resolveProblemTokens, updateTrainingChapter,
 } from './bulk-problem-paste';
 import './bulk-problem-paste.css';
@@ -9,12 +9,18 @@ import { trainingPlanSource } from './training-plan-source';
 const pages = ['homework_create', 'homework_edit', 'contest_create', 'contest_edit', 'training_create', 'training_edit'];
 const pendingForms = new Set<HTMLFormElement>();
 const attached = new WeakSet<Element>();
+// Huaji OJ's system bank already has this problem under a textbook PID.
+const systemAliases = new Map([['LuoguB2076', { pid: 'P235', docId: 267 }]]);
 
-const lookup = async (token: string) => {
-    const result = await request.get(`/d/${UiContext.domainId}/p`, { q: token, quick: true, sort: 'default' });
-    if (!Array.isArray(result?.pdocs)) throw new Error('Invalid problem response');
-    return result.pdocs;
-};
+function problemResolver() {
+    const domainId = UiContext.domainId;
+    const lookup = async (token: string) => {
+        const result = await request.get(`/d/${encodeURIComponent(domainId)}/p`, { q: token, quick: true, sort: 'default' });
+        if (!Array.isArray(result?.pdocs)) throw new Error('Invalid problem response');
+        return result.pdocs;
+    };
+    return (tokens: string[]) => resolveProblemTokens(tokens, lookup, undefined, domainId === 'system' ? systemAliases : undefined);
+}
 
 function statusNode(parent: HTMLElement): HTMLElement {
     const status = document.createElement('p');
@@ -30,6 +36,12 @@ function message(status: HTMLElement, text: string, error = false) {
     status.classList.toggle('is-error', error);
 }
 
+function reportImport(status: HTMLElement, added: number, missing: string[], duplicates: number) {
+    const success = `已添加 ${added} 道题${duplicates ? `，跳过 ${duplicates} 道重复题` : ''}。`;
+    const unresolved = missing.length ? ` 未找到或无权访问：${missing.join('、')}。` : '';
+    message(status, success + unresolved, !!missing.length);
+}
+
 export function attachProblemPaste(input: HTMLInputElement) {
     if (attached.has(input) || !input.form) return;
     const instance: any = ProblemSelectAutoComplete.getOrConstruct($(input), { multi: true, clearDefaultValue: false });
@@ -42,8 +54,8 @@ export function attachProblemPaste(input: HTMLInputElement) {
     container.addEventListener('paste', async (event: ClipboardEvent) => {
         if (!(event.target instanceof HTMLInputElement)) return;
         const text = event.clipboardData?.getData('text/plain') || '';
-        // Leave native single-problem typing/paste and all other selectors alone.
-        if (text.trim().split(/[\s,，;；]+/u).filter(Boolean).length < 2) return;
+        // Handle a single abbreviated Luogu PID, while preserving other native pastes.
+        if (!isBareLuoguProblemId(text.trim()) && text.trim().split(/[\s,，;；]+/u).filter(Boolean).length < 2) return;
         event.preventDefault();
         event.stopImmediatePropagation(); // Run before React's native numeric-only paste handler.
         const form = input.form;
@@ -58,12 +70,13 @@ export function attachProblemPaste(input: HTMLInputElement) {
             const query = instance.ref.getQuery();
             const tokens = parseProblemTokens(text);
             message(status, `正在匹配 ${tokens.length} 个题号，请稍候……`);
-            const resolved = await resolveProblemTokens(tokens, lookup);
+            const { matches, missing } = await problemResolver()(tokens);
             if (!input.isConnected || !container.isConnected || instance.detached) return;
             if (instance.ref.getQuery() !== query) throw new Error('查询期间输入已改变，本次未添加题目，请重新粘贴。');
+            if (!matches.size) { reportImport(status, 0, missing, 0); return; }
             // getSelectedItemKeys also includes the unselected search query; getValue does not.
             const previous = String(instance.ref.getValue() || '').split(',').filter(Boolean).map(Number);
-            const ids = mergeProblemIds(previous, resolved.map((problem) => problem.docId));
+            const ids = mergeProblemIds(previous, [...matches.values()].map((problem) => problem.docId));
             // Native React state, its wrapper's onChange and the submitted field
             // must commit together before the form becomes submittable again.
             ReactDOM.flushSync(() => {
@@ -74,7 +87,8 @@ export function attachProblemPaste(input: HTMLInputElement) {
             if (input.value !== ids.join(',') || instance.ref.getValue() !== ids.join(',')) {
                 throw new Error('题目选择器未同步完成，请检查已选题目后再保存。');
             }
-            message(status, `已添加 ${ids.length - new Set(previous).size} 道题，重复题目已自动跳过。${BULK_PROBLEM_HELP}`);
+            const added = ids.length - new Set(previous).size;
+            reportImport(status, added, missing, matches.size - added);
         } catch (error) {
             message(status, error instanceof Error ? error.message : '题目查询失败，本次未添加题目。', true);
         } finally {
@@ -93,7 +107,7 @@ export function attachTrainingPaste(textarea: HTMLTextAreaElement) {
     panel.innerHTML = '<strong>按章节批量加题</strong><p class="oi33-bulk-training__help"></p>'
         + '<div class="oi33-bulk-training__row"><select aria-label="目标章节"></select>'
         + '<button type="button" class="rounded button" data-refresh>刷新章节</button></div>'
-        + '<textarea aria-label="批量题号" rows="3" placeholder="LuoguB2002, LuoguB2025, LuoguB2007"></textarea>'
+        + '<textarea aria-label="批量题号" rows="3" placeholder="B2057, LuoguB2054, B2059"></textarea>'
         + '<button type="button" class="primary rounded button" data-import>加入所选章节</button>';
     panel.querySelector('.oi33-bulk-training__help')!.textContent = BULK_PROBLEM_HELP;
     // Avoid placing interactive controls inside the native Plan label.
@@ -144,18 +158,28 @@ export function attachTrainingPaste(textarea: HTMLTextAreaElement) {
             const allTokens = [...new Set([...aliases, ...tokens])];
             message(status, `正在匹配题号并校验所选章节已有题目，请稍候……`);
             // Resolve legacy PID entries too, so PID/docId aliases deduplicate correctly.
-            const resolved = [];
+            const resolved = new Map<string, number>();
+            const resolve = problemResolver();
             for (let i = 0; i < allTokens.length; i += 200) {
-                resolved.push(...await resolveProblemTokens(allTokens.slice(i, i + 200), lookup));
+                const { matches } = await resolve(allTokens.slice(i, i + 200));
+                for (const [token, problem] of matches) {
+                    // An already saved string PID must still match itself before converting it to docId.
+                    if (!aliases.includes(token) || problem.pid === token) resolved.set(token, problem.docId);
+                }
             }
             if (!textarea.isConnected || !panel.isConnected) return;
-            const matched = new Map(allTokens.map((token, index) => [token, resolved[index].docId]));
-            const existing = chapter.pids.map((pid) => /^\d+$/.test(String(pid)) ? Number(pid) : matched.get(String(pid))!);
-            const ids = mergeProblemIds(existing, tokens.map((token) => matched.get(token)!));
+            const invalidExisting = aliases.filter((token) => !resolved.has(token));
+            if (invalidExisting.length) throw new Error(`本章节已有题号无法核对：${invalidExisting.join('、')}。请先检查这些题号，本次未修改章节。`);
+            const missing = tokens.filter((token) => !resolved.has(token));
+            const additions = tokens.filter((token) => resolved.has(token)).map((token) => resolved.get(token)!);
+            if (!additions.length) { reportImport(status, 0, missing, 0); return; }
+            const existing = chapter.pids.map((pid) => /^\d+$/.test(String(pid)) ? Number(pid) : resolved.get(String(pid))!);
+            const ids = mergeProblemIds(existing, additions);
             const value = updateTrainingChapter(source, editor.value(), chapterId, ids);
             editor.value(value); // Native API updates Monaco and the actual submitted textarea.
-            paste.value = '';
-            message(status, `题目已加入“${chapter.title}”，本章节共 ${ids.length} 道题；保存训练后生效。`);
+            paste.value = missing.join(', ');
+            const added = ids.length - new Set(existing).size;
+            reportImport(status, added, missing, additions.length - added);
         } catch (error) {
             message(status, error instanceof Error ? error.message : '未能添加题目，请重试。', true);
         } finally {
